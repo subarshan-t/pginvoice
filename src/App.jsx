@@ -256,17 +256,17 @@ function buildPrintHtml(c, monthText, priorMonthText) {
 <html><head><meta charset="utf-8">
 <title>${esc(c.displayName)} ${esc(monthText)}</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
   @page { margin: 18mm 18mm 34mm 18mm; size: A4; }
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: ${PRINT.ink}; margin: 0; padding: 20px; }
+  body { font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: ${PRINT.ink}; margin: 0; padding: 20px; }
   .header { border-bottom: 2px solid ${PRINT.ink}; padding-bottom: 14px; margin-bottom: 22px; }
-  .brand { font-family: 'JetBrains Mono', monospace; color: ${PRINT.brand}; font-size: 10px; font-weight: 500; letter-spacing: 2px; text-transform: uppercase; }
-  h1 { font-family: 'Playfair Display', Georgia, serif; font-weight: 600; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
+  .brand { font-family: 'Quicksand', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+  h1 { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
   .subtitle { color: ${PRINT.inkSoft}; font-size: 14px; margin-top: 4px; }
   .section { margin-top: 22px; page-break-inside: avoid; }
-  .section h2 { font-family: 'JetBrains Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: ${PRINT.brand}; margin: 0 0 10px; font-weight: 500; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .section h2 { font-family: 'Quicksand', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: ${PRINT.brand}; margin: 0 0 10px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; border-radius: 10px; overflow: hidden; }
   th, td { padding: 8px 10px; text-align: left; }
   thead th { background: ${PRINT.brandSoft}; font-weight: 600; font-size: 12px; color: ${PRINT.ink}; border-bottom: 1px solid ${PRINT.line}; }
   tbody tr, table tr { border-bottom: 1px solid ${PRINT.line}; }
