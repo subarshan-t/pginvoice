@@ -1,0 +1,187 @@
+/* ============================================================================
+   PURPLE GIRAFFE — Design System Tokens
+   Dark editorial aesthetic from the "Purple Giraffe" pitch site.
+   Playfair Display (serif display) · JetBrains Mono (labels) · Inter (body)
+   Source: Purple Giraffe Design System (claude.ai/design)
+   ============================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* ---- Type families -------------------------------------------------- */
+  --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-body:    'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+
+  /* ---- Core surfaces (dark) ------------------------------------------- */
+  --bg-base:        rgb(19, 19, 19);    /* #131313 — page background        */
+  --bg-card:        rgb(27, 27, 28);    /* #1B1B1C — default card           */
+  --bg-elevated:    rgb(42, 42, 42);    /* #2A2A2A — highlighted card       */
+  --bg-nav:         rgba(19, 19, 19, 0.8);  /* translucent nav, blurred     */
+
+  /* ---- Light surface (inverse sections) ------------------------------- */
+  --bg-light:       rgb(255, 254, 254); /* #FFFEFE — light section          */
+  --bg-light-card:  rgb(255, 255, 255);
+
+  /* ---- Text on dark --------------------------------------------------- */
+  --fg-primary:     rgb(229, 226, 225); /* #E5E2E1 — headings & lead body   */
+  --fg-secondary:   rgb(207, 196, 197); /* #CFC4C5 — muted mauve body       */
+  --fg-tertiary:    rgba(207, 196, 197, 0.6); /* faint labels               */
+
+  /* ---- Text on light -------------------------------------------------- */
+  --fg-on-light:        rgb(19, 19, 19);
+  --fg-on-light-muted:  rgb(102, 102, 102);
+
+  /* ---- Brand accents -------------------------------------------------- */
+  --accent:         rgb(210, 187, 255); /* #D2BBFF — lavender (primary)     */
+  --accent-deep:    rgb(63, 0, 142);    /* #3F008E — deep purple            */
+  --accent-orchid:  rgb(179, 120, 191); /* #B378BF — orchid (photo frames)  */
+  --accent-soft:    rgba(210, 187, 255, 0.3);  /* lavender outlines         */
+  --accent-glow:    rgba(210, 187, 255, 0.05); /* radial hero glow          */
+
+  /* ---- Hairlines & borders -------------------------------------------- */
+  --border-subtle: rgba(255, 255, 255, 0.05); /* card & section hairlines   */
+  --border-soft:   rgba(255, 255, 255, 0.10); /* dividers, list rules       */
+
+  /* ---- Radii (the system is mostly hard-edged) ------------------------ */
+  --radius-none:   0px;     /* cards, sections — squared edges            */
+  --radius-sm:     4px;
+  --radius-lg:     30px;    /* feature photos & quote cards                */
+  --radius-pill:   999px;   /* dots, scroll capsule                        */
+
+  /* ---- Spacing rhythm (8pt base, generous editorial scale) ------------ */
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 64px;
+  --space-7: 96px;
+  --space-8: 160px;   /* section vertical padding                         */
+
+  /* ---- Motion --------------------------------------------------------- */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur:  0.4s;
+}
+
+/* ============================================================================
+   SEMANTIC TYPE ROLES
+   Apply as classes, or copy the declarations into your own selectors.
+   ============================================================================ */
+
+.pg-eyebrow {            /* [BRACKETED] section kickers, e.g. "02 · VALUE"   */
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.pg-eyebrow-sm {         /* tiny in-card label, e.g. "[IMMEDIATE FIX]"       */
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 10px;
+  line-height: 15px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.pg-outcome {            /* mono caps outcome line on off-white              */
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 11px;
+  line-height: 16.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-primary);
+}
+
+.pg-display-hero {       /* "Hi Kelly." — the single biggest moment          */
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 140px;
+  line-height: 1;
+  color: var(--fg-primary);
+}
+
+.pg-display-1 {          /* closing statement, ~100px                        */
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 100px;
+  line-height: 1.25;
+  color: var(--fg-primary);
+}
+
+.pg-h2 {                 /* section headline, 72px                           */
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 72px;
+  line-height: 1;
+  color: var(--fg-primary);
+}
+
+.pg-h3 {                 /* 36px                                             */
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 36px;
+  line-height: 1.11;
+  color: var(--fg-primary);
+}
+
+.pg-h4 {                 /* card / story heading, 30px                       */
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1.2;
+  color: var(--fg-primary);
+}
+
+.pg-body {               /* default paragraph                                */
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--fg-secondary);
+}
+
+.pg-body-italic {        /* reflective / story voice                         */
+  font-family: var(--font-body);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.625;
+  color: var(--fg-secondary);
+}
+
+.pg-lead {               /* lead paragraph, brighter                         */
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 1.5;
+  color: var(--fg-primary);
+}
+
+.pg-link {               /* mono link label paired with a rule              */
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--fg-primary);
+}
+
+/* ============================================================================
+   ICON UTILITY  (Untitled UI line icons, in assets/icons/)
+   The extracted SVGs are stroke-as-fill black paths. They render reliably as
+   <img>, recolored with `filter` (CSS mask is unreliable on these paths).
+   Usage:  <img class="pg-icon" src="assets/icons/arrow-up-right.svg">
+   ============================================================================ */
+.pg-icon        { display: inline-block; width: 20px; height: 20px; vertical-align: middle;
+                  filter: brightness(0) invert(1); }                 /* white on dark   */
+.pg-icon--muted { filter: brightness(0) invert(1); opacity: 0.65; }  /* faint on dark   */
+.pg-icon--dark  { filter: none; }                                    /* black on light  */
+/* For a rare accent-colored icon, inline the SVG markup and set `color`
+   (the paths use fill="currentColor"). */

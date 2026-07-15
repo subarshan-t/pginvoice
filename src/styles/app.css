@@ -1,0 +1,204 @@
+/* ============================================================================
+   Monthly hour reconciliation — app styles
+   Built on the Purple Giraffe design tokens (colors_and_type.css). This is an
+   operational data tool rather than the editorial pitch site the system was
+   captured from, so a few semantic status colors are added here (status-ok /
+   status-warn / status-over / status-info) — muted, warm-leaning hues chosen
+   to sit quietly next to the brand's lavender accent rather than compete
+   with it. Everything else (surfaces, hairlines, radii, type roles) is the
+   system as-is.
+   ============================================================================ */
+
+:root {
+  --status-ok:        rgb(146, 189, 148);   /* muted sage — on track            */
+  --status-ok-soft:   rgba(146, 189, 148, 0.12);
+  --status-over:      rgb(196, 107, 92);    /* muted rust — over-serviced       */
+  --status-over-soft: rgba(196, 107, 92, 0.14);
+  --status-warn:      rgb(200, 160, 84);    /* muted gold — accruing / under    */
+  --status-warn-soft: rgba(200, 160, 84, 0.14);
+  --status-info:      rgb(129, 162, 184);   /* muted slate — Queensland (prv)   */
+  --status-info-soft: rgba(129, 162, 184, 0.14);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--fg-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+::selection { background: var(--accent-soft); color: #131313; }
+button { font: inherit; }
+
+.pg-app { min-height: 100vh; }
+.pg-container { max-width: 1080px; margin: 0 auto; padding: 56px 32px 96px; }
+
+/* ---- header -------------------------------------------------------------- */
+.pg-app-header { display: flex; align-items: flex-end; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid var(--border-soft); }
+.pg-app-header__mark { height: 34px; width: auto; opacity: 0.9; filter: grayscale(1); flex: none; }
+.pg-app-header__title {
+  font-family: var(--font-display); font-weight: 400; font-size: 40px; line-height: 1.1;
+  color: var(--fg-primary); margin: 6px 0 0;
+}
+.pg-app-header__sub { font-family: var(--font-body); font-size: 14px; line-height: 1.6; color: var(--fg-secondary); margin: 10px 0 0; max-width: 640px; }
+
+/* ---- warning banner -------------------------------------------------------*/
+.pg-banner-warn {
+  margin-top: 16px; padding: 12px 16px; font-size: 13px;
+  background: var(--status-warn-soft); color: var(--status-warn); border: 1px solid var(--border-subtle);
+}
+
+/* ---- generic panel (uploads row, config row, filter row, stat strip) ----- */
+.pg-panel {
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  padding: 20px 24px; margin-top: 16px;
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 20px;
+}
+.pg-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+@media (max-width: 700px) { .pg-grid-2 { grid-template-columns: 1fr; } }
+
+/* ---- file upload card ------------------------------------------------------*/
+.pg-filecard {
+  text-align: left; width: 100%; background: var(--bg-card); border: 1px dashed var(--border-soft);
+  padding: 18px 20px; cursor: pointer; color: inherit;
+  display: flex; align-items: flex-start; gap: 14px;
+  transition: border-color var(--dur) var(--ease);
+}
+.pg-filecard:hover { border-color: var(--accent-soft); }
+.pg-filecard--filled { border: 1px solid var(--accent-soft); }
+.pg-filecard__icon { flex: none; margin-top: 2px; color: var(--accent); }
+.pg-filecard__title { font-family: var(--font-body); font-weight: 600; font-size: 14px; color: var(--fg-primary); }
+.pg-filecard__hint { font-family: var(--font-body); font-size: 12px; color: var(--fg-tertiary); margin-top: 3px; }
+.pg-filecard__file { font-family: var(--font-mono); font-size: 11px; color: var(--accent); margin-top: 8px; letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-filecard__err { font-family: var(--font-body); font-size: 12px; color: var(--status-over); margin-top: 8px; }
+
+/* ---- form fields ----------------------------------------------------------*/
+.pg-field { display: flex; flex-direction: column; gap: 6px; }
+.pg-field__label {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--fg-tertiary); display: flex; align-items: center; gap: 6px;
+}
+.pg-input, .pg-select {
+  background: transparent; color: var(--fg-primary); border: 1px solid var(--border-soft);
+  font-family: var(--font-body); font-size: 13px; padding: 9px 10px; outline: none;
+  transition: border-color var(--dur) var(--ease);
+}
+.pg-input::placeholder { color: var(--fg-tertiary); }
+.pg-input:focus, .pg-select:focus { border-color: var(--accent); }
+.pg-select option { background: var(--bg-card); color: var(--fg-primary); }
+.pg-field--emphasis .pg-select { border: 1px solid var(--accent-soft); color: var(--accent); font-weight: 500; }
+.pg-checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-secondary); padding-bottom: 9px; }
+
+/* ---- buttons ---------------------------------------------------------------*/
+.pg-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-weight: 500; font-size: 11px;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--bg-base); background: var(--accent); border: 0;
+  padding: 10px 16px; cursor: pointer;
+  transition: background var(--dur) var(--ease), transform 0.12s var(--ease);
+}
+.pg-btn:hover { background: rgb(227, 210, 255); }
+.pg-btn:active { transform: scale(0.98); }
+.pg-btn-ghost {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono); font-weight: 500; font-size: 10px;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--fg-secondary); background: transparent; border: 1px solid var(--border-soft);
+  padding: 7px 12px; cursor: pointer;
+  transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.pg-btn-ghost:hover { border-color: var(--accent-soft); color: var(--fg-primary); }
+
+/* ---- export dropdown ---------------------------------------------------- */
+.pg-menu { position: absolute; right: 0; margin-top: 8px; z-index: 10; min-width: 260px; background: var(--bg-elevated); border: 1px solid var(--border-soft); }
+.pg-menu-item {
+  width: 100%; display: flex; align-items: center; gap: 10px; text-align: left;
+  font-family: var(--font-body); font-size: 13px; color: var(--fg-primary);
+  background: transparent; border: 0; border-bottom: 1px solid var(--border-subtle);
+  padding: 10px 16px; cursor: pointer;
+}
+.pg-menu-item:last-child { border-bottom: 0; }
+.pg-menu-item:hover { background: var(--bg-card); }
+.pg-menu-item svg { color: var(--fg-tertiary); flex: none; }
+.pg-menu-sep { height: 1px; background: var(--border-soft); }
+
+/* ---- stat strip ---------------------------------------------------------- */
+.pg-stat__value { font-family: var(--font-mono); font-weight: 500; font-size: 26px; color: var(--fg-primary); letter-spacing: -0.01em; }
+.pg-stat__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-tertiary); margin-top: 4px; }
+
+/* ---- bracketed tag / status chip (the brand's [LABEL] convention) ------- */
+.pg-tag {
+  font-family: var(--font-mono); font-weight: 500; font-size: 10px; letter-spacing: 0.08em;
+  text-transform: uppercase; white-space: nowrap;
+}
+.pg-tag--muted { color: var(--fg-tertiary); }
+
+/* ---- client card ---------------------------------------------------------*/
+.pg-client {
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-soft);
+  padding: 18px 22px; margin-top: 12px;
+  transition: border-color var(--dur) var(--ease);
+}
+.pg-client__row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.pg-client__name {
+  display: flex; align-items: center; gap: 8px; background: transparent; border: 0; cursor: pointer;
+  font-family: var(--font-display); font-weight: 400; font-size: 21px; color: var(--fg-primary); padding: 0;
+}
+.pg-client__name:hover { color: var(--accent); }
+.pg-client__linked { display: flex; align-items: center; gap: 5px; font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); }
+
+.pg-alertbar { margin-top: 12px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; font-size: 12px; font-family: var(--font-body); }
+.pg-alertbar__text { flex: 1; }
+.pg-alertbar select { font-family: var(--font-body); font-size: 12px; padding: 5px 8px; max-width: 220px; background: rgba(0,0,0,0.15); border: 1px solid currentColor; color: inherit; outline: none; }
+.pg-alertbar select option { background: var(--bg-elevated); color: var(--fg-primary); }
+
+.pg-manual-note { margin-top: 10px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-tertiary); }
+.pg-manual-note button { background: none; border: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 12px; padding: 0; }
+.pg-manual-note button:hover { text-decoration: none; }
+
+/* ---- metrics grid ----------------------------------------------------------*/
+.pg-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 18px; }
+.pg-metrics--2 { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 640px) { .pg-metrics { grid-template-columns: repeat(2, 1fr); } }
+.pg-metric__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); }
+.pg-metric__value { font-family: var(--font-mono); font-size: 17px; color: var(--fg-primary); margin-top: 4px; letter-spacing: -0.01em; }
+.pg-metric__value--big { font-size: 20px; font-weight: 500; }
+.pg-metric__sub { font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); margin-top: 2px; }
+
+/* ---- progress bar ----------------------------------------------------------*/
+.pg-bar-track { position: relative; height: 6px; background: var(--bg-elevated); overflow: hidden; margin-top: 14px; }
+.pg-bar-fill { position: absolute; inset: 0 auto 0 0; transition: width 0.5s var(--ease); }
+.pg-bar-mark { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--fg-primary); }
+.pg-bar-mark--accent { background: var(--accent); opacity: 0.8; }
+.pg-bar-caption { display: flex; justify-content: space-between; margin-top: 6px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--fg-tertiary); }
+
+/* ---- consultants row -------------------------------------------------------*/
+.pg-consultants { margin-top: 16px; padding: 12px 14px; background: var(--bg-base); border: 1px solid var(--border-subtle); }
+.pg-consultants__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-tertiary); display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.pg-consultants__list { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.pg-consultants__item { font-family: var(--font-mono); font-size: 12px; color: var(--fg-secondary); }
+.pg-consultants__item--active { color: var(--accent); font-weight: 500; }
+.pg-consultants__item span { color: var(--fg-tertiary); }
+
+/* ---- task table -------------------------------------------------------------*/
+.pg-table-wrap { margin-top: 16px; border: 1px solid var(--border-soft); }
+.pg-table-head { padding: 8px 14px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); background: var(--bg-elevated); }
+.pg-table { width: 100%; border-collapse: collapse; font-family: var(--font-body); font-size: 13px; }
+.pg-table th { text-align: left; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); font-weight: 500; padding: 8px 14px; }
+.pg-table th.right, .pg-table td.right { text-align: right; }
+.pg-table td { padding: 7px 14px; border-top: 1px solid var(--border-subtle); color: var(--fg-secondary); }
+.pg-table td.num, .pg-table th.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.pg-table tr.total td { border-top: 1px solid var(--fg-tertiary); font-weight: 600; color: var(--fg-primary); }
+.pg-table .empty { text-align: center; color: var(--fg-tertiary); }
+
+/* ---- empty state -------------------------------------------------------------*/
+.pg-empty { margin-top: 16px; padding: 40px; text-align: center; font-size: 13px; color: var(--fg-tertiary); background: var(--bg-card); border: 1px dashed var(--border-soft); }
+
+/* ---- footnote -------------------------------------------------------------*/
+.pg-footnote { font-family: var(--font-body); font-size: 11px; line-height: 1.8; color: var(--fg-tertiary); margin-top: 40px; padding-bottom: 24px; }
+.pg-footnote b { color: var(--fg-secondary); font-weight: 600; }
