@@ -35,6 +35,15 @@ const fmt = (hrs, dec = 2) =>
     ? (Math.round(hrs * Math.pow(10, dec)) / Math.pow(10, dec)).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec })
     : "—";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// "Priya" for a single contributor; "Priya (18.00h), Suba (4.00h)" when more than one logged
+// time against the same task — hours already shown in the Hours column, so only spelled out
+// per-person when there's more than one name to disambiguate.
+function formatTaskUsers(userMinutesMap) {
+  if (!userMinutesMap || userMinutesMap.size === 0) return "—";
+  const entries = [...userMinutesMap.entries()].sort((a, b) => b[1] - a[1]);
+  if (entries.length === 1) return entries[0][0] || "—";
+  return entries.map(([u, min]) => `${u || "—"} (${fmt(min / 60)}h)`).join(", ");
+}
 
 // ------------------------------ name matching --------------------------------
 function normalizeName(s) {
@@ -537,7 +546,7 @@ export default function PGReconciliation() {
       if (r.isInternal) continue;
       if (dataMonthKey && r.monthKey && r.monthKey !== dataMonthKey) continue;
       if (!map.has(r.folder))
-        map.set(r.folder, { name: r.folder, totalMin: 0, tasksAll: new Map(), userMinutes: new Map(), tasksByUser: new Map() });
+        map.set(r.folder, { name: r.folder, totalMin: 0, tasksAll: new Map(), userMinutes: new Map(), tasksByUser: new Map(), taskUsers: new Map() });
       const c = map.get(r.folder);
       c.totalMin += r.minutes;
       c.tasksAll.set(r.task, (c.tasksAll.get(r.task) || 0) + r.minutes);
@@ -546,6 +555,10 @@ export default function PGReconciliation() {
       if (!c.tasksByUser.has(u)) c.tasksByUser.set(u, new Map());
       const t = c.tasksByUser.get(u);
       t.set(r.task, (t.get(r.task) || 0) + r.minutes);
+      // who logged time against each task, regardless of the consultant filter
+      if (!c.taskUsers.has(r.task)) c.taskUsers.set(r.task, new Map());
+      const tu = c.taskUsers.get(r.task);
+      tu.set(u, (tu.get(u) || 0) + r.minutes);
     }
 
     const out = [];
@@ -640,7 +653,11 @@ export default function PGReconciliation() {
     list = list.map((c) => {
       const tasksFiltered = consultantFilter ? (c.tasksByUser.get(consultantFilter) || new Map()) : c.tasksAll;
       const workedFiltered = consultantFilter ? ((c.userMinutes.get(consultantFilter) || 0) / 60) : c.worked;
-      return { ...c, tasksFiltered, workedFiltered };
+      // narrow each task's contributor breakdown to the selected consultant too, when filtering
+      const taskUsersFiltered = consultantFilter
+        ? new Map([...tasksFiltered.keys()].map((task) => [task, new Map([[consultantFilter, tasksFiltered.get(task)]])]))
+        : c.taskUsers;
+      return { ...c, tasksFiltered, workedFiltered, taskUsersFiltered };
     });
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -971,6 +988,7 @@ export default function PGReconciliation() {
                 client={c}
                 priorMonthPretty={priorMonthPretty}
                 monthProgress={monthProgress}
+                hasUser={clickup.hasUser}
                 clientTypeFilter={clientTypeFilter}
                 consultantFilter={consultantFilter}
                 accruedNames={accruedNames}
@@ -1039,7 +1057,7 @@ function ExportItem({ icon, label, onClick }) {
   );
 }
 
-function ClientCard({ client: c, priorMonthPretty, monthProgress, clientTypeFilter, consultantFilter, accruedNames, usedAccruedNames, open, onToggle, onSetMatch, onCopy, onPdf, copied }) {
+function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clientTypeFilter, consultantFilter, accruedNames, usedAccruedNames, open, onToggle, onSetMatch, onCopy, onPdf, copied }) {
   const isPackage = c.type === "package";
   const isQld = c.type === "queensland";
 
@@ -1167,6 +1185,7 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, clientTypeFilt
             <thead>
               <tr>
                 <th>Task</th>
+                {hasUser && <th>Logged by</th>}
                 <th className="right num" style={{ width: 110 }}>Hours</th>
               </tr>
             </thead>
@@ -1174,14 +1193,16 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, clientTypeFilt
               {[...c.tasksFiltered.entries()].sort((a, b) => b[1] - a[1]).map(([task, min]) => (
                 <tr key={task}>
                   <td>{task}</td>
+                  {hasUser && <td>{formatTaskUsers(c.taskUsersFiltered?.get(task))}</td>}
                   <td className="right num">{fmt(min / 60)}</td>
                 </tr>
               ))}
               {c.tasksFiltered.size === 0 && (
-                <tr><td colSpan={2} className="empty">No tasks in this filter.</td></tr>
+                <tr><td colSpan={hasUser ? 3 : 2} className="empty">No tasks in this filter.</td></tr>
               )}
               <tr className="total">
                 <td>Total</td>
+                {hasUser && <td></td>}
                 <td className="right num">{fmt(c.workedFiltered)}</td>
               </tr>
             </tbody>
