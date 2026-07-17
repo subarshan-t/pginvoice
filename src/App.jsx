@@ -847,7 +847,6 @@ export default function PGReconciliation() {
       <div className="pg-container">
         {/* header */}
         <div className="pg-app-header">
-          <img src="/assets/giraffe-mark.png" alt="" className="pg-app-header__mark" />
           <div>
             <span className="pg-eyebrow">Purple Giraffe · Internal</span>
             <h1 className="pg-app-header__title">Monthly hour reconciliation.</h1>
