@@ -416,6 +416,10 @@ function printClientPdf(c, monthText, priorMonthText) {
 
 // ------------------------------- storage keys --------------------------------
 const NAMEMAP_KEY = "pg-name-map-v1";
+// Below this many hours of disagreement between the accrued sheet's recorded prior-month
+// balance and what it recalculates to from current ClickUp data, treat it as rounding noise
+// rather than a real edit-after-the-fact discrepancy worth flagging.
+const MISMATCH_TOLERANCE_H = 0.2;
 
 // ================================ COMPONENT =================================
 export default function PGReconciliation() {
@@ -537,6 +541,24 @@ export default function PGReconciliation() {
 
   const accruedNames = useMemo(() => (accrued ? accrued.clients.map((c) => c.name) : []), [accrued]);
 
+  // billable, non-internal minutes per folder for the PRIOR month specifically (not the
+  // selected reporting month) — only populated when the export actually covers that period,
+  // so this can independently re-derive what the prior month's ending balance would be from
+  // current ClickUp data, to cross-check against what the accrued sheet already has recorded
+  // for it. Returns null when the export doesn't cover that month at all (nothing to check).
+  const priorMonthWorked = useMemo(() => {
+    if (!clickup || !priorMonthKey) return null;
+    const byFolder = new Map();
+    let covered = false;
+    for (const r of clickup.rows) {
+      if (r.monthKey === priorMonthKey) covered = true; else continue;
+      if (clickup.hasBillable && billableOnly && !r.billable) continue;
+      if (r.isInternal) continue;
+      byFolder.set(r.folder, (byFolder.get(r.folder) || 0) + r.minutes);
+    }
+    return covered ? byFolder : null;
+  }, [clickup, priorMonthKey, billableOnly]);
+
   // per-client aggregation, WITHOUT consultant filter (this is the base data)
   const clients = useMemo(() => {
     if (!clickup) return [];
@@ -587,9 +609,22 @@ export default function PGReconciliation() {
         else if (kpiPct < -10) status = "under";
         else status = "ok";
       }
+      // Cross-check the sheet's own recorded balance for the PRIOR month (the figure being
+      // used as this month's carry-in) against what it would be if recalculated from the
+      // ClickUp data we have for that month right now. A mismatch usually means ClickUp
+      // entries were edited after the accrued sheet was last updated for that period.
+      let priorMismatch = null;
+      if (pkg !== null && pkg > 0 && priorBalance !== null && priorMonthWorked) {
+        const priorWorkedH = (priorMonthWorked.get(c.name) || 0) / 60;
+        const priorPriorBalance = accruedClient.balances[prevMonthKeyStr(priorMonthKey)] ?? 0;
+        const recomputed = priorWorkedH - pkg + priorPriorBalance;
+        if (Math.abs(recomputed - priorBalance) > MISMATCH_TOLERANCE_H) {
+          priorMismatch = { sheetValue: priorBalance, recomputed };
+        }
+      }
       const clientObj = {
         ...c, worked, accruedClient, matchInfo,
-        pkg, priorBalance, newBalance, remaining, kpiPct, status,
+        pkg, priorBalance, newBalance, remaining, kpiPct, status, priorMismatch,
         matched: !!accruedClient,
         displayName: accruedClient?.name ?? c.name,
       };
@@ -597,7 +632,7 @@ export default function PGReconciliation() {
       out.push(clientObj);
     }
     return out;
-  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey]);
+  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked]);
 
   // counts by type
   const typeCounts = useMemo(() => {
@@ -1140,7 +1175,11 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
             label={c.priorBalance != null && c.priorBalance < 0 ? "Carried in" : c.priorBalance != null && c.priorBalance > 0 ? "Over-used prior" : "Prior balance"}
             value={c.priorBalance != null ? `${fmt(Math.abs(c.priorBalance))} h` : "—"}
             tone={c.priorBalance != null && c.priorBalance > 0 ? "var(--status-over)" : c.priorBalance != null && c.priorBalance < 0 ? "var(--status-ok)" : undefined}
-            sub={priorMonthPretty ? `from ${priorMonthPretty}` : null} />
+            sub={priorMonthPretty ? `from ${priorMonthPretty}` : null}
+            flag={c.priorMismatch ? {
+              text: "mismatch identified",
+              title: `Accrued sheet says ${fmt(c.priorMismatch.sheetValue)} h${priorMonthPretty ? ` for ${priorMonthPretty}` : ""}, but recalculating from the current ClickUp data for that month gives ${fmt(c.priorMismatch.recomputed)} h. Likely a ClickUp entry was edited after the sheet was last updated.`,
+            } : null} />
           <Metric
             label={c.remaining != null && c.remaining < 0 ? "Over by" : "Remaining this month"}
             value={c.remaining != null ? `${fmt(Math.abs(c.remaining))} h` : "—"}
@@ -1213,12 +1252,18 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
   );
 }
 
-function Metric({ label, value, sub, tone, big }) {
+function Metric({ label, value, sub, tone, big, flag }) {
   return (
     <div>
       <div className="pg-metric__label">{label}</div>
       <div className={"pg-metric__value" + (big ? " pg-metric__value--big" : "")} style={tone ? { color: tone } : undefined}>{value}</div>
       {sub && <div className="pg-metric__sub">{sub}</div>}
+      {flag && (
+        <div className="pg-metric__flag" title={flag.title}>
+          <AlertTriangle size={11} />
+          {flag.text}
+        </div>
+      )}
     </div>
   );
 }
