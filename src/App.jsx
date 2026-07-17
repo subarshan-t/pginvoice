@@ -97,6 +97,10 @@ function parseHeaderToMonth(cell, contextYear) {
 }
 function monthLabel(year, month) { return new Date(year, month, 1).toLocaleString(undefined, { month: "long", year: "numeric" }); }
 function monthKey(year, month) { return `${year}-${String(month + 1).padStart(2, "0")}`; }
+function prevMonthKeyStr(key) {
+  const [y, m] = key.split("-").map(Number); // m is 1-12
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+}
 
 // ------------------------------ accrued parser -------------------------------
 function parseAccruedWorkbook(buffer) {
@@ -153,6 +157,33 @@ function findHeader(headers, wanted) {
 }
 const SKIP_FOLDERS = new Set(["", "grand total", "(blank)", "blank"]);
 
+// Internal / non-revenue folders (per the billable-hours guide, §3.1): the
+// literal "Purple Giraffe" bucket, plus onboarding/offboarding/handover/WIP
+// trackers. Case-insensitive substring match — deliberately broader than the
+// guide's literal-case example so folders like "Julia Onboarding & Induction"
+// still match regardless of capitalization.
+const INTERNAL_KEYWORDS = ["purple giraffe", "onboarding", "induction", "offboarding", "handover", "wip"];
+function isInternalFolder(folder) {
+  const f = String(folder || "").toLowerCase();
+  if (!f) return false;
+  return INTERNAL_KEYWORDS.some((k) => f.includes(k));
+}
+
+// "Start Text" is already localised to the business timezone (ACST), e.g.
+// "05/19/2026, 6:49:33 AM ACST" — parse the date directly from it rather
+// than converting the raw epoch "Start" value, which can misfile
+// near-midnight sessions into the wrong month across a UTC boundary.
+function parseStartTextMonth(raw) {
+  if (!raw) return null;
+  const datePart = String(raw).split(",")[0].trim();
+  const m = datePart.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const month = parseInt(m[1], 10) - 1;
+  const year = parseInt(m[3], 10);
+  if (month < 0 || month > 11) return null;
+  return { year, month };
+}
+
 function parseClickupCsv(file, onDone, onErr) {
   Papa.parse(file, {
     header: true,
@@ -163,30 +194,41 @@ function parseClickupCsv(file, onDone, onErr) {
       const hFolder = findHeader(headers, "Folder Name");
       const hTask = findHeader(headers, "Task Name");
       const hTimeText = findHeader(headers, "Time Tracked Text");
-      const hTimeNum = findHeader(headers, "Time Tracked");
+      // Exact match only — "Time Tracked" must not fall back to matching
+      // "Time Tracked Text" via findHeader's startsWith rule when there's no
+      // separate numeric column.
+      const hTimeMs = headers.find((h) => h.toLowerCase().replace(/[^a-z0-9]/g, "") === "timetracked") || null;
       const hBillable = findHeader(headers, "Billable");
       const hUser = findHeader(headers, "Username");
-      if (!hFolder) { onErr("Couldn't find a \"Folder Name\" column. This should be the ClickUp billable time summary export."); return; }
+      const hStart = findHeader(headers, "Start Text");
+      if (!hFolder) { onErr("Couldn't find a \"Folder Name\" column. This should be a ClickUp time-tracking export."); return; }
       let zeroCount = 0;
       const rows = [];
       for (const r of result.data) {
         const folder = String(r[hFolder] || "").trim();
         if (SKIP_FOLDERS.has(folder.toLowerCase())) continue;
         let minutes = 0;
-        if (hTimeText && r[hTimeText] !== undefined && String(r[hTimeText]).trim() !== "") minutes = parseTimeTextToMinutes(r[hTimeText]);
-        else if (hTimeNum) minutes = msToMinutes(r[hTimeNum]);
+        // "Time Tracked" (ms) is the authoritative numeric duration; "Time Tracked
+        // Text" is a display string and only used as a fallback for older,
+        // pre-aggregated exports that don't carry the numeric column at all.
+        if (hTimeMs && r[hTimeMs] !== undefined && String(r[hTimeMs]).trim() !== "") minutes = msToMinutes(r[hTimeMs]);
+        else if (hTimeText) minutes = parseTimeTextToMinutes(r[hTimeText]);
         if (minutes === 0) zeroCount++;
         const billableRaw = hBillable ? String(r[hBillable] || "").trim().toLowerCase() : "";
         const billable = ["true", "yes", "1", "billable"].includes(billableRaw);
+        const startMonth = hStart ? parseStartTextMonth(r[hStart]) : null;
         rows.push({
           folder,
           task: hTask ? String(r[hTask] || "").trim() || "Untitled" : "Untitled",
           minutes, billable, hasBillableCol: !!hBillable,
           user: hUser ? String(r[hUser] || "").trim() : "",
+          isInternal: isInternalFolder(folder),
+          monthKey: startMonth ? monthKey(startMonth.year, startMonth.month) : null,
+          monthLabel: startMonth ? monthLabel(startMonth.year, startMonth.month) : null,
         });
       }
       if (rows.length && zeroCount === rows.length) warnings.push("Every row parsed to zero hours — the ClickUp export format may have changed.");
-      onDone({ rows, hasBillable: !!hBillable, hasUser: !!hUser, warnings });
+      onDone({ rows, hasBillable: !!hBillable, hasUser: !!hUser, hasStartDate: !!hStart, warnings });
     },
     error: (e) => onErr("Couldn't read the CSV: " + e.message),
   });
@@ -346,6 +388,7 @@ export default function PGReconciliation() {
   const [clickup, setClickup] = useState(null);
   const [accrued, setAccrued] = useState(null);
   const [invoiceMonth, setInvoiceMonth] = useState("");
+  const [dataMonthKey, setDataMonthKey] = useState("");
   const [priorMonthKey, setPriorMonthKey] = useState("");
   const [billableOnly, setBillableOnly] = useState(true);
   const [nameMap, setNameMap] = useState({});
@@ -361,6 +404,7 @@ export default function PGReconciliation() {
   const clickupInput = useRef(null);
   const accruedInput = useRef(null);
   const saveTimer = useRef(null);
+  const invoiceMonthAutoRef = useRef("");
 
   useEffect(() => {
     try {
@@ -375,6 +419,36 @@ export default function PGReconciliation() {
     const last = accrued.balanceCols[accrued.balanceCols.length - 1];
     if (last) setPriorMonthKey(monthKey(last.year, last.month));
   }, [accrued]); // eslint-disable-line
+
+  // when a new ClickUp export loads, default the reporting period to the most
+  // recent month it contains (or "" — no filter — for older exports with no
+  // Start Text column to detect months from at all)
+  useEffect(() => {
+    if (!clickup) { setDataMonthKey(""); return; }
+    setDataMonthKey(availableMonths.length ? availableMonths[availableMonths.length - 1].key : "");
+  }, [clickup]); // eslint-disable-line
+
+  // cross-check historical months against the matching accrued-sheet column: whenever the
+  // reporting period changes, chain "prior balance from" to the month right before it, if
+  // the accrued sheet has that column — this is what makes reconciling an older month in a
+  // multi-month export line up with the right historical balance instead of always the latest.
+  useEffect(() => {
+    if (!accrued || !dataMonthKey) return;
+    const desired = prevMonthKeyStr(dataMonthKey);
+    if (accrued.balanceCols.some((c) => monthKey(c.year, c.month) === desired)) setPriorMonthKey(desired);
+  }, [dataMonthKey, accrued]); // eslint-disable-line
+
+  // pre-fill the (still freely editable) invoice-month label from the detected period,
+  // without clobbering anything the user typed themselves
+  useEffect(() => {
+    if (!dataMonthKey) return;
+    const label = availableMonths.find((m) => m.key === dataMonthKey)?.label;
+    if (!label) return;
+    if (!invoiceMonth || invoiceMonth === invoiceMonthAutoRef.current) {
+      setInvoiceMonth(label);
+      invoiceMonthAutoRef.current = label;
+    }
+  }, [dataMonthKey]); // eslint-disable-line
 
   const persistNameMap = useCallback((next) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -435,6 +509,8 @@ export default function PGReconciliation() {
     const map = new Map();
     for (const r of clickup.rows) {
       if (clickup.hasBillable && billableOnly && !r.billable) continue;
+      if (r.isInternal) continue;
+      if (dataMonthKey && r.monthKey && r.monthKey !== dataMonthKey) continue;
       if (!map.has(r.folder))
         map.set(r.folder, { name: r.folder, totalMin: 0, tasksAll: new Map(), userMinutes: new Map(), tasksByUser: new Map() });
       const c = map.get(r.folder);
@@ -483,7 +559,7 @@ export default function PGReconciliation() {
       out.push(clientObj);
     }
     return out;
-  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly]);
+  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey]);
 
   // counts by type
   const typeCounts = useMemo(() => {
@@ -492,13 +568,44 @@ export default function PGReconciliation() {
     return counts;
   }, [clients]);
 
-  // consultant list from clickup rows (across all clients, all types)
+  // consultant list from clickup rows (across all clients, all types — same scope as `clients`)
   const consultants = useMemo(() => {
     if (!clickup) return [];
     const set = new Set();
-    for (const r of clickup.rows) if (r.user) set.add(r.user);
+    for (const r of clickup.rows) {
+      if (r.isInternal) continue;
+      if (dataMonthKey && r.monthKey && r.monthKey !== dataMonthKey) continue;
+      if (r.user) set.add(r.user);
+    }
     return [...set].sort();
+  }, [clickup, dataMonthKey]);
+
+  // distinct months detected in the export (from Start Text), for the data-period picker
+  const availableMonths = useMemo(() => {
+    if (!clickup) return [];
+    const map = new Map();
+    for (const r of clickup.rows) {
+      if (!r.monthKey) continue;
+      map.set(r.monthKey, r.monthLabel);
+    }
+    return [...map.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => a.key.localeCompare(b.key));
   }, [clickup]);
+
+  // folders excluded as internal/non-client (Purple Giraffe, onboarding, WIP, etc.) — surfaced for
+  // transparency rather than silently dropped, since the keyword rule can misfire on a client-named
+  // onboarding folder (see the billable-hours guide, §3.1).
+  const excludedInternal = useMemo(() => {
+    if (!clickup) return { total: 0, folders: [] };
+    const byFolder = new Map();
+    for (const r of clickup.rows) {
+      if (!r.isInternal) continue;
+      if (clickup.hasBillable && billableOnly && !r.billable) continue;
+      if (dataMonthKey && r.monthKey && r.monthKey !== dataMonthKey) continue;
+      byFolder.set(r.folder, (byFolder.get(r.folder) || 0) + r.minutes);
+    }
+    const folders = [...byFolder.entries()].map(([folder, min]) => ({ folder, hours: min / 60 })).sort((a, b) => b.hours - a.hours);
+    return { total: folders.reduce((a, f) => a + f.hours, 0), folders };
+  }, [clickup, billableOnly, dataMonthKey]);
 
   // filtered + sorted + consultant-scoped clients for display
   const visible = useMemo(() => {
@@ -662,7 +769,7 @@ export default function PGReconciliation() {
 
         {/* file inputs */}
         <div className="pg-grid-2">
-          <FileCard title="ClickUp time export" hint="Billable time summary CSV from ClickUp." file={clickup?.fileName} err={clickupErr} onClick={() => clickupInput.current?.click()} />
+          <FileCard title="ClickUp time export" hint="Full time-tracking export CSV from ClickUp (billable + non-billable rows)." file={clickup?.fileName} err={clickupErr} onClick={() => clickupInput.current?.click()} />
           <FileCard title="Accrued Hours report" hint="Master accrued/package spreadsheet (.xlsx)." file={accrued?.fileName} err={accruedErr} onClick={() => accruedInput.current?.click()} />
           <input ref={clickupInput} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={(e) => handleClickup(e.target.files?.[0])} />
           <input ref={accruedInput} type="file" accept=".xlsx,.xlsm,.csv" style={{ display: "none" }} onChange={(e) => handleAccrued(e.target.files?.[0])} />
@@ -677,6 +784,17 @@ export default function PGReconciliation() {
         {/* config row */}
         {ready && (
           <div className="pg-panel">
+            {availableMonths.length > 1 && (
+              <label className="pg-field pg-field--emphasis">
+                <span className="pg-field__label">Reporting period</span>
+                <select value={dataMonthKey} onChange={(e) => setDataMonthKey(e.target.value)}
+                  className="pg-select" style={{ minWidth: 170 }}>
+                  {availableMonths.map((m) => (
+                    <option key={m.key} value={m.key}>{m.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="pg-field">
               <span className="pg-field__label">Invoice month</span>
               <input value={invoiceMonth} onChange={(e) => setInvoiceMonth(e.target.value)} placeholder="e.g. July 2026"
@@ -762,8 +880,34 @@ export default function PGReconciliation() {
                 <Stat value={stats.under} label="accruing past −10%" tone={stats.under > 0 ? "var(--status-warn)" : undefined} />
               </>
             )}
-            <div style={{ marginLeft: "auto", alignSelf: "center", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-tertiary)" }}>
-              {clickup.fileName} · {accrued.fileName}
+            <div style={{ marginLeft: "auto", alignSelf: "center", textAlign: "right" }}>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-tertiary)" }}>
+                {clickup.fileName} · {accrued.fileName}
+              </div>
+              {availableMonths.length === 1 && (
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-tertiary)", marginTop: 2 }}>
+                  detected period: {availableMonths[0].label}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* excluded internal / non-client folders — transparency, not a warning */}
+        {ready && excludedInternal.folders.length > 0 && (
+          <div className="pg-panel" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <span className="pg-tag pg-tag--muted">[excluded as internal / non-client]</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-tertiary)" }}>
+                {fmt(excludedInternal.total)} h across {excludedInternal.folders.length} folder{excludedInternal.folders.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px" }}>
+              {excludedInternal.folders.map((f) => (
+                <span key={f.folder} style={{ fontFamily: "var(--font-body)", fontSize: 12, color: "var(--fg-secondary)" }}>
+                  {f.folder} <span style={{ color: "var(--fg-tertiary)" }}>({fmt(f.hours)} h)</span>
+                </span>
+              ))}
             </div>
           </div>
         )}
