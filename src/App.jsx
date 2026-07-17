@@ -641,6 +641,19 @@ export default function PGReconciliation() {
     return { hrs, count: visible.length, over, under };
   }, [visible]);
 
+  // Only meaningful when the reporting period IS the current real-world month — a mid-month
+  // check on a still-open month, e.g. "accrued sheet stops at June, it's July 17th, how's the
+  // team tracking against package so far this month". A closed historical month has no "pace".
+  const monthProgress = useMemo(() => {
+    if (!dataMonthKey) return null;
+    const [y, m] = dataMonthKey.split("-").map(Number); // m is 1-12
+    const now = new Date();
+    if (now.getFullYear() !== y || now.getMonth() + 1 !== m) return null;
+    const totalDays = new Date(y, m, 0).getDate();
+    const dayOfMonth = now.getDate();
+    return { dayOfMonth, totalDays, pct: (dayOfMonth / totalDays) * 100 };
+  }, [dataMonthKey]);
+
   // ------------------------------- exports ----------------------------------
   const priorMonthPretty = useMemo(() => {
     if (!priorMonthKey || !accrued) return "";
@@ -869,10 +882,17 @@ export default function PGReconciliation() {
           </div>
         )}
 
+        {/* mid-month pace banner — only shown when the reporting period is the current, still-open month */}
+        {ready && monthProgress && (
+          <div className="pg-banner-warn" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
+            Mid-month check — day {monthProgress.dayOfMonth} of {monthProgress.totalDays} ({fmt(monthProgress.pct, 0)}% of the month elapsed). Package figures below are hours worked so far this month, not a final total.
+          </div>
+        )}
+
         {/* stat strip */}
         {ready && (
           <div className="pg-panel" style={{ gap: 40 }}>
-            <Stat value={fmt(stats.hrs)} label={`hours ${clickup.hasBillable && billableOnly ? "(billable) " : ""}${consultantFilter ? "by " + consultantFilter : "in view"}`} />
+            <Stat value={fmt(stats.hrs)} label={`hours ${clickup.hasBillable && billableOnly ? "(billable) " : ""}${consultantFilter ? "by " + consultantFilter : "in view"}${monthProgress ? " so far" : ""}`} />
             <Stat value={stats.count} label={`${TYPE_LABELS[clientTypeFilter].toLowerCase()} in view`} />
             {clientTypeFilter === "package" && (
               <>
@@ -920,6 +940,7 @@ export default function PGReconciliation() {
                 key={c.name}
                 client={c}
                 priorMonthPretty={priorMonthPretty}
+                monthProgress={monthProgress}
                 clientTypeFilter={clientTypeFilter}
                 consultantFilter={consultantFilter}
                 accruedNames={accruedNames}
@@ -988,7 +1009,7 @@ function ExportItem({ icon, label, onClick }) {
   );
 }
 
-function ClientCard({ client: c, priorMonthPretty, clientTypeFilter, consultantFilter, accruedNames, usedAccruedNames, open, onToggle, onSetMatch, onCopy, onPdf, copied }) {
+function ClientCard({ client: c, priorMonthPretty, monthProgress, clientTypeFilter, consultantFilter, accruedNames, usedAccruedNames, open, onToggle, onSetMatch, onCopy, onPdf, copied }) {
   const isPackage = c.type === "package";
   const isQld = c.type === "queensland";
 
@@ -1086,7 +1107,7 @@ function ClientCard({ client: c, priorMonthPretty, clientTypeFilter, consultantF
 
       {/* progress bar - package only */}
       {isPackage && c.pkg != null && c.pkg > 0 && (
-        <PackageBar pkg={c.pkg} worked={c.worked} prior={c.priorBalance ?? 0} status={c.status} />
+        <PackageBar pkg={c.pkg} worked={c.worked} prior={c.priorBalance ?? 0} status={c.status} monthProgress={monthProgress} />
       )}
 
       {/* consultant summary — always visible */}
@@ -1151,13 +1172,26 @@ function Metric({ label, value, sub, tone, big }) {
   );
 }
 
-function PackageBar({ pkg, worked, prior, status }) {
+// A 15-point cushion between "% of package used" and "% of month elapsed" before
+// calling it ahead/behind pace — small day-to-day swings shouldn't flip the label.
+const PACE_MARGIN = 15;
+function paceStatus(usagePct, elapsedPct) {
+  if (usagePct == null || elapsedPct == null) return null;
+  const diff = usagePct - elapsedPct;
+  if (diff > PACE_MARGIN) return { label: "trending over pace", tone: "var(--status-over)" };
+  if (diff < -PACE_MARGIN) return { label: "trending under pace", tone: "var(--status-warn)" };
+  return { label: "on pace", tone: "var(--status-ok)" };
+}
+
+function PackageBar({ pkg, worked, prior, status, monthProgress }) {
   const effective = pkg - prior;
   const max = Math.max(worked, effective, pkg) * 1.15;
   const workedPct = Math.max(0, Math.min(100, (worked / max) * 100));
   const pkgPct = (pkg / max) * 100;
   const effPct = (effective / max) * 100;
   const barColor = status === "over" ? "var(--status-over)" : status === "under" ? "var(--status-warn)" : "var(--status-ok)";
+  const usagePct = effective > 0 ? (worked / effective) * 100 : null;
+  const pace = monthProgress ? paceStatus(usagePct, monthProgress.pct) : null;
   return (
     <div>
       <div className="pg-bar-track">
@@ -1171,6 +1205,12 @@ function PackageBar({ pkg, worked, prior, status }) {
         <span>worked {fmt(worked)} h</span>
         <span>package {fmt(pkg)} h{Math.abs(effective - pkg) > 0.01 && <> · adjusted {fmt(effective)} h</>}</span>
       </div>
+      {pace && (
+        <div className="pg-bar-caption" style={{ marginTop: 2 }}>
+          <span>{fmt(usagePct, 0)}% of package used · {fmt(monthProgress.pct, 0)}% of month elapsed</span>
+          <span style={{ color: pace.tone }}>{pace.label}</span>
+        </div>
+      )}
     </div>
   );
 }
