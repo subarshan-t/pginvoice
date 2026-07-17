@@ -112,12 +112,29 @@ function parseAccruedWorkbook(buffer) {
   if (headerIdx < 0) headerIdx = 2;
   const header = rows[headerIdx] || [];
 
-  const balanceCols = [];
+  const warnings = [];
+  const maxSaneYear = new Date().getFullYear() + 1;
+  const rawCols = [];
   let contextYear = null;
   for (let c = 2; c < header.length; c++) {
     const m = parseHeaderToMonth(header[c], contextYear);
-    if (m) { balanceCols.push({ col: c, ...m }); contextYear = m.year; }
+    if (!m) continue;
+    if (m.year > maxSaneYear) {
+      warnings.push(`Column "${String(header[c])}" parsed as ${m.label} — that looks like a typo in the source sheet (year is well in the future). It's still included, but check it.`);
+    } else {
+      contextYear = m.year; // don't let a bad year poison inference for later month-only headers
+    }
+    rawCols.push({ col: c, ...m });
   }
+  // real spreadsheets accumulate repeated/duplicate month columns over time (copy-paste,
+  // corrections); keep one per month — the rightmost (latest-entered) column wins — and
+  // present them in chronological order rather than raw column order.
+  const byMonth = new Map();
+  for (const bc of rawCols) byMonth.set(monthKey(bc.year, bc.month), bc);
+  if (byMonth.size < rawCols.length) {
+    warnings.push(`Found ${rawCols.length - byMonth.size} duplicate month column(s) in the accrued sheet — using the rightmost (latest) one for each month.`);
+  }
+  const balanceCols = [...byMonth.values()].sort((a, b) => (a.year - b.year) || (a.month - b.month));
 
   const clients = [];
   for (let r = headerIdx + 1; r < rows.length; r++) {
@@ -144,7 +161,15 @@ function parseAccruedWorkbook(buffer) {
     if (pkg === null && Object.keys(balances).length === 0) continue;
     clients.push({ name: nameTrim, package: pkg, balances });
   }
-  return { clients, balanceCols, sheetName };
+
+  // real client lists accumulate exact-name duplicates (re-added rows, copy-paste) — not
+  // a parsing error, but worth surfacing since only the first match is ever used for lookups
+  const nameCounts = new Map();
+  for (const c of clients) nameCounts.set(c.name, (nameCounts.get(c.name) || 0) + 1);
+  const dupNames = [...nameCounts.entries()].filter(([, n]) => n > 1).map(([n]) => n);
+  if (dupNames.length) warnings.push(`${dupNames.length} client name${dupNames.length === 1 ? "" : "s"} appear more than once in the accrued sheet (${dupNames.slice(0, 5).join(", ")}${dupNames.length > 5 ? ", …" : ""}) — only the first row for each is used.`);
+
+  return { clients, balanceCols, sheetName, warnings };
 }
 
 // ------------------------------- clickup parser -------------------------------
@@ -791,6 +816,11 @@ export default function PGReconciliation() {
         {clickup?.warnings?.length > 0 && (
           <div className="pg-banner-warn">
             {clickup.warnings.map((w, i) => <div key={i}>{w}</div>)}
+          </div>
+        )}
+        {accrued?.warnings?.length > 0 && (
+          <div className="pg-banner-warn">
+            {accrued.warnings.map((w, i) => <div key={i}>{w}</div>)}
           </div>
         )}
 
