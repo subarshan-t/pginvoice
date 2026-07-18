@@ -670,9 +670,15 @@ function CapacityDashboardInner() {
           })}
         </div>
 
-        {/* ===================== RIGHT: ROSTER + STATS + NOTES ===================== */}
+        {/* ===================== RIGHT: STATS + ROSTER + NOTES ===================== */}
         <div>
-          <div className="pg-table-wrap" style={{ overflowX: "auto" }}>
+          <div className="pg-cap-statrow">
+            <div className="pg-cap-stat"><div className="pg-stat__value">{totalDemand.toFixed(0)}</div><div className="pg-stat__label">Total demand</div></div>
+            <div className="pg-cap-stat"><div className="pg-stat__value">{totalBillableAllocation.toFixed(0)}</div><div className="pg-stat__label">Billable allocation</div></div>
+            <div className="pg-cap-stat"><div className="pg-stat__value" style={{ color: difference < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{difference > 0 ? "+" : ""}{difference.toFixed(0)}</div><div className="pg-stat__label">Difference</div></div>
+          </div>
+
+          <div className="pg-table-wrap" style={{ overflowX: "auto", marginTop: 14 }}>
             <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>Team roster</span>
               <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
@@ -710,18 +716,6 @@ function CapacityDashboardInner() {
           </div>
           <p className="pg-footnote">Total Resource Hours and Public Holidays are calculated from {MONTH_LABELS[month]}'s actual weekdays and each person's state. Leaves and Billable Allocation are only editable in Edit mode; everything else recalculates automatically.</p>
 
-          <div className="pg-cap-statrow">
-            <div className="pg-cap-stat"><div className="pg-stat__value">{totalDemand.toFixed(0)}</div><div className="pg-stat__label">Total demand</div></div>
-            <div className="pg-cap-stat"><div className="pg-stat__value">{totalBillableAllocation.toFixed(0)}</div><div className="pg-stat__label">Billable allocation</div></div>
-            <div className="pg-cap-stat"><div className="pg-stat__value" style={{ color: difference < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{difference > 0 ? "+" : ""}{difference.toFixed(0)}</div><div className="pg-stat__label">Difference</div></div>
-          </div>
-
-          <div className="pg-cap-card" style={{ marginTop: 14 }}>
-            <span className="pg-field__label">Add a note</span>
-            <textarea className="pg-cap-textarea" style={{ marginTop: 8 }} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} placeholder="e.g. why a client is running over, staffing changes expected next month…" />
-            <button className="pg-btn" style={{ marginTop: 8 }} onClick={addNote} disabled={!noteDraft.trim()}><Plus size={13} /> Add note</button>
-          </div>
-
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span className="pg-field__label">Reference &amp; notes log</span>
@@ -758,6 +752,12 @@ function CapacityDashboardInner() {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="pg-cap-card" style={{ marginTop: 14 }}>
+            <span className="pg-field__label">Add a note</span>
+            <textarea className="pg-cap-textarea" style={{ marginTop: 8 }} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} placeholder="e.g. why a client is running over, staffing changes expected next month…" />
+            <button className="pg-btn" style={{ marginTop: 8 }} onClick={addNote} disabled={!noteDraft.trim()}><Plus size={13} /> Add note</button>
           </div>
         </div>
       </div>
