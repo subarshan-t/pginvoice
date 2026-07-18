@@ -449,18 +449,23 @@ function CapacityDashboardInner() {
   }
   // One client (single-row group): the real average, if matched, replaces the seed
   // actuals average entirely (still subject to a manual override, same as before).
-  // Combined client (several sub-projects): the GROUP TOTAL becomes the real average
-  // directly rather than a sum of the sub-projects' own (still seed-sourced) figures —
-  // per the client's call, ClickUp hours aren't split across sub-projects.
+  // Combined client (several sub-projects): as long as none of the sub-projects has
+  // been manually overridden, the GROUP TOTAL becomes the real average directly rather
+  // than a sum of the sub-projects' own (still seed-sourced) figures — per the client's
+  // call, ClickUp hours aren't split across sub-projects. But once any sub-project IS
+  // manually edited, the total has to track that edit like a normal total row, so it
+  // falls back to summing the (possibly-overridden) sub-project figures.
   function demandForGroup(group, rows, m) {
     const dyn = dynamicAverages.get(group);
     if (rows.length === 1) {
       const { demand, avg, isOverridden } = demandFor(rows[0], m, dyn?.avgHours);
       return { demand, avg, isOverridden, isDynamic: !!dyn && !isOverridden, dyn };
     }
-    if (dyn) return { demand: dyn.avgHours, avg: dyn.avgHours, isOverridden: false, isDynamic: true, dyn };
-    const demand = rows.reduce((s, r) => s + demandFor(r, m).demand, 0);
-    return { demand, avg: null, isOverridden: false, isDynamic: false, dyn: null };
+    const rowResults = rows.map((r) => demandFor(r, m));
+    const anyOverridden = rowResults.some((x) => x.isOverridden);
+    if (dyn && !anyOverridden) return { demand: dyn.avgHours, avg: dyn.avgHours, isOverridden: false, isDynamic: true, dyn };
+    const demand = rowResults.reduce((s, x) => s + x.demand, 0);
+    return { demand, avg: null, isOverridden: anyOverridden, isDynamic: false, dyn: null };
   }
   const setOverride = (clientId, m, value) => setOverrides((prev) => ({ ...prev, [`${clientId}_${m}`]: value === "" ? null : Number(value) }));
 
