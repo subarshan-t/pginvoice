@@ -6,6 +6,7 @@ import {
   AlertTriangle, Link2, FileSpreadsheet, FileText, Printer, Users, ArrowUpDown,
 } from "lucide-react";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
+import { idbGet, idbSet } from "./idbStore.js";
 
 // ---------------------------- time text → minutes ----------------------------
 function parseTimeTextToMinutes(raw) {
@@ -416,6 +417,9 @@ function printClientPdf(c, monthText, priorMonthText) {
 
 // ------------------------------- storage keys --------------------------------
 const NAMEMAP_KEY = "pg-name-map-v1";
+const CLICKUP_DB_KEY = "clickup";
+const ACCRUED_DB_KEY = "accrued";
+const VIEWSTATE_KEY = "pg-view-state-v1";
 // Below this many hours of disagreement between the accrued sheet's recorded prior-month
 // balance and what it recalculates to from current ClickUp data, treat it as rounding noise
 // rather than a real edit-after-the-fact discrepancy worth flagging.
@@ -442,7 +446,11 @@ export default function PGReconciliation() {
   const clickupInput = useRef(null);
   const accruedInput = useRef(null);
   const saveTimer = useRef(null);
+  const viewSaveTimer = useRef(null);
   const invoiceMonthAutoRef = useRef("");
+  const justHydratedClickupRef = useRef(undefined);
+  const justHydratedAccruedRef = useRef(undefined);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     try {
@@ -451,6 +459,56 @@ export default function PGReconciliation() {
     } catch (e) {}
   }, []);
 
+  // Restore the uploaded data and filters from a previous session. The parsed CSV can run
+  // several MB as JSON, too close to localStorage's shared per-origin quota to risk — so the
+  // two large datasets live in IndexedDB, and just the small filter/view settings use
+  // localStorage. Both setClickup/setAccrued and the filter setters land in the same commit,
+  // so the auto-select effects below (which only override an *invalid* selection) see the
+  // restored values already in place and leave them alone.
+  useEffect(() => {
+    (async () => {
+      const [savedClickup, savedAccrued] = await Promise.all([idbGet(CLICKUP_DB_KEY), idbGet(ACCRUED_DB_KEY)]);
+      if (savedClickup) { setClickup(savedClickup); justHydratedClickupRef.current = savedClickup; }
+      if (savedAccrued) { setAccrued(savedAccrued); justHydratedAccruedRef.current = savedAccrued; }
+      try {
+        const raw = window.localStorage.getItem(VIEWSTATE_KEY);
+        if (raw) {
+          const v = JSON.parse(raw);
+          if (v.invoiceMonth != null) { setInvoiceMonth(v.invoiceMonth); invoiceMonthAutoRef.current = v.invoiceMonth; }
+          if (v.dataMonthKey != null) setDataMonthKey(v.dataMonthKey);
+          if (v.priorMonthKey != null) setPriorMonthKey(v.priorMonthKey);
+          if (v.billableOnly != null) setBillableOnly(v.billableOnly);
+          if (v.clientTypeFilter != null) setClientTypeFilter(v.clientTypeFilter);
+          if (v.consultantFilter != null) setConsultantFilter(v.consultantFilter);
+          if (v.sortMode != null) setSortMode(v.sortMode);
+          if (v.search != null) setSearch(v.search);
+        }
+      } catch (e) { /* ignore */ }
+      setHydrated(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    // skip the one redundant write-back right after hydration set this to the exact object
+    // we just read out of IndexedDB — no need to round-trip several MB back in immediately
+    if (clickup === justHydratedClickupRef.current) { justHydratedClickupRef.current = undefined; return; }
+    idbSet(CLICKUP_DB_KEY, clickup);
+  }, [clickup, hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (accrued === justHydratedAccruedRef.current) { justHydratedAccruedRef.current = undefined; return; }
+    idbSet(ACCRUED_DB_KEY, accrued);
+  }, [accrued, hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (viewSaveTimer.current) clearTimeout(viewSaveTimer.current);
+    const snapshot = { invoiceMonth, dataMonthKey, priorMonthKey, billableOnly, clientTypeFilter, consultantFilter, sortMode, search };
+    viewSaveTimer.current = setTimeout(() => {
+      try { window.localStorage.setItem(VIEWSTATE_KEY, JSON.stringify(snapshot)); } catch (e) {}
+    }, 400);
+  }, [hydrated, invoiceMonth, dataMonthKey, priorMonthKey, billableOnly, clientTypeFilter, consultantFilter, sortMode, search]);
+
   useEffect(() => {
     if (!accrued) return;
     if (priorMonthKey && accrued.balanceCols.find((c) => monthKey(c.year, c.month) === priorMonthKey)) return;
@@ -458,11 +516,13 @@ export default function PGReconciliation() {
     if (last) setPriorMonthKey(monthKey(last.year, last.month));
   }, [accrued]); // eslint-disable-line
 
-  // when a new ClickUp export loads, default the reporting period to the most
-  // recent month it contains (or "" — no filter — for older exports with no
-  // Start Text column to detect months from at all)
+  // when a new ClickUp export loads, default the reporting period to the most recent month
+  // it contains (or "" — no filter — for older exports with no Start Text column to detect
+  // months from at all) — but leave a still-valid selection alone, since that's exactly what
+  // lets a restored session (see hydration effect above) keep its previously-chosen period.
   useEffect(() => {
     if (!clickup) { setDataMonthKey(""); return; }
+    if (dataMonthKey && availableMonths.some((m) => m.key === dataMonthKey)) return;
     setDataMonthKey(availableMonths.length ? availableMonths[availableMonths.length - 1].key : "");
   }, [clickup]); // eslint-disable-line
 
@@ -506,6 +566,8 @@ export default function PGReconciliation() {
   const handleClickup = (file) => {
     if (!file) return;
     setClickupErr(null);
+    setDataMonthKey(""); // force fresh period auto-detection for this new file, rather than
+                          // keeping whatever was selected for the previous one
     parseClickupCsv(file,
       (r) => setClickup({ ...r, fileName: file.name }),
       (msg) => { setClickupErr(msg); setClickup(null); });
