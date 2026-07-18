@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { FileText, BarChart3, TrendingUp } from "lucide-react";
 import PGReconciliation from "./App.jsx";
+import CapacityDashboard from "./CapacityDashboard.jsx";
 
 const MODULES = [
   { key: "invoicing", label: "Client Invoicing", icon: FileText },
@@ -47,7 +48,7 @@ export default function Shell() {
       </aside>
       <main className="pg-shell__main">
         {active === "invoicing" && <PGReconciliation />}
-        {active === "capacity" && <ComingSoon label="Capacity planning" />}
+        {active === "capacity" && <CapacityDashboard />}
         {active === "performance" && <ComingSoon label="Performance" />}
       </main>
     </div>
