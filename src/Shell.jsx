@@ -47,9 +47,13 @@ export default function Shell() {
         </nav>
       </aside>
       <main className="pg-shell__main">
-        {active === "invoicing" && <PGReconciliation />}
-        {active === "capacity" && <CapacityDashboard />}
-        {active === "performance" && <ComingSoon label="Performance" />}
+        {/* All three modules stay mounted at once — switching tabs used to unmount
+            the inactive one and wipe its in-memory state (an uploaded CSV, filters,
+            etc). Hiding with CSS instead of conditional rendering keeps that state
+            alive across tab switches. */}
+        <div style={{ display: active === "invoicing" ? "block" : "none" }}><PGReconciliation /></div>
+        <div style={{ display: active === "capacity" ? "block" : "none" }}><CapacityDashboard /></div>
+        <div style={{ display: active === "performance" ? "block" : "none" }}><ComingSoon label="Performance" /></div>
       </main>
     </div>
   );
