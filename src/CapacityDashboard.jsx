@@ -300,6 +300,7 @@ function CapacityDashboardInner() {
   const [editingDemand, setEditingDemand] = useState(null); // which consultant's client table is in edit mode
   const [month, setMonth] = useState(CURRENT_MONTH);
   const [collapsed, setCollapsed] = useState({});
+  const [expandedGroups, setExpandedGroups] = useState({});
   const [editingCard, setEditingCard] = useState(null);
   const [addForm, setAddForm] = useState({ from: "", type: "pct", value: "" });
 
@@ -441,6 +442,7 @@ function CapacityDashboardInner() {
   });
 
   const toggleCollapse = (owner) => setCollapsed((prev) => ({ ...prev, [owner]: !prev[owner] }));
+  const toggleGroup = (key) => setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
   const allExpanded = visibleOwners.length > 0 && visibleOwners.every((o) => !collapsed[o]);
   const toggleAllCollapse = () => {
     const next = { ...collapsed };
@@ -642,19 +644,50 @@ function CapacityDashboardInner() {
                               </tr>
                             );
                           }
+                          const groupKey = `${owner}::${g.group}`;
+                          const groupOpen = !!expandedGroups[groupKey];
                           return (
-                            <tr key={g.group}>
-                              <td>{g.group} <span style={{ fontSize: 10, color: "var(--fg-tertiary)" }}>({g.rows.length} sub-projects)</span></td>
-                              <td><span className="pg-tag pg-tag--muted">[Combined]</span></td>
-                              <td className="right num">—</td><td className="right num">—</td>
-                              <td className="right num"><b>{gDemand.toFixed(1)}</b></td>
-                            </tr>
+                            <React.Fragment key={g.group}>
+                              <tr>
+                                <td>
+                                  <button className="pg-btn-ghost" style={{ padding: "2px 6px", marginRight: 6 }} onClick={() => toggleGroup(groupKey)}>
+                                    {groupOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                                  </button>
+                                  {g.group} <span style={{ fontSize: 10, color: "var(--fg-tertiary)" }}>({g.rows.length} sub-projects)</span>
+                                </td>
+                                <td><span className="pg-tag pg-tag--muted">[Combined]</span></td>
+                                <td className="right num">—</td><td className="right num">—</td>
+                                <td className="right num"><b>{gDemand.toFixed(1)}</b></td>
+                              </tr>
+                              {groupOpen && g.rows.map((r) => {
+                                const { demand, avg, isOverridden } = demandFor(r, month);
+                                return (
+                                  <tr key={r.id}>
+                                    <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}</td>
+                                    <td><span className="pg-tag" style={{ color: "var(--accent)" }}>[{r.basis}]</span></td>
+                                    <td className="right num">{fmt(r.agreed)}</td>
+                                    <td className="right num">{fmt(avg)}</td>
+                                    <td className="right num">
+                                      {editingDemand === owner ? (
+                                        <input className="pg-input" type="number" step="any" style={{ width: 72, padding: "4px 6px" }}
+                                          value={demand} onChange={(e) => setOverride(r.id, month, e.target.value)} />
+                                      ) : (
+                                        <>
+                                          {demand.toFixed(1)}
+                                          {isOverridden && <span className="pg-tag" style={{ color: "var(--accent)", marginLeft: 6 }}>[manual]</span>}
+                                        </>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </React.Fragment>
                           );
                         })}
                         <tr className="total"><td colSpan={4}>Total</td><td className="right num">{pc.demand.toFixed(1)}</td></tr>
                       </tbody>
                     </table>
-                    {editingDemand === owner && <p className="pg-footnote" style={{ marginTop: 8 }}>Combined multi-project clients (e.g. Clarke Energy) aren't directly editable here yet — edit their individual agreed hours or actuals in the underlying data.</p>}
+                    {editingDemand === owner && <p className="pg-footnote" style={{ marginTop: 8 }}>Click the arrow next to a combined client (e.g. Clarke Energy) to expand it and edit each sub-project's projected hours individually.</p>}
 
                     <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed var(--border-soft)" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
