@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { idbGet, idbSet } from "./idbStore.js";
+import { findMatch, isInternalFolder } from "./nameMatch.js";
 
 // ---------------------------- time text → minutes ----------------------------
 function parseTimeTextToMinutes(raw) {
@@ -47,32 +48,8 @@ function formatTaskUsers(userMinutesMap) {
 }
 
 // ------------------------------ name matching --------------------------------
-function normalizeName(s) {
-  return String(s || "").toLowerCase().replace(/&/g, "and").replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
-}
-function tokens(s) { return normalizeName(s).split(" ").filter((t) => t.length > 1); }
-function tokenSim(a, b) {
-  const A = new Set(tokens(a)), B = new Set(tokens(b));
-  if (A.size === 0 || B.size === 0) return 0;
-  let inter = 0;
-  for (const t of A) if (B.has(t)) inter++;
-  return inter / (A.size + B.size - inter);
-}
-function findMatch(clickupName, accruedNames) {
-  const norm = normalizeName(clickupName);
-  for (const a of accruedNames) if (normalizeName(a) === norm) return { name: a, confidence: 1, method: "exact" };
-  for (const a of accruedNames) {
-    const na = normalizeName(a);
-    if (na && (norm.includes(na) || na.includes(norm))) return { name: a, confidence: 0.85, method: "substring" };
-  }
-  let best = null;
-  for (const a of accruedNames) {
-    const sim = tokenSim(clickupName, a);
-    if (sim > (best?.confidence ?? 0)) best = { name: a, confidence: sim, method: "tokens" };
-  }
-  if (best && best.confidence >= 0.5) return best;
-  return null;
-}
+// normalizeName / tokenSim / findMatch / isInternalFolder now live in ./nameMatch.js,
+// shared with Capacity Planning so the two never quietly drift apart.
 
 // ------------------- header parsing for the accrued sheet --------------------
 const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec"];
@@ -191,18 +168,6 @@ function findHeader(headers, wanted) {
   return hit || null;
 }
 const SKIP_FOLDERS = new Set(["", "grand total", "(blank)", "blank"]);
-
-// Internal / non-revenue folders (per the billable-hours guide, §3.1): the
-// literal "Purple Giraffe" bucket, plus onboarding/offboarding/handover/WIP
-// trackers. Case-insensitive substring match — deliberately broader than the
-// guide's literal-case example so folders like "Julia Onboarding & Induction"
-// still match regardless of capitalization.
-const INTERNAL_KEYWORDS = ["purple giraffe", "onboarding", "induction", "offboarding", "handover", "wip"];
-function isInternalFolder(folder) {
-  const f = String(folder || "").toLowerCase();
-  if (!f) return false;
-  return INTERNAL_KEYWORDS.some((k) => f.includes(k));
-}
 
 // "Start Text" is already localised to the business timezone (ACST), e.g.
 // "05/19/2026, 6:49:33 AM ACST" — parse the date directly from it rather

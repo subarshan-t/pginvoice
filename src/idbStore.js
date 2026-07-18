@@ -6,6 +6,10 @@
 // (filters, name matches) still use localStorage elsewhere.
 const DB_NAME = "pg-invoice-store";
 const STORE = "kv";
+// Fired on window after a value is written, so another mounted module (e.g. Capacity
+// Planning reading the same ClickUp data Client Invoicing just saved) can react live
+// instead of only picking up changes on its own next mount.
+export const PG_DATA_EVENT = "pg-idb-updated";
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -38,6 +42,7 @@ export async function idbSet(key, value) {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PG_DATA_EVENT, { detail: { key } }));
   } catch (e) { /* ignore — persistence is best-effort */ }
 }
 

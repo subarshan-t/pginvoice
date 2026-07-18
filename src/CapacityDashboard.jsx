@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
-  ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle,
+  ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap,
 } from "lucide-react";
+import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
+import { findMatch, isInternalFolder } from "./nameMatch.js";
 
 /* ============================================================
    MONTHS / CONSTANTS
@@ -74,6 +76,18 @@ function weekdaysInMonth(monthStr) {
 function publicHolidayDays(state, monthStr) {
   const list = PUBLIC_HOLIDAYS[state] || PUBLIC_HOLIDAYS.SA;
   return list.filter((h) => h.date.startsWith(monthStr)).length;
+}
+// The 6 real calendar months ending with the current one, regardless of which month is
+// selected in the ledger — "average of the last 6 months" is a fixed, always-moving window,
+// not something that changes as you flip through Jan/Feb/... in the capacity view.
+function last6MonthKeys() {
+  const now = new Date();
+  const keys = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return keys;
 }
 // Groups this month's holidays by date, and by date lists which states observe what —
 // this is what powers the plain-English "X is a holiday in..." summary.
@@ -308,6 +322,20 @@ function CapacityDashboardInner() {
   const [qClient, setQClient] = useState("");
   const [qSupport, setQSupport] = useState("");
 
+  // The same parsed ClickUp export Client Invoicing has already loaded (and persisted to
+  // IndexedDB) — read here too so "Average Hrs" can be driven from real billable hours
+  // instead of the seed data's hardcoded actuals. Re-reads whenever Client Invoicing saves
+  // a fresh upload, via the PG_DATA_EVENT the shared idbStore fires on every write.
+  const [clickupData, setClickupData] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => idbGet("clickup").then((v) => { if (!cancelled) setClickupData(v || null); });
+    load();
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === "clickup") load(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
+  }, []);
+
   useEffect(() => {
     setPeople(loadKey("cap_people", SEED_PEOPLE));
     setClients(loadKey("cap_clients", SEED_CLIENTS));
@@ -368,14 +396,48 @@ function CapacityDashboardInner() {
   const givenAway = useMemo(() => { const m = {}; support.forEach((s) => { m[s.from] = (m[s.from] || 0) + hoursOf(s); }); return m; }, [support, hoursOf]);
   const receivedBy = useMemo(() => { const m = {}; support.forEach((s) => { if (!m[s.to]) m[s.to] = []; m[s.to].push({ ...s, hours: hoursOf(s) }); }); return m; }, [support, hoursOf]);
 
+  // Real billable-hours average per client GROUP, from whatever ClickUp export Client
+  // Invoicing currently has loaded — trailing 6 real calendar months, billable only,
+  // internal folders excluded, averaged only over the months that actually have data
+  // (not padded to 6 with zeros). Matched to a group by fuzzy folder-name match, same
+  // logic Client Invoicing uses to match ClickUp folders to the accrued sheet. Per-group
+  // only (not split across a combined client's sub-projects) — see demandForGroup below.
+  const dynamicAverages = useMemo(() => {
+    const result = new Map();
+    if (!clickupData || !clickupData.rows || !clickupData.rows.length) return result;
+    const monthSet = new Set(last6MonthKeys());
+    const perFolderMonth = new Map();
+    const folders = new Set();
+    for (const r of clickupData.rows) {
+      if (isInternalFolder(r.folder)) continue;
+      if (clickupData.hasBillable && !r.billable) continue;
+      folders.add(r.folder);
+      if (!r.monthKey || !monthSet.has(r.monthKey)) continue;
+      if (!perFolderMonth.has(r.folder)) perFolderMonth.set(r.folder, new Map());
+      const byMonth = perFolderMonth.get(r.folder);
+      byMonth.set(r.monthKey, (byMonth.get(r.monthKey) || 0) + r.minutes);
+    }
+    const folderList = [...folders];
+    const groups = [...new Set(clients.map((c) => c.group))];
+    for (const group of groups) {
+      const match = findMatch(group, folderList);
+      if (!match) continue;
+      const byMonth = perFolderMonth.get(match.name);
+      if (!byMonth || byMonth.size === 0) continue;
+      const totalMin = [...byMonth.values()].reduce((a, b) => a + b, 0);
+      result.set(group, { avgHours: (totalMin / 60) / byMonth.size, matchedFolder: match.name, monthsCounted: byMonth.size, confidence: match.confidence });
+    }
+    return result;
+  }, [clickupData, clients]);
+
   function trailingAverage(actuals, m) {
     if (!actuals) return null;
     const vals = Object.keys(actuals).filter((k) => k < m).sort().map((k) => actuals[k]);
     if (vals.length === 0) return null;
     return vals.reduce((a, b) => a + b, 0) / vals.length;
   }
-  function demandFor(c, m) {
-    const avg = trailingAverage(c.actuals, m);
+  function demandFor(c, m, avgOverride) {
+    const avg = avgOverride !== undefined ? avgOverride : trailingAverage(c.actuals, m);
     const isFixed = FIXED_BASES.includes(c.basis);
     let demand;
     if (isFixed) { demand = (c.agreed !== null && c.agreed !== undefined) ? c.agreed : (avg !== null ? avg : 0); }
@@ -384,6 +446,21 @@ function CapacityDashboardInner() {
     const overridden = overrides[overrideKey];
     if (overridden !== undefined && overridden !== null && overridden !== "") { demand = Number(overridden); }
     return { demand, avg, isOverridden: overridden !== undefined && overridden !== null && overridden !== "" };
+  }
+  // One client (single-row group): the real average, if matched, replaces the seed
+  // actuals average entirely (still subject to a manual override, same as before).
+  // Combined client (several sub-projects): the GROUP TOTAL becomes the real average
+  // directly rather than a sum of the sub-projects' own (still seed-sourced) figures —
+  // per the client's call, ClickUp hours aren't split across sub-projects.
+  function demandForGroup(group, rows, m) {
+    const dyn = dynamicAverages.get(group);
+    if (rows.length === 1) {
+      const { demand, avg, isOverridden } = demandFor(rows[0], m, dyn?.avgHours);
+      return { demand, avg, isOverridden, isDynamic: !!dyn && !isOverridden, dyn };
+    }
+    if (dyn) return { demand: dyn.avgHours, avg: dyn.avgHours, isOverridden: false, isDynamic: true, dyn };
+    const demand = rows.reduce((s, r) => s + demandFor(r, m).demand, 0);
+    return { demand, avg: null, isOverridden: false, isDynamic: false, dyn: null };
   }
   const setOverride = (clientId, m, value) => setOverrides((prev) => ({ ...prev, [`${clientId}_${m}`]: value === "" ? null : Number(value) }));
 
@@ -401,9 +478,11 @@ function CapacityDashboardInner() {
 
   const demandByOwner = useMemo(() => {
     const m = {};
-    clients.forEach((c) => { const { demand } = demandFor(c, month); m[c.lead] = (m[c.lead] || 0) + demand; });
+    Object.entries(groupedByOwner).forEach(([owner, groups]) => {
+      groups.forEach((g) => { m[owner] = (m[owner] || 0) + demandForGroup(g.group, g.rows, month).demand; });
+    });
     return m;
-  }, [clients, month, overrides]);
+  }, [groupedByOwner, month, overrides, dynamicAverages]);
 
   const personCalc = useMemo(() => {
     const m = {};
@@ -426,7 +505,11 @@ function CapacityDashboardInner() {
     return m;
   }, [people, peopleMap, givenAway, receivedBy, demandByOwner]);
 
-  const totalDemand = useMemo(() => clients.reduce((s, c) => s + demandFor(c, month).demand, 0), [clients, month, overrides]);
+  const totalDemand = useMemo(() => {
+    let s = 0;
+    Object.values(groupedByOwner).forEach((groups) => groups.forEach((g) => { s += demandForGroup(g.group, g.rows, month).demand; }));
+    return s;
+  }, [groupedByOwner, month, overrides, dynamicAverages]);
   const totalCapacity = useMemo(() => people.reduce((s, p) => s + peopleMap[p.name].monthly, 0), [people, peopleMap]);
   const totalDMA = useMemo(() => support.filter((s) => s.from === "DMA (external)").reduce((s, x) => s + hoursOf(x), 0), [support, hoursOf]);
   const totalBillableAllocation = totalCapacity + totalDMA; // total hours the team+DMA is available to deliver
@@ -620,16 +703,21 @@ function CapacityDashboardInner() {
                       <tbody>
                         {groups.map((g) => {
                           const isMulti = g.rows.length > 1;
-                          const gDemand = g.rows.reduce((s, r) => s + demandFor(r, month).demand, 0);
                           if (!isMulti) {
                             const r = g.rows[0];
-                            const { demand, avg, isOverridden } = demandFor(r, month);
+                            const { demand, avg, isOverridden, isDynamic, dyn } = demandForGroup(g.group, g.rows, month);
                             return (
                               <tr key={g.group}>
                                 <td>{r.client}</td>
                                 <td><span className="pg-tag" style={{ color: "var(--accent)" }}>[{r.basis}]</span></td>
                                 <td className="right num">{fmt(r.agreed)}</td>
-                                <td className="right num">{fmt(avg)}</td>
+                                <td className="right num">
+                                  {fmt(avg)}
+                                  {isDynamic && (
+                                    <Zap size={11} style={{ marginLeft: 4, verticalAlign: -1, color: "var(--accent)" }}
+                                      title={`Live average from ClickUp: "${dyn.matchedFolder}" (${dyn.monthsCounted} month${dyn.monthsCounted === 1 ? "" : "s"} of billable data)`} />
+                                  )}
+                                </td>
                                 <td className="right num">
                                   {editingDemand === owner ? (
                                     <input className="pg-input" type="number" step="any" style={{ width: 72, padding: "4px 6px" }}
@@ -646,6 +734,7 @@ function CapacityDashboardInner() {
                           }
                           const groupKey = `${owner}::${g.group}`;
                           const groupOpen = !!expandedGroups[groupKey];
+                          const { demand: gDemand, isDynamic: gIsDynamic, dyn: gDyn } = demandForGroup(g.group, g.rows, month);
                           return (
                             <React.Fragment key={g.group}>
                               <tr>
@@ -656,7 +745,13 @@ function CapacityDashboardInner() {
                                   {g.group} <span style={{ fontSize: 10, color: "var(--fg-tertiary)" }}>({g.rows.length} sub-projects)</span>
                                 </td>
                                 <td><span className="pg-tag pg-tag--muted">[Combined]</span></td>
-                                <td className="right num">—</td><td className="right num">—</td>
+                                <td className="right num">—</td>
+                                <td className="right num">
+                                  {gIsDynamic && (
+                                    <Zap size={11} style={{ verticalAlign: -1, color: "var(--accent)" }}
+                                      title={`Live group average from ClickUp: "${gDyn.matchedFolder}" (${gDyn.monthsCounted} month${gDyn.monthsCounted === 1 ? "" : "s"} of billable data) — applied to the group total, not split across sub-projects`} />
+                                  )}
+                                </td>
                                 <td className="right num"><b>{gDemand.toFixed(1)}</b></td>
                               </tr>
                               {groupOpen && g.rows.map((r) => {
