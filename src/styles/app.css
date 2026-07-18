@@ -260,6 +260,19 @@ button { font: inherit; }
 .pg-cap-container { max-width: 1320px; margin: 0 auto; padding: 56px 32px 96px; }
 .pg-cap-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 18px; align-items: start; margin-top: 20px; }
 @media (max-width: 980px) { .pg-cap-grid { grid-template-columns: 1fr; } }
+/* independent scroll regions: each column sticks to the viewport and scrolls on its
+   own, so scrolling through a long consultant-card list never pushes the roster out
+   of view (and vice versa) */
+.pg-cap-pane {
+  position: sticky; top: 20px; max-height: calc(100vh - 40px); overflow-y: auto;
+  padding-right: 6px; scrollbar-width: thin; scrollbar-color: var(--border-soft) transparent;
+}
+.pg-cap-pane::-webkit-scrollbar { width: 8px; }
+.pg-cap-pane::-webkit-scrollbar-thumb { background: var(--border-soft); border-radius: var(--app-radius-pill); }
+.pg-cap-pane::-webkit-scrollbar-track { background: transparent; }
+@media (max-width: 980px) {
+  .pg-cap-pane { position: static; max-height: none; overflow-y: visible; padding-right: 0; }
+}
 .pg-cap-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); padding: 18px 22px; margin-top: 12px; }
 .pg-cap-card:first-child { margin-top: 0; }
 .pg-cap-addform { background: var(--accent-soft); border-radius: var(--app-radius-sm); padding: 12px 14px; margin-top: 10px; }

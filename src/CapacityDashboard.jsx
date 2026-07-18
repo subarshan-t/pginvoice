@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import * as XLSX from "xlsx";
 import {
-  ChevronDown, ChevronRight, ChevronLeft, Check, X, Plus, Pencil, Search, Download, AlertTriangle,
+  ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle,
 } from "lucide-react";
 
 /* ============================================================
@@ -298,7 +299,6 @@ function CapacityDashboardInner() {
   const [overrides, setOverrides] = useState({}); // key: `${clientId}_${month}` -> manually-set Projected Hrs
   const [editingDemand, setEditingDemand] = useState(null); // which consultant's client table is in edit mode
   const [month, setMonth] = useState(CURRENT_MONTH);
-  const [savedAt, setSavedAt] = useState(null);
   const [collapsed, setCollapsed] = useState({});
   const [editingCard, setEditingCard] = useState(null);
   const [addForm, setAddForm] = useState({ from: "", type: "pct", value: "" });
@@ -325,12 +325,12 @@ function CapacityDashboardInner() {
     setOverrides(loadKey("cap_overrides", {}));
     setLoaded(true);
   }, []);
-  useEffect(() => { if (loaded) { saveKey("cap_people", people); setSavedAt(Date.now()); } }, [people, loaded]);
-  useEffect(() => { if (loaded) { saveKey("cap_clients", clients); setSavedAt(Date.now()); } }, [clients, loaded]);
-  useEffect(() => { if (loaded) { saveKey("cap_support", support); setSavedAt(Date.now()); } }, [support, loaded]);
-  useEffect(() => { if (loaded) { saveKey("cap_notes", notes); setSavedAt(Date.now()); } }, [notes, loaded]);
-  useEffect(() => { if (loaded) { saveKey("cap_leaves", leaves); setSavedAt(Date.now()); } }, [leaves, loaded]);
-  useEffect(() => { if (loaded) { saveKey("cap_overrides", overrides); setSavedAt(Date.now()); } }, [overrides, loaded]);
+  useEffect(() => { if (loaded) saveKey("cap_people", people); }, [people, loaded]);
+  useEffect(() => { if (loaded) saveKey("cap_clients", clients); }, [clients, loaded]);
+  useEffect(() => { if (loaded) saveKey("cap_support", support); }, [support, loaded]);
+  useEffect(() => { if (loaded) saveKey("cap_notes", notes); }, [notes, loaded]);
+  useEffect(() => { if (loaded) saveKey("cap_leaves", leaves); }, [leaves, loaded]);
+  useEffect(() => { if (loaded) saveKey("cap_overrides", overrides); }, [overrides, loaded]);
 
   const resetSample = useCallback(() => { setPeople(SEED_PEOPLE); setClients(SEED_CLIENTS); setSupport(SEED_SUPPORT); setNotes([]); setLeaves({}); setOverrides({}); }, []);
   const addNote = () => {
@@ -441,6 +441,12 @@ function CapacityDashboardInner() {
   });
 
   const toggleCollapse = (owner) => setCollapsed((prev) => ({ ...prev, [owner]: !prev[owner] }));
+  const allExpanded = visibleOwners.length > 0 && visibleOwners.every((o) => !collapsed[o]);
+  const toggleAllCollapse = () => {
+    const next = { ...collapsed };
+    visibleOwners.forEach((o) => { next[o] = allExpanded; }); // if all currently expanded, collapse them; otherwise expand them
+    setCollapsed(next);
+  };
   const fmt = (n) => (n === null || n === undefined) ? "—" : Number(n).toFixed(1);
   const monthIdx = MONTHS.indexOf(month);
   const shiftMonth = (d) => setMonth(MONTHS[Math.max(0, Math.min(MONTHS.length - 1, monthIdx + d))]);
@@ -470,17 +476,69 @@ function CapacityDashboardInner() {
     setAddForm({ from: "", type: "pct", value: "" });
   }
 
-  function exportCSV() {
-    const rows = [["Name", "Role", "State", "Total Resource Hours", "Leaves", "Public Holidays", "Total Monthly Hours", "Billable Allocation %", "Total Monthly Billable Capacity", "Allocated Hours", "Availability"]];
-    people.forEach((p) => { const pc = personCalc[p.name]; const pm = peopleMap[p.name]; rows.push([p.name, p.role, p.state, pm.resourceHours.toFixed(1), pm.leaveHrs.toFixed(1), pm.publicHolidayHrs.toFixed(1), pm.totalMonthlyHours.toFixed(1), (p.rate * 100).toFixed(0) + "%", pc.base.toFixed(1), pc.allocatedTotal.toFixed(1), pc.spare.toFixed(1)]); });
-    rows.push([]); rows.push(["Total Demand", totalDemand.toFixed(1)]);
-    rows.push(["Total Billable Allocation", totalBillableAllocation.toFixed(1)]);
-    rows.push(["Difference", difference.toFixed(1)]);
-    const csv = rows.map((r) => r.map((v) => `"${v}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
+  // A proper multi-sheet workbook rather than one flat CSV: a Summary sheet up top,
+  // then Team Roster / Client Demand / Support Allocations / Notes as their own
+  // filterable, sensibly-widened sheets — each one usable on its own.
+  function exportXlsx() {
+    const wb = XLSX.utils.book_new();
+    const setCols = (ws, headerLen, widths) => { ws["!cols"] = widths; ws["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(headerLen - 1)}1` }; };
+
+    const summaryRows = [
+      ["Purple Giraffe — Capacity Ledger"],
+      [`Month: ${MONTH_LABELS[month]}`],
+      [`Generated: ${new Date().toLocaleString()}`],
+      [],
+      ["Metric", "Hours"],
+      ["Total demand", Number(totalDemand.toFixed(1))],
+      ["Total team capacity", Number(totalCapacity.toFixed(1))],
+      ["DMA (external) hours", Number(totalDMA.toFixed(1))],
+      ["Total billable allocation (team + DMA)", Number(totalBillableAllocation.toFixed(1))],
+      ["Difference (allocation − demand)", Number(difference.toFixed(1))],
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    wsSummary["!cols"] = [{ wch: 36 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
+
+    const rosterHeader = ["Consultant", "Role", "State", "Resource Hrs", "Leaves", "Public Holidays (hrs)", "Public Holidays (days)", "Monthly Hrs", "Billable %", "Billable Capacity", "Allocated Hrs", "Availability"];
+    const rosterRows = [rosterHeader];
+    people.forEach((p) => {
+      const pc = personCalc[p.name]; const pm = peopleMap[p.name];
+      rosterRows.push([p.name, p.role, p.state, Number(pm.resourceHours.toFixed(1)), Number(pm.leaveHrs.toFixed(1)), Number(pm.publicHolidayHrs.toFixed(1)), pm.holidayDays, Number(pm.totalMonthlyHours.toFixed(1)), p.rate, Number(pc.base.toFixed(1)), Number(pc.allocatedTotal.toFixed(1)), Number(pc.spare.toFixed(1))]);
+    });
+    const wsRoster = XLSX.utils.aoa_to_sheet(rosterRows);
+    setCols(wsRoster, rosterHeader.length, rosterHeader.map((h) => ({ wch: Math.max(13, h.length + 2) })));
+    XLSX.utils.book_append_sheet(wb, wsRoster, "Team Roster");
+
+    const demandHeader = ["Consultant", "Client", "Client Group", "Basis", "Agreed Hrs", "Average Hrs (trailing)", "Projected Hrs", "Manually Overridden?"];
+    const demandRows = [demandHeader];
+    clients.forEach((c) => {
+      const { demand, avg, isOverridden } = demandFor(c, month);
+      demandRows.push([c.lead, c.client, c.group, c.basis, c.agreed ?? "", avg !== null ? Number(avg.toFixed(1)) : "", Number(demand.toFixed(1)), isOverridden ? "Yes" : "No"]);
+    });
+    const wsDemand = XLSX.utils.aoa_to_sheet(demandRows);
+    setCols(wsDemand, demandHeader.length, demandHeader.map((h) => ({ wch: Math.max(15, h.length + 2) })));
+    XLSX.utils.book_append_sheet(wb, wsDemand, "Client Demand");
+
+    const supportHeader = ["From", "To", "Allocation Type", "Value", "Computed Hrs"];
+    const supportRows = [supportHeader];
+    support.forEach((s) => {
+      supportRows.push([s.from, s.to, s.type === "pct" ? "% of their time" : "Fixed hours", s.type === "pct" ? `${(s.value * 100).toFixed(0)}%` : s.value, Number(hoursOf(s).toFixed(1))]);
+    });
+    const wsSupport = XLSX.utils.aoa_to_sheet(supportRows);
+    setCols(wsSupport, supportHeader.length, supportHeader.map((h) => ({ wch: Math.max(15, h.length + 2) })));
+    XLSX.utils.book_append_sheet(wb, wsSupport, "Support Allocations");
+
+    const notesHeader = ["Date", "Note"];
+    const notesRows = [notesHeader, ...notes.map((n) => [new Date(n.ts).toLocaleString(), n.text])];
+    const wsNotes = XLSX.utils.aoa_to_sheet(notesRows);
+    wsNotes["!cols"] = [{ wch: 20 }, { wch: 90 }];
+    XLSX.utils.book_append_sheet(wb, wsNotes, "Notes");
+
+    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `capacity-ledger-${month}.csv`; a.click();
+    a.href = url; a.download = `capacity-ledger-${month}.xlsx`; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -493,14 +551,8 @@ function CapacityDashboardInner() {
       <div className="pg-app-header">
         <div>
           <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-          <h1 className="pg-app-header__title">Do we have the bandwidth?</h1>
-          <p className="pg-app-header__sub">Capacity ledger — team hours vs. client demand, by month.</p>
+          <h1 className="pg-app-header__title">Capacity ledger — team hours vs. client demand, by month.</h1>
         </div>
-        {savedAt && (
-          <span className="pg-tag" style={{ color: "var(--status-ok)", display: "inline-flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
-            <Check size={12} /> saved
-          </span>
-        )}
       </div>
 
       <div className="pg-panel" style={{ alignItems: "center" }}>
@@ -518,13 +570,19 @@ function CapacityDashboardInner() {
         <SearchBox label="Consultant" value={qConsultant} onChange={setQConsultant} />
         <SearchBox label="Client" value={qClient} onChange={setQClient} />
         <SearchBox label="Support hrs" value={qSupport} onChange={setQSupport} />
-        <button className="pg-btn" style={{ marginLeft: "auto" }} onClick={exportCSV}><Download size={14} /> Export</button>
+        <button className="pg-btn" style={{ marginLeft: "auto" }} onClick={exportXlsx}><Download size={14} /> Export</button>
       </div>
 
       <div className="pg-cap-grid">
 
         {/* ===================== LEFT: CONSULTANT CARDS ===================== */}
         <div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+            <button className="pg-btn-ghost" onClick={toggleAllCollapse}>
+              {allExpanded ? <><ChevronsUp size={12} /> Collapse all</> : <><ChevronsDown size={12} /> Expand all</>}
+            </button>
+          </div>
+          <div className="pg-cap-pane">
           {visibleOwners.length === 0 && <div className="pg-empty">No consultant matches all three search filters.</div>}
 
           {visibleOwners.map((owner) => {
@@ -668,10 +726,11 @@ function CapacityDashboardInner() {
               </div>
             );
           })}
+          </div>
         </div>
 
         {/* ===================== RIGHT: STATS + ROSTER + NOTES ===================== */}
-        <div>
+        <div className="pg-cap-pane">
           <div className="pg-cap-statrow">
             <div className="pg-cap-stat"><div className="pg-stat__value">{totalDemand.toFixed(0)}</div><div className="pg-stat__label">Total demand</div></div>
             <div className="pg-cap-stat"><div className="pg-stat__value">{totalBillableAllocation.toFixed(0)}</div><div className="pg-stat__label">Billable allocation</div></div>
