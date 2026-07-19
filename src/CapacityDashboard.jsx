@@ -107,13 +107,15 @@ function holidaysInMonthGrouped(monthStr) {
 }
 
 const uid = (p) => p + Math.random().toString(36).slice(2, 9);
-const FIXED_BASES = ["Package", "Project", "Quoted", "MAP", "Strategy"];
+export const FIXED_BASES = ["Package", "Project", "Quoted", "MAP", "Strategy"];
 const VARIABLE_BASES = ["Hourly", "Ad hoc"];
 
 /* ============================================================
    SEED DATA (unchanged from the real Resourcing sheet + ClickUp actuals)
+   Exported — Performance reuses this exact roster/client master instead of
+   keeping its own copy, so the two modules can never quietly drift apart.
 ============================================================ */
-const SEED_PEOPLE = [
+export const SEED_PEOPLE = [
   { id: "p1", name: "Holly", role: "Consultant", state: "SA", contracted: 38, rate: 0.70, note: "Standard" },
   { id: "p2", name: "Shreya", role: "Consultant", state: "SA", contracted: 38, rate: 0.60, note: "Probation" },
   { id: "p3", name: "Chloe", role: "Consultant", state: "SA", contracted: 30, rate: 0.70, note: "Standard" },
@@ -132,7 +134,7 @@ const SEED_PEOPLE = [
 function C(id, client, group, lead, basis, agreed, actuals, note) {
   return { id, client, group, lead, basis, agreed, actuals: actuals || null, note: note || "" };
 }
-const SEED_CLIENTS = [
+export const SEED_CLIENTS = [
   C("c1", "Amorim Cork", "Amorim Cork", "Chloe", "Package", 16, { "2026-01": 4.5, "2026-02": 5.3, "2026-03": 5.0, "2026-04": 9.5, "2026-05": 0.5, "2026-06": 0.8 }),
   C("c2", "Apex Energy", "Apex Energy", "Chloe", "Package", 16, { "2026-01": 11.7, "2026-02": 7.8, "2026-03": 22.8, "2026-04": 15.8, "2026-05": 18.3, "2026-06": 36.7 }),
   C("c3", "Apex Communications", "Apex Communications", "Chloe", "Package", 30.5, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 28.6, "2026-06": 19.5 }),
@@ -221,14 +223,16 @@ const SEED_SUPPORT = [
   { id: "s20", from: "Alex", to: "Purple Giraffe (internal)", type: "pct", value: 0.20 },
 ];
 
-const OWNERS = ["Holly", "Shreya", "Chloe", "Alice", "Amanda", "Lucy", "Vinavie"];
+export const OWNERS = ["Holly", "Shreya", "Chloe", "Alice", "Amanda", "Lucy", "Vinavie"];
 
 /* ============================================================
    STORAGE — plain localStorage (the source component targeted a
    sandboxed window.storage API that doesn't exist in a standalone
    browser; same fix already applied to the reconciliation module).
+   Exported so Performance can read the same roster/client edits live
+   instead of keeping a stale copy of its own.
 ============================================================ */
-function loadKey(key, fallback) {
+export function loadKey(key, fallback) {
   try {
     const raw = window.localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
@@ -236,6 +240,10 @@ function loadKey(key, fallback) {
 }
 function saveKey(key, value) {
   try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignore */ }
+  // Same signal idbSet fires for the large IndexedDB datasets — reused here so any
+  // mounted module (e.g. Performance reading the roster/client list this saved) can
+  // react live instead of only picking up the change on its own next mount.
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PG_DATA_EVENT, { detail: { key } }));
 }
 
 /* ============================================================

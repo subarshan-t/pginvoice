@@ -2,27 +2,13 @@ import React, { useState } from "react";
 import { FileText, BarChart3, TrendingUp } from "lucide-react";
 import PGReconciliation from "./App.jsx";
 import CapacityDashboard from "./CapacityDashboard.jsx";
+import PerformanceScorecard from "./PerformanceScorecard.jsx";
 
 const MODULES = [
   { key: "invoicing", label: "Client Invoicing", icon: FileText },
   { key: "capacity", label: "Capacity planning", icon: BarChart3 },
   { key: "performance", label: "Performance", icon: TrendingUp },
 ];
-
-function ComingSoon({ label }) {
-  return (
-    <div className="pg-container">
-      <div className="pg-app-header">
-        <div>
-          <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-          <h1 className="pg-app-header__title">{label}.</h1>
-          <p className="pg-app-header__sub">Not built yet — this is a placeholder for the module.</p>
-        </div>
-      </div>
-      <div className="pg-empty" style={{ marginTop: 24 }}>Coming soon.</div>
-    </div>
-  );
-}
 
 export default function Shell() {
   const [active, setActive] = useState("invoicing");
@@ -53,7 +39,7 @@ export default function Shell() {
             alive across tab switches. */}
         <div style={{ display: active === "invoicing" ? "block" : "none" }}><PGReconciliation /></div>
         <div style={{ display: active === "capacity" ? "block" : "none" }}><CapacityDashboard /></div>
-        <div style={{ display: active === "performance" ? "block" : "none" }}><ComingSoon label="Performance" /></div>
+        <div style={{ display: active === "performance" ? "block" : "none" }}><PerformanceScorecard /></div>
       </main>
     </div>
   );
