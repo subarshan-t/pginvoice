@@ -89,42 +89,80 @@ function LineChart({ series, months }) {
   const maxV = allVals.length ? Math.max(...allVals) * 1.15 : 10;
   const x = (i) => (months.length <= 1 ? padL + plotW / 2 : padL + (i / (months.length - 1)) * plotW);
   const y = (v) => padT + plotH - (maxV ? (v / maxV) * plotH : 0);
+  const [hoverIdx, setHoverIdx] = useState(null);
+  const svgRef = useRef(null);
 
   if (months.length === 0) {
     return <div className="pg-empty">No months of ClickUp data to chart yet.</div>;
   }
 
+  function handleMove(e) {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width) return;
+    const relX = ((e.clientX - rect.left) / rect.width) * W;
+    let nearest = 0, best = Infinity;
+    months.forEach((_, i) => { const d = Math.abs(x(i) - relX); if (d < best) { best = d; nearest = i; } });
+    setHoverIdx(nearest);
+  }
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%">
-      {[0, 0.25, 0.5, 0.75, 1].map((f) => {
-        const v = maxV * f;
-        const gy = y(v);
-        return (
-          <g key={f}>
-            <line x1={padL} x2={W - padR} y1={gy} y2={gy} stroke="var(--border-soft)" strokeWidth="1" />
-            <text x={2} y={gy + 4} fill="var(--fg-tertiary)" fontSize="9" fontFamily="var(--font-mono)">{v.toFixed(0)}</text>
-          </g>
-        );
-      })}
-      {series.map((s, si) => {
-        const pts = s.points.map((v, i) => (v === null || v === undefined ? null : [x(i), y(v)]));
-        const segments = [];
-        let cur = [];
-        pts.forEach((p) => { if (p === null) { if (cur.length) segments.push(cur); cur = []; } else cur.push(p); });
-        if (cur.length) segments.push(cur);
-        return (
-          <g key={si}>
-            {segments.map((seg, gi) => (
-              <path key={gi} d={seg.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ")} fill="none" stroke={s.color} strokeWidth="2.25" />
-            ))}
-            {pts.map((p, i) => (p ? <circle key={i} cx={p[0]} cy={p[1]} r="2.75" fill={s.color} /> : null))}
-          </g>
-        );
-      })}
-      {months.map((m, i) => (
-        <text key={m} x={x(i)} y={H - 8} fill="var(--fg-tertiary)" fontSize="10" textAnchor="middle" fontFamily="var(--font-mono)">{monthLabelShort(m)}</text>
-      ))}
-    </svg>
+    <div className="pg-linechart" style={{ position: "relative" }}>
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} width="100%" onMouseMove={handleMove} onMouseLeave={() => setHoverIdx(null)}>
+        {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+          const v = maxV * f;
+          const gy = y(v);
+          return (
+            <g key={f}>
+              <line x1={padL} x2={W - padR} y1={gy} y2={gy} stroke="var(--border-soft)" strokeWidth="1" />
+              <text x={2} y={gy + 4} fill="var(--fg-tertiary)" fontSize="9" fontFamily="var(--font-mono)">{v.toFixed(0)}</text>
+            </g>
+          );
+        })}
+        {series.map((s, si) => {
+          const pts = s.points.map((v, i) => (v === null || v === undefined ? null : [x(i), y(v)]));
+          const segments = [];
+          let cur = [];
+          pts.forEach((p) => { if (p === null) { if (cur.length) segments.push(cur); cur = []; } else cur.push(p); });
+          if (cur.length) segments.push(cur);
+          return (
+            <g key={si}>
+              {segments.map((seg, gi) => (
+                <path key={gi} d={seg.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ")} fill="none" stroke={s.color} strokeWidth="2.25" />
+              ))}
+              {pts.map((p, i) => (p ? <circle key={i} cx={p[0]} cy={p[1]} r={hoverIdx === i ? 4 : 2.75} fill={s.color} /> : null))}
+            </g>
+          );
+        })}
+        {months.map((m, i) => (
+          <text key={m} x={x(i)} y={H - 8} fill="var(--fg-tertiary)" fontSize="10" textAnchor="middle" fontFamily="var(--font-mono)">{monthLabelShort(m)}</text>
+        ))}
+        {hoverIdx !== null && (
+          <line x1={x(hoverIdx)} x2={x(hoverIdx)} y1={padT} y2={padT + plotH} stroke="var(--accent)" strokeWidth="1" strokeDasharray="3,3" opacity="0.5" />
+        )}
+      </svg>
+      {hoverIdx !== null && (
+        <div style={{
+          position: "absolute", left: `${(x(hoverIdx) / W) * 100}%`, top: 4, transform: "translateX(-50%)",
+          background: "var(--bg-card)", border: "1px solid var(--border-soft)", borderRadius: "var(--app-radius-sm)",
+          padding: "7px 10px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-primary)",
+          pointerEvents: "none", whiteSpace: "nowrap", zIndex: 5, boxShadow: "0 6px 18px rgba(0,0,0,0.35)",
+        }}>
+          <div style={{ color: "var(--fg-tertiary)", marginBottom: 4 }}>{monthLabelShort(months[hoverIdx])}</div>
+          {series.map((s) => {
+            const v = s.points[hoverIdx];
+            if (v === null || v === undefined) return null;
+            return (
+              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <i style={{ width: 8, height: 8, borderRadius: "50%", display: "inline-block", background: s.color }} />
+                {s.label}: <b>{v.toFixed(1)}</b>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -164,6 +202,16 @@ function PerformanceInner() {
 
   const [qConsultant, setQConsultant] = useState("");
   const [selectedConsultant, setSelectedConsultant] = useState(null);
+
+  const [rangeFrom, setRangeFrom] = useState(null);
+  const [rangeTo, setRangeTo] = useState(null);
+
+  // Clearing the search box resets the chart back to the whole-business view, the
+  // mirror image of picking a match auto-populating it — only fires when the box
+  // itself transitions to empty, so selecting a row directly (search left blank)
+  // is never clobbered by this.
+  useEffect(() => { if (qClient.trim() === "") setSelectedClient(null); }, [qClient]);
+  useEffect(() => { if (qConsultant.trim() === "") setSelectedConsultant(null); }, [qConsultant]);
 
   // Live data: the ClickUp export lives in IndexedDB (Client Invoicing uploads it), and
   // the roster/client master lives in localStorage (Capacity Planning edits it) — both
@@ -210,10 +258,31 @@ function PerformanceInner() {
     for (const r of clickup.rows) if (r.monthKey) set.add(r.monthKey);
     return [...set].sort();
   }, [clickup]);
-  const latestMonth = availableMonths.length ? availableMonths[availableMonths.length - 1] : null;
-  const rangeLabel = availableMonths.length
-    ? (availableMonths.length === 1 ? monthLabelShort(availableMonths[0]) : `${monthLabelShort(availableMonths[0])}–${monthLabelShort(latestMonth)}`)
+
+  // Selected date range (month-to-month) — defaults to the full span of whatever data
+  // is loaded, and snaps back to the full span if the current selection stops being
+  // valid (a fresh/shorter export). Otherwise a user-picked range survives new uploads.
+  useEffect(() => {
+    if (!availableMonths.length) { setRangeFrom(null); setRangeTo(null); return; }
+    setRangeFrom((prev) => (prev && availableMonths.includes(prev)) ? prev : availableMonths[0]);
+    setRangeTo((prev) => (prev && availableMonths.includes(prev)) ? prev : availableMonths[availableMonths.length - 1]);
+  }, [availableMonths]);
+
+  // The months actually driving every chart/table below — a sub-window of
+  // availableMonths bounded by the From/To pickers (order-independent).
+  const activeMonths = useMemo(() => {
+    if (!rangeFrom || !rangeTo) return availableMonths;
+    const i0 = availableMonths.indexOf(rangeFrom), i1 = availableMonths.indexOf(rangeTo);
+    if (i0 === -1 || i1 === -1) return availableMonths;
+    const [lo, hi] = i0 <= i1 ? [i0, i1] : [i1, i0];
+    return availableMonths.slice(lo, hi + 1);
+  }, [availableMonths, rangeFrom, rangeTo]);
+
+  const latestMonth = activeMonths.length ? activeMonths[activeMonths.length - 1] : null;
+  const rangeLabel = activeMonths.length
+    ? (activeMonths.length === 1 ? monthLabelShort(activeMonths[0]) : `${monthLabelShort(activeMonths[0])}–${monthLabelShort(latestMonth)}`)
     : "no data yet";
+  const isFullRange = rangeFrom === (availableMonths[0] ?? null) && rangeTo === (availableMonths[availableMonths.length - 1] ?? null);
 
   /* ---- client groups, same grouping Capacity Planning uses ---- */
   const groups = useMemo(() => {
@@ -254,18 +323,18 @@ function PerformanceInner() {
       if (!match) return;
       const byMonth = folderMonth.get(match.name) || new Map();
       const monthHours = new Map();
-      availableMonths.forEach((m) => monthHours.set(m, (byMonth.get(m) || 0) / 60));
+      activeMonths.forEach((m) => monthHours.set(m, (byMonth.get(m) || 0) / 60));
       result.set(g.group, { matchedFolder: match.name, confidence: match.confidence, monthHours });
     });
     return result;
-  }, [clickup, groups, availableMonths]);
+  }, [clickup, groups, activeMonths]);
 
   // expanding-window average — same semantics as Capacity Planning's trailingAverage:
-  // the mean of every available month strictly before `m`.
+  // the mean of every month in the selected range strictly before `m`.
   function expandingAvgAt(monthHours, m) {
-    const idx = availableMonths.indexOf(m);
+    const idx = activeMonths.indexOf(m);
     if (idx <= 0) return null;
-    const prior = availableMonths.slice(0, idx).map((k) => monthHours.get(k) || 0);
+    const prior = activeMonths.slice(0, idx).map((k) => monthHours.get(k) || 0);
     return prior.reduce((a, b) => a + b, 0) / prior.length;
   }
 
@@ -279,15 +348,15 @@ function PerformanceInner() {
     const cm = clientMonthly.get(g.group);
     const monthHours = cm ? cm.monthHours : new Map();
     const last = latestMonth ? (monthHours.get(latestMonth) || 0) : null;
-    const idx = latestMonth ? availableMonths.indexOf(latestMonth) : -1;
-    const window3 = idx >= 0 ? availableMonths.slice(Math.max(0, idx - 2), idx + 1) : [];
+    const idx = latestMonth ? activeMonths.indexOf(latestMonth) : -1;
+    const window3 = idx >= 0 ? activeMonths.slice(Math.max(0, idx - 2), idx + 1) : [];
     const avg3 = cm && window3.length ? window3.reduce((s, m) => s + (monthHours.get(m) || 0), 0) / window3.length : null;
     const variance = meta.agreedTotal > 0 && avg3 !== null ? ((avg3 - meta.agreedTotal) / meta.agreedTotal) * 100 : null;
     return { ...g, ...meta, matched: !!cm, matchedFolder: cm?.matchedFolder, last, avg3, variance };
   }).sort((a, b) => {
     const av = a.variance === null ? -999 : Math.abs(a.variance), bv = b.variance === null ? -999 : Math.abs(b.variance);
     return bv - av;
-  }), [filteredGroups, clientMonthly, latestMonth, availableMonths]);
+  }), [filteredGroups, clientMonthly, latestMonth, activeMonths]);
 
   const clientChart = useMemo(() => {
     if (selectedClient) {
@@ -296,9 +365,9 @@ function PerformanceInner() {
       const meta = groupMeta(g);
       const cm = clientMonthly.get(g.group);
       const monthHours = cm ? cm.monthHours : new Map();
-      const actualsPts = availableMonths.map((m) => monthHours.get(m) ?? 0);
-      const agreedPts = meta.isFixed ? availableMonths.map(() => meta.agreedTotal) : availableMonths.map(() => null);
-      const hourlyPts = meta.isFixed ? availableMonths.map(() => null) : availableMonths.map((m) => expandingAvgAt(monthHours, m));
+      const actualsPts = activeMonths.map((m) => monthHours.get(m) ?? 0);
+      const agreedPts = meta.isFixed ? activeMonths.map(() => meta.agreedTotal) : activeMonths.map(() => null);
+      const hourlyPts = meta.isFixed ? activeMonths.map(() => null) : activeMonths.map((m) => expandingAvgAt(monthHours, m));
       const series = [
         { label: "Agreed", color: "var(--fg-tertiary)", points: agreedPts },
         { label: "Hourly (trailing)", color: "var(--accent-orchid)", points: hourlyPts },
@@ -307,7 +376,7 @@ function PerformanceInner() {
       const ytdActuals = actualsPts.reduce((s, v) => s + (v || 0), 0);
       return {
         series, isFixed: meta.isFixed, matched: !!cm, matchedFolder: cm?.matchedFolder,
-        ytd: { agreed: meta.isFixed ? meta.agreedTotal * availableMonths.length : null, hourly: meta.isFixed ? null : (availableMonths.length ? ytdActuals / availableMonths.length : null), actuals: ytdActuals },
+        ytd: { agreed: meta.isFixed ? meta.agreedTotal * activeMonths.length : null, hourly: meta.isFixed ? null : (activeMonths.length ? ytdActuals / activeMonths.length : null), actuals: ytdActuals },
         current: { agreed: meta.isFixed ? meta.agreedTotal : null, hourly: meta.isFixed ? null : expandingAvgAt(monthHours, latestMonth), actuals: latestMonth ? (monthHours.get(latestMonth) ?? 0) : null },
       };
     }
@@ -316,22 +385,22 @@ function PerformanceInner() {
     const fixedGroups = matchedGroups.filter((g) => groupMeta(g).isFixed);
     const hourlyGroups = matchedGroups.filter((g) => !groupMeta(g).isFixed);
     const agreedTotal = fixedGroups.reduce((s, g) => s + groupMeta(g).agreedTotal, 0);
-    const hourlyByMonth = availableMonths.map((m) => hourlyGroups.reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0));
-    const actualsByMonth = availableMonths.map((m) => matchedGroups.reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0));
-    const agreedByMonth = availableMonths.map(() => agreedTotal);
+    const hourlyByMonth = activeMonths.map((m) => hourlyGroups.reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0));
+    const actualsByMonth = activeMonths.map((m) => matchedGroups.reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0));
+    const agreedByMonth = activeMonths.map(() => agreedTotal);
     const series = [
       { label: "Agreed", color: "var(--fg-tertiary)", points: agreedByMonth },
       { label: "Hourly clients (actual)", color: "var(--accent-orchid)", points: hourlyByMonth },
       { label: "Actuals (all)", color: "var(--accent)", points: actualsByMonth },
     ];
     const totYtd = actualsByMonth.reduce((a, b) => a + b, 0);
-    const lastIdx = availableMonths.length - 1;
+    const lastIdx = activeMonths.length - 1;
     return {
       series, isFixed: null, matched: matchedGroups.length > 0,
-      ytd: { agreed: agreedTotal * availableMonths.length, hourly: availableMonths.length ? hourlyByMonth.reduce((a, b) => a + b, 0) / availableMonths.length : null, actuals: totYtd },
+      ytd: { agreed: agreedTotal * activeMonths.length, hourly: activeMonths.length ? hourlyByMonth.reduce((a, b) => a + b, 0) / activeMonths.length : null, actuals: totYtd },
       current: { agreed: agreedTotal, hourly: lastIdx >= 0 ? hourlyByMonth[lastIdx] : null, actuals: lastIdx >= 0 ? actualsByMonth[lastIdx] : null },
     };
-  }, [selectedClient, groups, clientMonthly, availableMonths, latestMonth]);
+  }, [selectedClient, groups, clientMonthly, activeMonths, latestMonth]);
 
   /* ---- team: match real ClickUp usernames to the roster by fuzzy name ---- */
   const userMatch = useMemo(() => {
@@ -350,8 +419,9 @@ function PerformanceInner() {
 
   const botHours = useMemo(() => {
     if (!clickup?.rows?.length) return 0;
-    return clickup.rows.filter((r) => (r.user || "").trim().toLowerCase() === "purple giraffe").reduce((s, r) => s + r.minutes, 0) / 60;
-  }, [clickup]);
+    const monthSet = new Set(activeMonths);
+    return clickup.rows.filter((r) => r.monthKey && monthSet.has(r.monthKey) && (r.user || "").trim().toLowerCase() === "purple giraffe").reduce((s, r) => s + r.minutes, 0) / 60;
+  }, [clickup, activeMonths]);
 
   // key -> Map(monthKey -> {total, clientBillable, pgBillable, unbillable}). Unmatched real
   // usernames get their own key (raw name) rather than being silently folded into nothing —
@@ -359,8 +429,9 @@ function PerformanceInner() {
   const teamMonthly = useMemo(() => {
     const map = new Map();
     if (!clickup?.rows?.length) return map;
+    const monthSet = new Set(activeMonths);
     for (const r of clickup.rows) {
-      if (!r.monthKey || !r.user) continue;
+      if (!r.monthKey || !r.user || !monthSet.has(r.monthKey)) continue;
       if (r.user.trim().toLowerCase() === "purple giraffe") continue;
       const key = userMatch.get(r.user) || r.user;
       if (!map.has(key)) map.set(key, new Map());
@@ -377,7 +448,7 @@ function PerformanceInner() {
       else bucket.clientBillable += hrs;
     }
     return map;
-  }, [clickup, userMatch]);
+  }, [clickup, userMatch, activeMonths]);
 
   const rosterNamesSet = useMemo(() => new Set(people.map((p) => p.name)), [people]);
   const unmatchedNames = useMemo(() => [...teamMonthly.keys()].filter((k) => !rosterNamesSet.has(k)).sort(), [teamMonthly, rosterNamesSet]);
@@ -389,16 +460,16 @@ function PerformanceInner() {
   const filteredTeam = useMemo(() => teamRoster.filter((t) => !qConsultant || t.name.toLowerCase().includes(qConsultant.toLowerCase())), [teamRoster, qConsultant]);
   const teamTableRows = useMemo(() => filteredTeam.map((t) => {
     const byMonth = teamMonthly.get(t.name);
-    const totals = availableMonths.reduce((acc, m) => {
+    const totals = activeMonths.reduce((acc, m) => {
       const b = byMonth?.get(m);
       if (b) { acc.total += b.total; acc.clientBillable += b.clientBillable; acc.pgBillable += b.pgBillable; acc.unbillable += b.unbillable; }
       return acc;
     }, { total: 0, clientBillable: 0, pgBillable: 0, unbillable: 0 });
     return { ...t, totals, hasData: !!byMonth };
-  }), [filteredTeam, teamMonthly, availableMonths]);
+  }), [filteredTeam, teamMonthly, activeMonths]);
 
   const teamChart = useMemo(() => {
-    const sumField = (byMonthGetter, field) => availableMonths.map((m) => {
+    const sumField = (byMonthGetter, field) => activeMonths.map((m) => {
       let s = 0;
       byMonthGetter().forEach((byMonth) => { const b = byMonth.get(m); if (b) s += b[field]; });
       return s;
@@ -406,10 +477,10 @@ function PerformanceInner() {
     if (selectedConsultant) {
       const byMonth = teamMonthly.get(selectedConsultant);
       if (!byMonth) return { series: [], ytd: {}, current: {} };
-      const totalPts = availableMonths.map((m) => byMonth.get(m)?.total || 0);
-      const cbPts = availableMonths.map((m) => byMonth.get(m)?.clientBillable || 0);
-      const pgPts = availableMonths.map((m) => byMonth.get(m)?.pgBillable || 0);
-      const unbPts = availableMonths.map((m) => byMonth.get(m)?.unbillable || 0);
+      const totalPts = activeMonths.map((m) => byMonth.get(m)?.total || 0);
+      const cbPts = activeMonths.map((m) => byMonth.get(m)?.clientBillable || 0);
+      const pgPts = activeMonths.map((m) => byMonth.get(m)?.pgBillable || 0);
+      const unbPts = activeMonths.map((m) => byMonth.get(m)?.unbillable || 0);
       const series = [
         { label: "Total Timelog", color: "var(--fg-secondary)", points: totalPts },
         { label: "Client Billable", color: "var(--status-ok)", points: cbPts },
@@ -417,8 +488,8 @@ function PerformanceInner() {
         { label: "Unbillable", color: "var(--status-over)", points: unbPts },
       ];
       const totYtd = totalPts.reduce((a, b) => a + b, 0), cbYtd = cbPts.reduce((a, b) => a + b, 0), pgYtd = pgPts.reduce((a, b) => a + b, 0), unbYtd = unbPts.reduce((a, b) => a + b, 0);
-      const lastIdx = availableMonths.length - 1;
-      const last = lastIdx >= 0 ? (byMonth.get(availableMonths[lastIdx]) || { total: 0, clientBillable: 0, pgBillable: 0, unbillable: 0 }) : null;
+      const lastIdx = activeMonths.length - 1;
+      const last = lastIdx >= 0 ? (byMonth.get(activeMonths[lastIdx]) || { total: 0, clientBillable: 0, pgBillable: 0, unbillable: 0 }) : null;
       return {
         series,
         ytd: { clientPct: totYtd ? (cbYtd / totYtd) * 100 : 0, pgPct: totYtd ? (pgYtd / totYtd) * 100 : 0, unbPct: totYtd ? (unbYtd / totYtd) * 100 : 0 },
@@ -434,13 +505,13 @@ function PerformanceInner() {
       { label: "Unbillable", color: "var(--status-over)", points: unbPts },
     ];
     const totYtd = totalPts.reduce((a, b) => a + b, 0), cbYtd = cbPts.reduce((a, b) => a + b, 0), pgYtd = pgPts.reduce((a, b) => a + b, 0), unbYtd = unbPts.reduce((a, b) => a + b, 0);
-    const lastIdx = availableMonths.length - 1;
+    const lastIdx = activeMonths.length - 1;
     return {
       series,
       ytd: { clientPct: totYtd ? (cbYtd / totYtd) * 100 : 0, pgPct: totYtd ? (pgYtd / totYtd) * 100 : 0, unbPct: totYtd ? (unbYtd / totYtd) * 100 : 0 },
       current: { clientPct: lastIdx >= 0 && totalPts[lastIdx] ? (cbPts[lastIdx] / totalPts[lastIdx]) * 100 : 0, pgPct: lastIdx >= 0 && totalPts[lastIdx] ? (pgPts[lastIdx] / totalPts[lastIdx]) * 100 : 0, unbPct: lastIdx >= 0 && totalPts[lastIdx] ? (unbPts[lastIdx] / totalPts[lastIdx]) * 100 : 0 },
     };
-  }, [selectedConsultant, teamMonthly, availableMonths]);
+  }, [selectedConsultant, teamMonthly, activeMonths]);
 
   const basisOptions = [{ value: null, label: "All types" }, ...Array.from(new Set(clients.map((c) => c.basis))).sort().map((b) => ({ value: b, label: b }))];
 
@@ -504,6 +575,29 @@ function PerformanceInner() {
         <button className={`pg-tab ${tab === "team" ? "pg-tab--active" : ""}`} onClick={() => setTab("team")}>Team</button>
       </div>
 
+      {hasData && (
+        <div className="pg-panel" style={{ alignItems: "center" }}>
+          <label className="pg-field">
+            <span className="pg-field__label">From</span>
+            <select className="pg-select" value={rangeFrom || ""} onChange={(e) => setRangeFrom(e.target.value)} style={{ minWidth: 120 }}>
+              {availableMonths.map((m) => <option key={m} value={m}>{monthLabelShort(m)}</option>)}
+            </select>
+          </label>
+          <label className="pg-field">
+            <span className="pg-field__label">To</span>
+            <select className="pg-select" value={rangeTo || ""} onChange={(e) => setRangeTo(e.target.value)} style={{ minWidth: 120 }}>
+              {availableMonths.map((m) => <option key={m} value={m}>{monthLabelShort(m)}</option>)}
+            </select>
+          </label>
+          {!isFullRange && (
+            <button className="pg-btn-ghost" onClick={() => { setRangeFrom(availableMonths[0]); setRangeTo(availableMonths[availableMonths.length - 1]); }}>
+              Reset to full range
+            </button>
+          )}
+          <span className="pg-footnote" style={{ marginLeft: "auto", marginTop: 0 }}>Applies to both the Client and Team tabs · {activeMonths.length} of {availableMonths.length} month{availableMonths.length === 1 ? "" : "s"} shown</span>
+        </div>
+      )}
+
       {tab === "client" && (
         <>
           <div className="pg-panel">
@@ -525,7 +619,7 @@ function PerformanceInner() {
                     </span>
                   ))}
                 </div>
-                <LineChart series={clientChart.series} months={availableMonths} />
+                <LineChart series={clientChart.series} months={activeMonths} />
                 {selectedClient && (
                   <p className="pg-footnote" style={{ marginTop: 6 }}>
                     Showing <b>{selectedClient}</b> — {clientChart.isFixed ? "no Hourly line, since this is a fixed-agreement client." : "no Agreed line, since this client has no fixed agreement."}
@@ -600,7 +694,7 @@ function PerformanceInner() {
                     </span>
                   ))}
                 </div>
-                <LineChart series={teamChart.series} months={availableMonths} />
+                <LineChart series={teamChart.series} months={activeMonths} />
                 {selectedConsultant && <p className="pg-footnote" style={{ marginTop: 6 }}>Showing <b>{selectedConsultant}</b>.</p>}
               </div>
 
