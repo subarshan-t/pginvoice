@@ -611,7 +611,7 @@ function PerformanceInner() {
 
           <div className="pg-cap-grid">
             <div>
-              <div className="pg-panel" style={{ flexDirection: "column", alignItems: "stretch" }}>
+              <div className="pg-panel" style={{ flexDirection: "column", flexWrap: "nowrap", alignItems: "stretch" }}>
                 <div style={{ display: "flex", gap: 16, marginBottom: 8, flexWrap: "wrap" }}>
                   {clientChart.series.map((s) => (
                     <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--fg-tertiary)" }}>
@@ -628,7 +628,7 @@ function PerformanceInner() {
                 )}
               </div>
 
-              <div className="pg-panel" style={{ flexDirection: "column", alignItems: "stretch" }}>
+              <div className="pg-panel" style={{ flexDirection: "column", flexWrap: "nowrap", alignItems: "stretch" }}>
                 <div className="pg-table-wrap" style={{ overflowX: "auto" }}>
                   <table className="pg-table">
                     <thead><tr><th>Client</th><th>Lead</th><th className="right num">Agreed Hrs</th><th className="right num">3-month Avg</th><th className="right num">Last month</th><th className="right num">Variance</th><th>Flag</th></tr></thead>
@@ -686,7 +686,7 @@ function PerformanceInner() {
 
           <div className="pg-cap-grid">
             <div>
-              <div className="pg-panel" style={{ flexDirection: "column", alignItems: "stretch" }}>
+              <div className="pg-panel" style={{ flexDirection: "column", flexWrap: "nowrap", alignItems: "stretch" }}>
                 <div style={{ display: "flex", gap: 16, marginBottom: 8, flexWrap: "wrap" }}>
                   {teamChart.series.map((s) => (
                     <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--fg-tertiary)" }}>
@@ -698,7 +698,7 @@ function PerformanceInner() {
                 {selectedConsultant && <p className="pg-footnote" style={{ marginTop: 6 }}>Showing <b>{selectedConsultant}</b>.</p>}
               </div>
 
-              <div className="pg-panel" style={{ flexDirection: "column", alignItems: "stretch" }}>
+              <div className="pg-panel" style={{ flexDirection: "column", flexWrap: "nowrap", alignItems: "stretch" }}>
                 <div className="pg-table-wrap" style={{ overflowX: "auto" }}>
                   <table className="pg-table">
                     <thead><tr><th><Users size={11} /> Consultant</th><th className="right num">Total Timelog</th><th className="right num">Client Billable</th><th className="right num">PG Billable</th><th className="right num">Unbillable</th></tr></thead>
