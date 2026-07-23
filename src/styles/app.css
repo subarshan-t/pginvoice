@@ -31,7 +31,53 @@
   --app-radius:      14px;
   --app-radius-sm:   8px;
   --app-radius-pill: 999px;
+
+  /* Text on the lavender accent (buttons, selection) — the accent itself doesn't
+     change between themes, so this stays fixed rather than tracking --bg-base,
+     which does. Without this a light-mode primary button would render white text
+     on a light-purple background. */
+  --fg-on-accent: rgb(31, 27, 36);
+
+  /* Fixed light-lavender fill for solid accent backgrounds (buttons) — kept
+     separate from --accent itself, which the light theme darkens below for
+     text/border contrast; a button's background still needs to stay light so
+     --fg-on-accent reads on top of it in both themes. */
+  --accent-bg: rgb(210, 187, 255);
 }
+
+/* ============================================================================
+   LIGHT THEME
+   Applied via data-theme="light" on <html> (set by Shell's toggle, persisted to
+   localStorage). Overrides only the surfaces/text/hairlines that actually flip —
+   brand accents (--accent, --accent-deep, --accent-orchid) and the status colors
+   stay the same in both themes, since they're already muted enough to read on
+   either background. The design system's own --bg-light/--fg-on-light tokens
+   anchor the base pair; the rest are new values in the same family.
+   ============================================================================ */
+:root[data-theme="light"] {
+  --bg-base:     rgb(250, 249, 247);
+  --bg-card:     rgb(255, 255, 255);
+  --bg-elevated: rgb(241, 239, 236);
+  --bg-nav:      rgba(255, 254, 254, 0.85);
+
+  --fg-primary:   rgb(19, 19, 19);
+  --fg-secondary: rgb(90, 87, 86);
+  --fg-tertiary:  rgba(19, 19, 19, 0.5);
+
+  --border-subtle: rgba(19, 19, 19, 0.08);
+  --border-soft:   rgba(19, 19, 19, 0.14);
+
+  --accent-soft: rgba(210, 187, 255, 0.35);
+
+  /* The brand lavender (--accent) is a pastel tuned for text/icons on a near-black
+     page — on a light page the same value reads as washed-out. Swap it for the
+     design system's own --accent-deep (already meant for use on light surfaces)
+     everywhere --accent is used as text/border/stroke. Solid-fill button
+     backgrounds use the separate, unchanging --accent-bg instead, so buttons
+     don't flip along with it. */
+  --accent: var(--accent-deep);
+}
+:root[data-theme="light"] ::selection { color: var(--fg-on-accent); }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -43,7 +89,7 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-::selection { background: var(--accent-soft); color: #131313; }
+::selection { background: var(--accent-soft); color: var(--fg-on-accent); }
 button { font: inherit; }
 
 .pg-app { min-height: 100vh; }
@@ -63,6 +109,7 @@ button { font: inherit; }
   text-transform: uppercase; color: var(--fg-secondary);
 }
 .pg-sidebar__nav { display: flex; flex-direction: column; gap: 2px; }
+.pg-sidebar__theme-toggle { border-top: 1px solid var(--border-subtle); padding-top: 16px; }
 .pg-sidebar__link {
   display: flex; align-items: center; gap: 10px; text-align: left;
   background: transparent; border: 0; border-radius: var(--app-radius-sm);
@@ -141,7 +188,7 @@ button { font: inherit; }
   display: inline-flex; align-items: center; gap: 8px;
   font-family: var(--font-mono); font-weight: 500; font-size: 11px;
   letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--bg-base); background: var(--accent); border: 0; border-radius: var(--app-radius-sm);
+  color: var(--fg-on-accent); background: var(--accent-bg); border: 0; border-radius: var(--app-radius-sm);
   padding: 10px 16px; cursor: pointer;
   transition: background var(--dur) var(--ease), transform 0.12s var(--ease);
 }

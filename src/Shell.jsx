@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { FileText, BarChart3, TrendingUp } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { FileText, BarChart3, TrendingUp, Sun, Moon } from "lucide-react";
 import PGReconciliation from "./App.jsx";
 import CapacityDashboard from "./CapacityDashboard.jsx";
 import PerformanceScorecard from "./PerformanceScorecard.jsx";
@@ -10,8 +10,23 @@ const MODULES = [
   { key: "performance", label: "Performance", icon: TrendingUp },
 ];
 
+const THEME_KEY = "pg-theme";
+
 export default function Shell() {
   const [active, setActive] = useState("invoicing");
+  const [theme, setTheme] = useState(() => {
+    try { return window.localStorage.getItem(THEME_KEY) || "dark"; } catch (e) { return "dark"; }
+  });
+
+  // Applied on <html> (not just the shell) so the whole document — including anything
+  // rendered outside .pg-shell, like a future modal or the browser's own UI chrome via
+  // color-scheme — picks up the theme, not just the app content.
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.style.colorScheme = theme;
+    try { window.localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+  }, [theme]);
+
   return (
     <div className="pg-shell">
       <aside className="pg-sidebar">
@@ -31,6 +46,15 @@ export default function Shell() {
             </button>
           ))}
         </nav>
+        <button
+          className="pg-sidebar__link pg-sidebar__theme-toggle"
+          style={{ marginTop: "auto" }}
+          onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          {theme === "dark" ? "Light mode" : "Dark mode"}
+        </button>
       </aside>
       <main className="pg-shell__main">
         {/* All three modules stay mounted at once — switching tabs used to unmount
