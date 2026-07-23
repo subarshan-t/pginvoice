@@ -51,6 +51,7 @@ export default function Shell() {
           style={{ marginTop: "auto" }}
           onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
           title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label="Toggle dark / light mode"
         >
           {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           {theme === "dark" ? "Light mode" : "Dark mode"}

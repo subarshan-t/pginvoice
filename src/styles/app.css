@@ -88,6 +88,7 @@ body {
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background-color 0.2s var(--ease), color 0.2s var(--ease);
 }
 ::selection { background: var(--accent-soft); color: var(--fg-on-accent); }
 button { font: inherit; }
