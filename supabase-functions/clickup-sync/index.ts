@@ -6,6 +6,12 @@
 // task, minutes, billable, user, isInternal, monthKey/monthLabel, dateKey) so
 // no downstream module needs to know the data didn't come from a file.
 //
+// Processes one calendar month at a time (fetch -> upsert -> stale-row cleanup
+// -> discard, then move on) rather than accumulating every month's rows in
+// memory before a single giant upsert — the earlier all-at-once version hit
+// the Edge Function's compute/resource limit once real historical data (many
+// months x thousands of entries) was involved.
+//
 // Invoked on a schedule via pg_cron (see the migration SQL) — not by the
 // browser directly. CLICKUP_API_TOKEN must be set as an Edge Function secret
 // (Project Settings -> Edge Functions -> Secrets); it is never sent to the
@@ -14,7 +20,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const CLICKUP_BASE = "https://api.clickup.com/api/v2";
 const TIMEZONE = "Australia/Adelaide"; // matches the CSV export's "Start Text" localisation
-const MONTHS_BACK = Number(Deno.env.get("CLICKUP_SYNC_MONTHS_BACK") ?? "13");
+const MONTHS_BACK = Number(Deno.env.get("CLICKUP_SYNC_MONTHS_BACK") ?? "6");
 
 // Same rule the frontend's nameMatch.js uses — kept in sync manually since this
 // runs in a separate Deno runtime and can't share an import with the Vite app.
@@ -110,8 +116,9 @@ Deno.serve(async (req: Request) => {
       windows.push({ start, end });
     }
 
-    const allRows: any[] = [];
+    let totalSynced = 0;
     let rawSample: any = null;
+
     for (const w of windows) {
       const qs = new URLSearchParams({
         start_date: String(w.start.getTime()),
@@ -123,13 +130,15 @@ Deno.serve(async (req: Request) => {
       const data = await clickupFetch(`/team/${teamId}/time_entries?${qs.toString()}`, token);
       const entries = data.data || [];
       if (!rawSample && entries.length) rawSample = entries[0];
+
+      const monthRows: any[] = [];
       for (const entry of entries) {
         const minutes = Number(entry.duration || 0) / 60000;
         if (!minutes) continue;
         const folder = resolveFolderName(entry);
         const startMs = Number(entry.start || 0);
         const { year, month, day } = localDateParts(startMs);
-        allRows.push({
+        monthRows.push({
           entry_id: String(entry.id),
           folder,
           task: resolveTaskName(entry),
@@ -145,36 +154,39 @@ Deno.serve(async (req: Request) => {
           updated_at: new Date().toISOString(),
         });
       }
-    }
 
-    if (allRows.length) {
-      const { error: upsertError } = await supabase
-        .from("pginvoice_clickup_entries")
-        .upsert(allRows, { onConflict: "entry_id" });
-      if (upsertError) throw upsertError;
-    }
+      if (monthRows.length) {
+        const { error: upsertError } = await supabase
+          .from("pginvoice_clickup_entries")
+          .upsert(monthRows, { onConflict: "entry_id" });
+        if (upsertError) throw upsertError;
+      }
 
-    // Remove entries that were edited/deleted on ClickUp's side since the last
-    // sync — anything inside the synced window that this run didn't see again.
-    const rangeStart = windows[0].start.toISOString();
-    const rangeEnd = windows[windows.length - 1].end.toISOString();
-    const fetchedIds = allRows.map((r) => r.entry_id);
-    if (fetchedIds.length) {
-      await supabase
+      // Stale-row cleanup, scoped to just this month so neither the id list nor
+      // the delete query ever has to cover more than one month's data at a time.
+      const { data: existing, error: existingError } = await supabase
         .from("pginvoice_clickup_entries")
-        .delete()
-        .gte("entry_start", rangeStart)
-        .lt("entry_start", rangeEnd)
-        .not("entry_id", "in", `(${fetchedIds.map((id) => `"${id}"`).join(",")})`);
+        .select("entry_id")
+        .gte("entry_start", w.start.toISOString())
+        .lt("entry_start", w.end.toISOString());
+      if (existingError) throw existingError;
+      const fetchedIds = new Set(monthRows.map((r) => r.entry_id));
+      const staleIds = (existing || []).map((r) => r.entry_id).filter((id) => !fetchedIds.has(id));
+      if (staleIds.length) {
+        const { error: deleteError } = await supabase.from("pginvoice_clickup_entries").delete().in("entry_id", staleIds);
+        if (deleteError) throw deleteError;
+      }
+
+      totalSynced += monthRows.length;
     }
 
     await supabase.from("pginvoice_sync_meta").update({
       last_synced_at: new Date().toISOString(), last_sync_status: "ok",
-      last_sync_message: `Synced ${allRows.length} entries across ${windows.length} months.`,
-      rows_synced: allRows.length,
+      last_sync_message: `Synced ${totalSynced} entries across ${windows.length} months.`,
+      rows_synced: totalSynced,
     }).eq("id", 1);
 
-    return new Response(JSON.stringify({ ok: true, rows_synced: allRows.length, team_id: teamId, raw_sample: rawSample }), { headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, rows_synced: totalSynced, team_id: teamId, raw_sample: rawSample }), { headers: { "Content-Type": "application/json" } });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await supabase.from("pginvoice_sync_meta").update({
