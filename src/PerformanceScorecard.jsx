@@ -558,14 +558,14 @@ function PerformanceInner() {
       <div className="pg-app-header">
         <div>
           <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-          <h1 className="pg-app-header__title">Performance scorecard — how is the business actually doing?</h1>
+          <h1 className="pg-app-header__title">Performance scorecard: how is the business actually doing?</h1>
           <p className="pg-app-header__sub">Select a client or consultant to see their own trend; leave it blank for the whole-business view. Figures come live from whatever ClickUp export is loaded in Client Invoicing, and the roster/client list from Capacity Planning.</p>
         </div>
       </div>
 
       {!hasData && (
         <div className="pg-banner-warn">
-          No ClickUp data loaded yet — upload a CSV in Client Invoicing to see real trends here. The roster and client list below are shown with no actuals until then.
+          No ClickUp data loaded yet, upload a CSV in Client Invoicing to see real trends here. The roster and client list below are shown with no actuals until then.
         </div>
       )}
       {hasData && botHours > 0.05 && (
@@ -626,8 +626,8 @@ function PerformanceInner() {
                 <LineChart series={clientChart.series} months={activeMonths} />
                 {selectedClient && (
                   <p className="pg-footnote" style={{ marginTop: 6 }}>
-                    Showing <b>{selectedClient}</b> — {clientChart.isFixed ? "no Hourly line, since this is a fixed-agreement client." : "no Agreed line, since this client has no fixed agreement."}
-                    {!clientChart.matched && " No matching ClickUp folder found for this client — actuals are 0."}
+                    Showing <b>{selectedClient}</b>: {clientChart.isFixed ? "no Hourly line, since this is a fixed-agreement client." : "no Agreed line, since this client has no fixed agreement."}
+                    {!clientChart.matched && " No matching ClickUp folder found for this client, actuals are 0."}
                   </p>
                 )}
               </div>

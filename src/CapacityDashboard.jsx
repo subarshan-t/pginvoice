@@ -147,7 +147,7 @@ export const SEED_PEOPLE = [
   { id: "p2", name: "Shreya", role: "Consultant", state: "SA", contracted: 38, rate: 0.60, note: "Probation" },
   { id: "p3", name: "Chloe", role: "Consultant", state: "SA", contracted: 30, rate: 0.70, note: "Standard" },
   { id: "p4", name: "Alice", role: "Consultant", state: "SA", contracted: 22.5, rate: 0.70, note: "Standard" },
-  { id: "p5", name: "Amanda", role: "Consultant", state: "WA", contracted: 38, rate: 0.20, note: "Support-heavy role — worth reviewing" },
+  { id: "p5", name: "Amanda", role: "Consultant", state: "WA", contracted: 38, rate: 0.20, note: "Support-heavy role, worth reviewing" },
   { id: "p6", name: "Lucy", role: "Consultant", state: "QLD", contracted: 38, rate: 0.50, note: "Probation + BDM discount" },
   { id: "p7", name: "Vinavie", role: "Consultant", state: "SA", contracted: 38, rate: 0.70, note: "Standard" },
   { id: "p8", name: "Alex", role: "Coordinator", state: "SA", contracted: 38, rate: 0.70, note: "Supports others + Purple Giraffe internal work" },
@@ -169,17 +169,17 @@ export const SEED_CLIENTS = [
   C("c5", "Equippers", "Equippers", "Chloe", "Quoted", null, { "2026-01": 0, "2026-02": 11.2, "2026-03": 5.0, "2026-04": 3.3, "2026-05": 10.0, "2026-06": 0.4 }),
   C("c6", "Spectrum Consultants", "Spectrum Consultants", "Chloe", "Package", 24, { "2026-01": 21.8, "2026-02": 36.9, "2026-03": 35.9, "2026-04": 22.7, "2026-05": 22.8, "2026-06": 21.1 }),
   C("c7", "Treasure Boxes", "Treasure Boxes", "Chloe", "Package", 10, { "2026-01": 21.8, "2026-02": 20.2, "2026-03": 3.4, "2026-04": 0, "2026-05": 0, "2026-06": 11.5 }),
-  C("c8", "Warrina Homes — Package", "Warrina Homes", "Chloe", "Package", 24, { "2026-01": 28.5, "2026-02": 27.8, "2026-03": 7.2, "2026-04": 46.8, "2026-05": 50.0, "2026-06": 44.1 }),
-  C("c9", "Warrina Homes — Employee Handbook", "Warrina Homes", "Chloe", "Project", null, null),
+  C("c8", "Warrina Homes: Package", "Warrina Homes", "Chloe", "Package", 24, { "2026-01": 28.5, "2026-02": 27.8, "2026-03": 7.2, "2026-04": 46.8, "2026-05": 50.0, "2026-06": 44.1 }),
+  C("c9", "Warrina Homes: Employee Handbook", "Warrina Homes", "Chloe", "Project", null, null),
 
   C("c10", "Australian GW", "Australian GW", "Vinavie", "Hourly", 0, null),
   C("c11", "Clare Valley Wine & Grape", "Clare Valley Wine & Grape", "Vinavie", "Package", 8, { "2026-01": 17.9, "2026-02": 5.2, "2026-03": 9.0, "2026-04": 7.8, "2026-05": 2.3, "2026-06": 0.8 }),
   C("c12", "Coonawarra", "Coonawarra", "Vinavie", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 25.5, "2026-04": 17.7, "2026-05": 21.8, "2026-06": 13.6 }),
-  C("c13", "Riverland Wine — Package", "Riverland Wine", "Vinavie", "Package", 8, { "2026-01": 9.8, "2026-02": 14.8, "2026-03": 14.2, "2026-04": 11.9, "2026-05": 23.1, "2026-06": 3.2 }),
-  C("c14", "Riverland Wine — Melbourne Showcase", "Riverland Wine", "Vinavie", "Quoted", 25, null),
+  C("c13", "Riverland Wine: Package", "Riverland Wine", "Vinavie", "Package", 8, { "2026-01": 9.8, "2026-02": 14.8, "2026-03": 14.2, "2026-04": 11.9, "2026-05": 23.1, "2026-06": 3.2 }),
+  C("c14", "Riverland Wine: Melbourne Showcase", "Riverland Wine", "Vinavie", "Quoted", 25, null),
   C("c15", "Sevenhill", "Sevenhill", "Vinavie", "Project", 6, null),
-  C("c16", "Vegetation Solutions — MVS", "Vegetation Solutions — MVS", "Vinavie", "Hourly", null, { "2026-01": 3.8, "2026-02": 3.6, "2026-03": 3.5, "2026-04": 1.3, "2026-05": 1.2, "2026-06": 0.4 }),
-  C("c17", "Vegetation Solutions — Firewood", "Vegetation Solutions — Firewood", "Vinavie", "Hourly", null, { "2026-01": 1.3, "2026-02": 2.5, "2026-03": 22.4, "2026-04": 21.1, "2026-05": 19.3, "2026-06": 13.0 }),
+  C("c16", "Vegetation Solutions: MVS", "Vegetation Solutions: MVS", "Vinavie", "Hourly", null, { "2026-01": 3.8, "2026-02": 3.6, "2026-03": 3.5, "2026-04": 1.3, "2026-05": 1.2, "2026-06": 0.4 }),
+  C("c17", "Vegetation Solutions: Firewood", "Vegetation Solutions: Firewood", "Vinavie", "Hourly", null, { "2026-01": 1.3, "2026-02": 2.5, "2026-03": 22.4, "2026-04": 21.1, "2026-05": 19.3, "2026-06": 13.0 }),
 
   C("c18", "Aus3C", "Aus3C", "Shreya", "Package", 40, { "2026-01": 35.0, "2026-02": 58.9, "2026-03": 56.0, "2026-04": 27.4, "2026-05": 67.6, "2026-06": 18.6 }),
   C("c19", "GPEX", "GPEX", "Shreya", "Package", 70, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 38.6, "2026-05": 105.3, "2026-06": 140.4 }),
@@ -202,15 +202,15 @@ export const SEED_CLIENTS = [
   C("c34", "Bee Squared Consulting", "Bee Squared", "Holly", "Package", 24, { "2026-01": 29.1, "2026-02": 25.7, "2026-03": 24.4, "2026-04": 13.4, "2026-05": 30.1, "2026-06": 29.4 }),
   C("c35", "Comunet", "Comunet", "Holly", "Hourly", 32, { "2026-01": 22.8, "2026-02": 21.8, "2026-03": 20.8, "2026-04": 6.8, "2026-05": 47.4, "2026-06": 32.8 }),
   C("c36", "Clarke Energy (base)", "Clarke Energy", "Holly", "Hourly", null, { "2026-01": 26.9, "2026-02": 37.2, "2026-03": 48.1, "2026-04": 26.0, "2026-05": 67.2, "2026-06": 112.3 }),
-  C("c37", "Clarke Energy — AEP", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c38", "Clarke Energy — ACES", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c39", "Clarke Energy — AIMEX", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c40", "Clarke Energy — WA", "Clarke Energy", "Holly", "Hourly", null, null),
+  C("c37", "Clarke Energy: AEP", "Clarke Energy", "Holly", "Hourly", null, null),
+  C("c38", "Clarke Energy: ACES", "Clarke Energy", "Holly", "Hourly", null, null),
+  C("c39", "Clarke Energy: AIMEX", "Clarke Energy", "Holly", "Hourly", null, null),
+  C("c40", "Clarke Energy: WA", "Clarke Energy", "Holly", "Hourly", null, null),
   C("c41", "History Trust of SA", "History Trust of SA", "Holly", "MAP", 80, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 28.1, "2026-06": 82.6 }),
   C("c42", "PRG Consulting", "PRG Consulting", "Holly", "Package", 8, { "2026-01": 13.5, "2026-02": 15.4, "2026-03": 13.1, "2026-04": 1.0, "2026-05": 5.0, "2026-06": 5.4 }),
   C("c43", "Utter Gutters", "Utter Gutters", "Holly", "Package", 32, { "2026-01": 8.2, "2026-02": 6.5, "2026-03": 6.2, "2026-04": 6.0, "2026-05": 7.1, "2026-06": 9.0 }),
   C("c44", "Villani Jewellers", "Villani Jewellers", "Holly", "Package", 16, { "2026-01": 12.8, "2026-02": 16.8, "2026-03": 16.5, "2026-04": 20.9, "2026-05": 16.8, "2026-06": 12.9 }),
-  C("c45", "Villani — Website Project", "Villani Jewellers", "Holly", "Project", 8, null),
+  C("c45", "Villani: Website Project", "Villani Jewellers", "Holly", "Project", 8, null),
 
   C("c46", "Better Medical", "Better Medical", "Alice", "Package", 32, { "2026-01": 48.0, "2026-02": 43.6, "2026-03": 47.6, "2026-04": 32.9, "2026-05": 18.1, "2026-06": 47.7 }),
   C("c47", "Duco", "Duco", "Alice", "Package", 24, { "2026-01": 16.2, "2026-02": 34.8, "2026-03": 25.6, "2026-04": 27.2, "2026-05": 3.3, "2026-06": 0.0 }),
@@ -326,7 +326,7 @@ function RosterMenu({ person, onUpdate }) {
 
           <div className="pg-field__label" style={{ marginTop: 12 }}>ClickUp alias</div>
           <p className="pg-footnote" style={{ marginTop: 2, marginBottom: 4 }}>
-            Only needed if their ClickUp username doesn't match "{person.name}" — e.g. a full name ClickUp shows that this roster's short name can't fuzzy-match.
+            Only needed if their ClickUp username doesn't match "{person.name}", e.g. a full name ClickUp shows that this roster's short name can't fuzzy-match.
           </p>
           <input
             className="pg-input" type="text" style={{ width: "100%" }}
@@ -708,7 +708,7 @@ function CapacityDashboardInner() {
     const setCols = (ws, headerLen, widths) => { ws["!cols"] = widths; ws["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(headerLen - 1)}1` }; };
 
     const summaryRows = [
-      ["Purple Giraffe — Capacity Ledger"],
+      ["Purple Giraffe: Capacity Ledger"],
       [`Month: ${MONTH_LABELS[month]}`],
       [`Generated: ${new Date().toLocaleString()}`],
       [],
@@ -776,7 +776,7 @@ function CapacityDashboardInner() {
       <div className="pg-app-header">
         <div>
           <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-          <h1 className="pg-app-header__title">Capacity ledger — team hours vs. client demand, by month.</h1>
+          <h1 className="pg-app-header__title">Capacity ledger: team hours vs. client demand, by month.</h1>
         </div>
       </div>
 
@@ -889,7 +889,7 @@ function CapacityDashboardInner() {
                                 <td className="right num">
                                   {gIsDynamic && (
                                     <Zap size={11} style={{ verticalAlign: -1, color: "var(--accent)" }}
-                                      title={`Live group average from ClickUp: "${gDyn.matchedFolder}" (${gDyn.monthsCounted} month${gDyn.monthsCounted === 1 ? "" : "s"} of billable data) — applied to the group total, not split across sub-projects`} />
+                                      title={`Live group average from ClickUp: "${gDyn.matchedFolder}" (${gDyn.monthsCounted} month${gDyn.monthsCounted === 1 ? "" : "s"} of billable data), applied to the group total, not split across sub-projects`} />
                                   )}
                                 </td>
                                 <td className="right num"><b>{gDemand.toFixed(1)}</b></td>
@@ -982,7 +982,7 @@ function CapacityDashboardInner() {
                             <div className="pg-alertbar" style={{ background: "var(--status-over-soft)", color: "var(--status-over)", marginTop: 10 }}>
                               <AlertTriangle size={13} />
                               <span className="pg-alertbar__text">
-                                Risk: {addForm.from} would be committing {check.total.toFixed(1)} hrs in total (their own {check.ownDemand.toFixed(1)} hrs of client work + {(check.currentAway + preview).toFixed(1)} hrs given to others) against a capacity of {check.base.toFixed(1)} hrs — {(check.total - check.base).toFixed(1)} hrs over.
+                                Risk: {addForm.from} would be committing {check.total.toFixed(1)} hrs in total (their own {check.ownDemand.toFixed(1)} hrs of client work + {(check.currentAway + preview).toFixed(1)} hrs given to others) against a capacity of {check.base.toFixed(1)} hrs, {(check.total - check.base).toFixed(1)} hrs over.
                               </span>
                             </div>
                           )}
@@ -1072,7 +1072,7 @@ function CapacityDashboardInner() {
                   return <p key={item.date} style={{ fontFamily: "var(--font-body)", fontSize: 12.5, color: "var(--fg-secondary)", marginTop: 8 }}>{sentence}</p>;
                 });
               })()}
-              <p className="pg-footnote" style={{ marginTop: 8 }}>Sourced from each state's official 2026 public holiday calendar — Christmas Eve/New Year's Eve part-day holidays and weekend-falling dates with no substitute aren't counted here since they don't affect a working day.</p>
+              <p className="pg-footnote" style={{ marginTop: 8 }}>Sourced from each state's official 2026 public holiday calendar. Christmas Eve/New Year's Eve part-day holidays and weekend-falling dates with no substitute aren't counted here since they don't affect a working day.</p>
             </div>
 
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px dashed var(--border-soft)" }}>

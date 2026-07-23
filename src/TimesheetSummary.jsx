@@ -101,7 +101,7 @@ function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDa
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<title>${esc(consultantName)} — ${esc(monthText)} timesheet</title>
+<title>${esc(consultantName)}: ${esc(monthText)} timesheet</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
   @page { margin: 18mm 18mm 34mm 18mm; size: A4; }
@@ -290,14 +290,14 @@ function TimesheetInner() {
       <div className="pg-app-header">
         <div>
           <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-          <h1 className="pg-app-header__title">Timesheet summary — daily hours by consultant.</h1>
-          <p className="pg-app-header__sub">Total time logged in ClickUp per day, for whichever consultant and month you pick. Not filtered to billable hours — this mirrors the raw timesheet, not the invoicing view.</p>
+          <h1 className="pg-app-header__title">Timesheet summary: daily hours by consultant.</h1>
+          <p className="pg-app-header__sub">Total time logged in ClickUp per day, for whichever consultant and month you pick. Not filtered to billable hours, this mirrors the raw timesheet, not the invoicing view.</p>
         </div>
       </div>
 
       {!hasData && (
         <div className="pg-banner-warn">
-          No ClickUp data loaded yet — upload a CSV in Client Invoicing to see daily hours here.
+          No ClickUp data loaded yet, upload a CSV in Client Invoicing to see daily hours here.
         </div>
       )}
 

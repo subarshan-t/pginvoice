@@ -120,7 +120,7 @@ function parseAccruedWorkbook(buffer) {
     const m = parseHeaderToMonth(header[c], contextYear);
     if (!m) continue;
     if (m.year > maxSaneYear) {
-      warnings.push(`Column "${String(header[c])}" parsed as ${m.label} — that looks like a typo in the source sheet (year is well in the future). It's still included, but check it.`);
+      warnings.push(`Column "${String(header[c])}" parsed as ${m.label}, which looks like a typo in the source sheet (year is well in the future). It's still included, but check it.`);
     } else {
       contextYear = m.year; // don't let a bad year poison inference for later month-only headers
     }
@@ -132,7 +132,7 @@ function parseAccruedWorkbook(buffer) {
   const byMonth = new Map();
   for (const bc of rawCols) byMonth.set(monthKey(bc.year, bc.month), bc);
   if (byMonth.size < rawCols.length) {
-    warnings.push(`Found ${rawCols.length - byMonth.size} duplicate month column(s) in the accrued sheet — using the rightmost (latest) one for each month.`);
+    warnings.push(`Found ${rawCols.length - byMonth.size} duplicate month column(s) in the accrued sheet, using the rightmost (latest) one for each month.`);
   }
   const balanceCols = [...byMonth.values()].sort((a, b) => (a.year - b.year) || (a.month - b.month));
 
@@ -167,7 +167,7 @@ function parseAccruedWorkbook(buffer) {
   const nameCounts = new Map();
   for (const c of clients) nameCounts.set(c.name, (nameCounts.get(c.name) || 0) + 1);
   const dupNames = [...nameCounts.entries()].filter(([, n]) => n > 1).map(([n]) => n);
-  if (dupNames.length) warnings.push(`${dupNames.length} client name${dupNames.length === 1 ? "" : "s"} appear more than once in the accrued sheet (${dupNames.slice(0, 5).join(", ")}${dupNames.length > 5 ? ", …" : ""}) — only the first row for each is used.`);
+  if (dupNames.length) warnings.push(`${dupNames.length} client name${dupNames.length === 1 ? "" : "s"} appear more than once in the accrued sheet (${dupNames.slice(0, 5).join(", ")}${dupNames.length > 5 ? ", …" : ""}); only the first row for each is used.`);
 
   return { clients, balanceCols, sheetName, warnings };
 }
@@ -243,7 +243,7 @@ function parseClickupCsv(file, onDone, onErr) {
           dateKey: startMonth ? dateKeyStr(startMonth.year, startMonth.month, startMonth.day) : null,
         });
       }
-      if (rows.length && zeroCount === rows.length) warnings.push("Every row parsed to zero hours — the ClickUp export format may have changed.");
+      if (rows.length && zeroCount === rows.length) warnings.push("Every row parsed to zero hours; the ClickUp export format may have changed.");
       onDone({ rows, hasBillable: !!hBillable, hasUser: !!hUser, hasStartDate: !!hStart, warnings });
     },
     error: (e) => onErr("Couldn't read the CSV: " + e.message),
@@ -307,7 +307,7 @@ function buildPrintHtml(c, monthText, priorMonthText) {
       <table>
         <tr><td class="label">Time tracked this month</td><td class="right">${fmt(workedRounded)} h</td></tr>
       </table>
-      <p class="note">${type === "hourly" ? "Hourly-rate client — invoice at the agreed hourly rate for these hours." : "Queensland (previously) client — no accrued balance on record."}</p>
+      <p class="note">${type === "hourly" ? "Hourly-rate client: invoice at the agreed hourly rate for these hours." : "Queensland (previously) client: no accrued balance on record."}</p>
     </div>`;
 
   return `<!DOCTYPE html>
@@ -878,7 +878,7 @@ export default function PGReconciliation() {
   const summaryText = (c) => {
     const lines = [];
     const monthText = invoiceMonth || "this month";
-    lines.push(`${c.displayName} — hours for ${monthText}`);
+    lines.push(`${c.displayName}: hours for ${monthText}`);
     if (c.accruedClient && c.accruedClient.name !== c.name) lines.push(`(ClickUp folder: ${c.name})`);
     lines.push(`Client type: ${TYPE_LABELS[c.type]}`);
     if (consultantFilter) lines.push(`Filtered to consultant: ${consultantFilter}`);
@@ -903,7 +903,7 @@ export default function PGReconciliation() {
       lines.push(`Total accrued time: ${fmt(c.worked + p)} h`);
       lines.push(c.remaining >= 0 ? `Remaining this month: ${fmt(c.remaining)} h` : `Over by ${fmt(Math.abs(c.remaining))} h`);
       if (c.status === "over") lines.push(`⚠ Over the +10% KPI (${fmt(c.kpiPct, 1)}% of package)`);
-      if (c.status === "under") lines.push(`⚠ Under the −10% KPI (${fmt(c.kpiPct, 1)}% of package) — accruing`);
+      if (c.status === "under") lines.push(`⚠ Under the −10% KPI (${fmt(c.kpiPct, 1)}% of package), accruing`);
     }
     return lines.join("\n");
   };
@@ -947,7 +947,7 @@ export default function PGReconciliation() {
           {clickupSource === "manual" ? (
             <>
               <WifiOff size={14} style={{ color: "var(--fg-tertiary)" }} />
-              <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Showing a manually uploaded file — overrides live sync until the next reload.</span>
+              <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Showing a manually uploaded file, overrides live sync until the next reload.</span>
             </>
           ) : syncMeta?.last_sync_status === "error" ? (
             <>
@@ -1041,7 +1041,7 @@ export default function PGReconciliation() {
                 className="pg-select" style={{ minWidth: 260 }}>
                 <option value="package">Clients on a Package ({typeCounts.package})</option>
                 <option value="hourly">Clients on Hourly rate ({typeCounts.hourly})</option>
-                <option value="quoted" disabled>Quoted Clients ({typeCounts.quoted}) — coming later</option>
+                <option value="quoted" disabled>Quoted Clients ({typeCounts.quoted}), coming later</option>
                 <option value="queensland">Queensland Clients (prv) ({typeCounts.queensland})</option>
               </select>
             </label>
@@ -1072,7 +1072,7 @@ export default function PGReconciliation() {
         {/* mid-month pace banner — only shown when the reporting period is the current, still-open month */}
         {ready && monthProgress && (
           <div className="pg-banner-warn" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
-            Mid-month check — day {monthProgress.dayOfMonth} of {monthProgress.totalDays} ({fmt(monthProgress.pct, 0)}% of the month elapsed). Package figures below are hours worked so far this month, not a final total.
+            Mid-month check: day {monthProgress.dayOfMonth} of {monthProgress.totalDays} ({fmt(monthProgress.pct, 0)}% of the month elapsed). Package figures below are hours worked so far this month, not a final total.
           </div>
         )}
 
@@ -1144,7 +1144,7 @@ export default function PGReconciliation() {
             {visible.length === 0 && (
               <div className="pg-empty">
                 {clientTypeFilter === "quoted"
-                  ? "Quoted clients aren't tracked here yet — this bucket is a placeholder."
+                  ? "Quoted clients aren't tracked here yet, this bucket is a placeholder."
                   : consultantFilter
                     ? `${consultantFilter} didn't work on any ${TYPE_LABELS[clientTypeFilter].toLowerCase()} this month.`
                     : `No ${TYPE_LABELS[clientTypeFilter].toLowerCase()} in this view.`}
@@ -1253,8 +1253,8 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
           <AlertTriangle size={13} />
           <span className="pg-alertbar__text">
             {isQld
-              ? "Queensland (previously) client — not on the accrued sheet, no reconciliation."
-              : "Hourly-rate client — no package on file. If this looks like a name mismatch, match it below."}
+              ? "Queensland (previously) client, not on the accrued sheet, no reconciliation."
+              : "Hourly-rate client, no package on file. If this looks like a name mismatch, match it below."}
           </span>
           <select defaultValue="__none__" onChange={(e) => onSetMatch(e.target.value)}>
             <option value="__none__">Match to accrued client…</option>
