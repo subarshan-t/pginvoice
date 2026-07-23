@@ -12,6 +12,8 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
 
+@keyframes pg-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
 :root {
   --status-ok:        rgb(146, 189, 148);   /* muted sage — on track            */
   --status-ok-soft:   rgba(146, 189, 148, 0.12);

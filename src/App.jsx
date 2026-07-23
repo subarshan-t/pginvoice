@@ -4,10 +4,12 @@ import * as XLSX from "xlsx";
 import {
   Upload, Copy, Check, ChevronDown, ChevronUp, Download, Search,
   AlertTriangle, Link2, FileSpreadsheet, FileText, Printer, Users, ArrowUpDown,
+  RefreshCw, Wifi, WifiOff,
 } from "lucide-react";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { idbGet, idbSet } from "./idbStore.js";
 import { findMatch, isInternalFolder } from "./nameMatch.js";
+import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync } from "./clickupSync.js";
 
 // ---------------------------- time text → minutes ----------------------------
 function parseTimeTextToMinutes(raw) {
@@ -37,6 +39,17 @@ const fmt = (hrs, dec = 2) =>
     ? (Math.round(hrs * Math.pow(10, dec)) / Math.pow(10, dec)).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec })
     : "—";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function timeAgo(iso) {
+  if (!iso) return null;
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  const days = Math.round(hrs / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
 // "Priya" for a single contributor; "Priya (18.00h), Suba (4.00h)" when more than one logged
 // time against the same task — hours already shown in the Hours column, so only spelled out
 // per-person when there's more than one name to disambiguate.
@@ -419,6 +432,10 @@ export default function PGReconciliation() {
   const justHydratedClickupRef = useRef(undefined);
   const justHydratedAccruedRef = useRef(undefined);
   const [hydrated, setHydrated] = useState(false);
+  const [syncMeta, setSyncMeta] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [clickupSource, setClickupSource] = useState(null); // "supabase" | "manual"
+  const manualOverrideRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -453,8 +470,36 @@ export default function PGReconciliation() {
         }
       } catch (e) { /* ignore */ }
       setHydrated(true);
+
+      // Live ClickUp data, kept fresh by a Supabase-scheduled sync (see
+      // clickupSync.js) — this is what makes the app auto-populate on every
+      // reload, without waiting for a manual upload. A manual upload later in
+      // this same session still wins until the next reload (see handleClickup
+      // and handleManualSync below), guarded by manualOverrideRef so a slow
+      // network response can't clobber a file the user just chose.
+      fetchSyncMeta().then(setSyncMeta).catch(() => {});
+      fetchClickupFromSupabase().then((live) => {
+        if (!live || manualOverrideRef.current) return;
+        setClickup(live);
+        setClickupSource("supabase");
+      }).catch((e) => console.error("Supabase ClickUp fetch failed:", e));
     })();
   }, []);
+
+  const handleManualSync = async () => {
+    setSyncing(true);
+    manualOverrideRef.current = false; // an explicit "Sync now" click means: give me live data
+    try {
+      await triggerManualSync();
+      const live = await fetchClickupFromSupabase();
+      if (live) { setClickup(live); setClickupSource("supabase"); }
+      setSyncMeta(await fetchSyncMeta());
+    } catch (e) {
+      setClickupErr("Sync failed: " + (e && e.message ? e.message : String(e)));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
     if (!hydrated) return;
@@ -536,6 +581,8 @@ export default function PGReconciliation() {
     setClickupErr(null);
     setDataMonthKey(""); // force fresh period auto-detection for this new file, rather than
                           // keeping whatever was selected for the previous one
+    manualOverrideRef.current = true; // wins over live sync until the next reload
+    setClickupSource("manual");
     parseClickupCsv(file,
       (r) => setClickup({ ...r, fileName: file.name }),
       (msg) => { setClickupErr(msg); setClickup(null); });
@@ -892,6 +939,35 @@ export default function PGReconciliation() {
           <FileCard title="Accrued Hours report" hint="Master accrued/package spreadsheet (.xlsx)." file={accrued?.fileName} err={accruedErr} onClick={() => accruedInput.current?.click()} />
           <input ref={clickupInput} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={(e) => handleClickup(e.target.files?.[0])} />
           <input ref={accruedInput} type="file" accept=".xlsx,.xlsm,.csv" style={{ display: "none" }} onChange={(e) => handleAccrued(e.target.files?.[0])} />
+        </div>
+
+        {/* live-sync status — the ClickUp side can auto-populate from a Supabase-scheduled
+            sync instead of a manual upload; this shows which source is currently in play */}
+        <div className="pg-panel" style={{ alignItems: "center" }}>
+          {clickupSource === "manual" ? (
+            <>
+              <WifiOff size={14} style={{ color: "var(--fg-tertiary)" }} />
+              <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Showing a manually uploaded file — overrides live sync until the next reload.</span>
+            </>
+          ) : syncMeta?.last_sync_status === "error" ? (
+            <>
+              <WifiOff size={14} style={{ color: "var(--status-warn)" }} />
+              <span style={{ fontSize: 13, color: "var(--status-warn)" }}>Live sync not set up yet ({syncMeta.last_sync_message}). Upload a CSV below in the meantime.</span>
+            </>
+          ) : syncMeta?.last_synced_at ? (
+            <>
+              <Wifi size={14} style={{ color: "var(--status-ok)" }} />
+              <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Live sync from ClickUp · last synced {timeAgo(syncMeta.last_synced_at)} · {syncMeta.rows_synced ?? "—"} entries</span>
+            </>
+          ) : (
+            <>
+              <WifiOff size={14} style={{ color: "var(--fg-tertiary)" }} />
+              <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Live sync hasn't run yet.</span>
+            </>
+          )}
+          <button className="pg-btn-ghost" style={{ marginLeft: "auto" }} onClick={handleManualSync} disabled={syncing}>
+            <RefreshCw size={12} style={syncing ? { animation: "pg-spin 1s linear infinite" } : undefined} /> {syncing ? "Syncing…" : "Sync now"}
+          </button>
         </div>
 
         {clickup?.warnings?.length > 0 && (
