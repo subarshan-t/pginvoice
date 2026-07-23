@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { FileText, BarChart3, TrendingUp } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { FileText, BarChart3, TrendingUp, Sun, Moon } from "lucide-react";
 import PGReconciliation from "./App.jsx";
 import CapacityDashboard from "./CapacityDashboard.jsx";
 import PerformanceScorecard from "./PerformanceScorecard.jsx";
@@ -10,8 +10,23 @@ const MODULES = [
   { key: "performance", label: "Performance", icon: TrendingUp },
 ];
 
+const THEME_KEY = "pg-theme";
+
+function getInitialTheme() {
+  const stored = localStorage.getItem(THEME_KEY);
+  if (stored === "light" || stored === "dark") return stored;
+  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
 export default function Shell() {
   const [active, setActive] = useState("invoicing");
+  const [theme, setTheme] = useState(getInitialTheme);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
   return (
     <div className="pg-shell">
       <aside className="pg-sidebar">
@@ -31,6 +46,15 @@ export default function Shell() {
             </button>
           ))}
         </nav>
+        <div className="pg-sidebar__spacer" />
+        <button
+          className="pg-theme-toggle"
+          onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+          aria-label="Toggle dark / light mode"
+        >
+          {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          {theme === "dark" ? "Light mode" : "Dark mode"}
+        </button>
       </aside>
       <main className="pg-shell__main">
         {/* All three modules stay mounted at once — switching tabs used to unmount

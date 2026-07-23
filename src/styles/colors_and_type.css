@@ -65,6 +65,25 @@
 }
 
 /* ============================================================================
+   LIGHT THEME OVERRIDES
+   Applied when <html data-theme="light">. Swaps the dark surfaces/text for the
+   system's light-section tokens; accents and status colors stay the same.
+   ============================================================================ */
+:root[data-theme="light"] {
+  --bg-base:      rgb(255, 254, 254); /* #FFFEFE */
+  --bg-card:      rgb(247, 245, 245);
+  --bg-elevated:  rgb(237, 234, 234);
+  --bg-nav:       rgba(255, 254, 254, 0.8);
+
+  --fg-primary:   rgb(19, 19, 19);
+  --fg-secondary: rgb(90, 82, 83);
+  --fg-tertiary:  rgba(90, 82, 83, 0.65);
+
+  --border-subtle: rgba(19, 19, 19, 0.08);
+  --border-soft:   rgba(19, 19, 19, 0.14);
+}
+
+/* ============================================================================
    SEMANTIC TYPE ROLES
    Apply as classes, or copy the declarations into your own selectors.
    ============================================================================ */
@@ -183,5 +202,7 @@
                   filter: brightness(0) invert(1); }                 /* white on dark   */
 .pg-icon--muted { filter: brightness(0) invert(1); opacity: 0.65; }  /* faint on dark   */
 .pg-icon--dark  { filter: none; }                                    /* black on light  */
+:root[data-theme="light"] .pg-icon        { filter: none; }
+:root[data-theme="light"] .pg-icon--muted { filter: none; opacity: 0.65; }
 /* For a rare accent-colored icon, inline the SVG markup and set `color`
    (the paths use fill="currentColor"). */
