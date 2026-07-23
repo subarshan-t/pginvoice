@@ -4,7 +4,7 @@ import {
   Search, Download, ChevronDown, Plus, X, Users,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, isInternalFolder } from "./nameMatch.js";
+import { findMatch, findPersonMatch, isInternalFolder } from "./nameMatch.js";
 import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey } from "./CapacityDashboard.jsx";
 
 const CLICKUP_DB_KEY = "clickup";
@@ -408,11 +408,10 @@ function PerformanceInner() {
     if (!clickup?.rows?.length) return map;
     const usernames = new Set();
     for (const r of clickup.rows) if (r.user) usernames.add(r.user);
-    const rosterNames = people.map((p) => p.name);
     usernames.forEach((u) => {
       if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, null); return; }
-      const m = findMatch(u, rosterNames);
-      map.set(u, m ? m.name : null);
+      const p = findPersonMatch(u, people);
+      map.set(u, p ? p.name : null);
     });
     return map;
   }, [clickup, people]);

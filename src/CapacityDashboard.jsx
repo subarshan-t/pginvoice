@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
-  ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap,
+  ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap, MoreVertical,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, isInternalFolder } from "./nameMatch.js";
@@ -77,6 +77,32 @@ function weekdaysInMonth(monthStr) {
 function publicHolidayDays(state, monthStr) {
   const list = PUBLIC_HOLIDAYS[state] || PUBLIC_HOLIDAYS.SA;
   return list.filter((h) => h.date.startsWith(monthStr)).length;
+}
+// Same two counts, but capped to day `throughDay` of the month — used to prorate
+// a person's capacity down to their last working day in their resignation month.
+function weekdaysInMonthUpToDay(monthStr, throughDay) {
+  const [y, mo] = monthStr.split("-").map(Number);
+  let count = 0;
+  for (let d = 1; d <= throughDay; d++) {
+    const dow = new Date(y, mo - 1, d).getDay();
+    if (dow >= 1 && dow <= 5) count++;
+  }
+  return count;
+}
+function publicHolidayDaysUpToDay(state, monthStr, throughDay) {
+  const list = PUBLIC_HOLIDAYS[state] || PUBLIC_HOLIDAYS.SA;
+  return list.filter((h) => h.date.startsWith(monthStr) && Number(h.date.slice(8, 10)) <= throughDay).length;
+}
+// Whether a person counts as staff for a given month, given their (optional)
+// resignationDate ("YYYY-MM-DD"): fully active if unset or the resignation falls
+// in a later month; excluded entirely if it's an earlier month; active but capped
+// to their last working day if the resignation falls within this exact month.
+function resignationStatus(person, monthStr) {
+  if (!person.resignationDate) return { active: true, throughDay: null };
+  const resignMonthKey = person.resignationDate.slice(0, 7);
+  if (resignMonthKey > monthStr) return { active: true, throughDay: null };
+  if (resignMonthKey < monthStr) return { active: false, throughDay: null };
+  return { active: true, throughDay: Number(person.resignationDate.slice(8, 10)) };
 }
 // The 6 real calendar months ending with the current one, regardless of which month is
 // selected in the ledger — "average of the last 6 months" is a fixed, always-moving window,
@@ -267,6 +293,91 @@ function Picker({ value, label, options, onChange }) {
   );
 }
 
+/* ============================================================
+   ROSTER MENU — per-person "⋮" popover for resignation date + ClickUp alias,
+   only rendered in roster edit mode.
+============================================================ */
+function RosterMenu({ person, onUpdate }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+  return (
+    <div style={{ position: "relative", display: "inline-block" }} ref={ref}>
+      <button type="button" className="pg-btn-ghost" style={{ padding: "4px 7px" }} onClick={() => setOpen((o) => !o)}>
+        <MoreVertical size={13} />
+      </button>
+      {open && (
+        <div className="pg-menu" style={{ right: 0, left: "auto", minWidth: 250, padding: 12 }}>
+          <div className="pg-field__label">Resignation date</div>
+          <input
+            className="pg-input" type="date" style={{ marginTop: 4, width: "100%" }}
+            value={person.resignationDate || ""}
+            onChange={(e) => onUpdate("resignationDate", e.target.value || null)}
+          />
+          {person.resignationDate && (
+            <button className="pg-btn-ghost" style={{ marginTop: 6 }} onClick={() => onUpdate("resignationDate", null)}>
+              <X size={11} /> Clear resignation date
+            </button>
+          )}
+
+          <div className="pg-field__label" style={{ marginTop: 12 }}>ClickUp alias</div>
+          <p className="pg-footnote" style={{ marginTop: 2, marginBottom: 4 }}>
+            Only needed if their ClickUp username doesn't match "{person.name}" — e.g. a full name ClickUp shows that this roster's short name can't fuzzy-match.
+          </p>
+          <input
+            className="pg-input" type="text" style={{ width: "100%" }}
+            placeholder="e.g. Kelly Wagner"
+            value={person.alias || ""}
+            onChange={(e) => onUpdate("alias", e.target.value)}
+          />
+
+          <button className="pg-btn" style={{ marginTop: 10, width: "100%", justifyContent: "center" }} onClick={() => setOpen(false)}>Done</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   ADD PERSON — small inline form shown under the roster table in edit mode
+============================================================ */
+function AddPersonForm({ onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ name: "", role: "Consultant", state: "SA", contracted: 38, rate: 0.7 });
+  const set = (field) => (v) => setForm((f) => ({ ...f, [field]: v }));
+
+  if (!open) {
+    return (
+      <button className="pg-btn-ghost" style={{ marginTop: 10 }} onClick={() => setOpen(true)}>
+        <Plus size={12} /> Add person
+      </button>
+    );
+  }
+  return (
+    <div className="pg-cap-addform" style={{ marginTop: 10 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <input className="pg-input" style={{ width: 140 }} placeholder="Name" value={form.name} onChange={(e) => set("name")(e.target.value)} />
+        <div style={{ width: 140 }}>
+          <Picker value={form.role} options={[{ value: "Consultant", label: "Consultant" }, { value: "Coordinator", label: "Coordinator" }]} onChange={set("role")} />
+        </div>
+        <div style={{ width: 90 }}>
+          <Picker value={form.state} options={[{ value: "SA", label: "SA" }, { value: "WA", label: "WA" }, { value: "QLD", label: "QLD" }]} onChange={set("state")} />
+        </div>
+        <input className="pg-input" type="number" step="any" style={{ width: 110 }} placeholder="Hrs/wk" value={form.contracted} onChange={(e) => set("contracted")(e.target.value)} />
+        <input className="pg-input" type="number" min="0" max="100" step="1" style={{ width: 110 }} placeholder="Billable %" value={Math.round(form.rate * 100)} onChange={(e) => set("rate")((Number(e.target.value) || 0) / 100)} />
+        <button className="pg-btn" onClick={() => { onAdd(form); setForm({ name: "", role: "Consultant", state: "SA", contracted: 38, rate: 0.7 }); setOpen(false); }} disabled={!form.name.trim()}>
+          <Plus size={13} /> Add
+        </button>
+        <button className="pg-btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function SearchBox({ label, value, onChange }) {
   return (
     <label className="pg-field">
@@ -385,14 +496,17 @@ function CapacityDashboardInner() {
     const m = {};
     const wd = weekdaysInMonth(month);
     people.forEach((p) => {
+      const status = resignationStatus(p, month);
+      if (!status.active) return; // resigned in an earlier month — not staff this month at all
       const dailyHrs = p.contracted / 5;
-      const resourceHours = dailyHrs * wd;                       // Total Resource Hours (monthly, weekday-exact)
-      const holidayDays = publicHolidayDays(p.state, month);
+      const effectiveWeekdays = status.throughDay !== null ? weekdaysInMonthUpToDay(month, status.throughDay) : wd;
+      const resourceHours = dailyHrs * effectiveWeekdays;         // Total Resource Hours (monthly, weekday-exact, prorated if resigning this month)
+      const holidayDays = status.throughDay !== null ? publicHolidayDaysUpToDay(p.state, month, status.throughDay) : publicHolidayDays(p.state, month);
       const publicHolidayHrs = dailyHrs * holidayDays;            // Public Holidays (hrs lost, state-specific)
       const leaveHrs = leaveFor(p.id);                            // Leaves (editable, hrs lost)
       const totalMonthlyHours = Math.max(0, resourceHours - publicHolidayHrs - leaveHrs);
       const monthly = totalMonthlyHours * p.rate;                 // Total Monthly Billable Capacity
-      m[p.name] = { ...p, resourceHours, publicHolidayHrs, holidayDays, leaveHrs, totalMonthlyHours, monthly };
+      m[p.name] = { ...p, resourceHours, publicHolidayHrs, holidayDays, leaveHrs, totalMonthlyHours, monthly, resigningThisMonth: status.throughDay !== null };
     });
     return m;
   }, [people, month, leaves]);
@@ -501,6 +615,7 @@ function CapacityDashboardInner() {
   const personCalc = useMemo(() => {
     const m = {};
     people.forEach((p) => {
+      if (!peopleMap[p.name]) return; // resigned in an earlier month — excluded from this month's ledger entirely
       const base = peopleMap[p.name].monthly;
       const away = givenAway[p.name] || 0;
       const remainderAfterAway = base - away; // what's left after committing hours to others — can go negative if over-promised
@@ -524,7 +639,7 @@ function CapacityDashboardInner() {
     Object.values(groupedByOwner).forEach((groups) => groups.forEach((g) => { s += demandForGroup(g.group, g.rows, month).demand; }));
     return s;
   }, [groupedByOwner, month, overrides, dynamicAverages]);
-  const totalCapacity = useMemo(() => people.reduce((s, p) => s + peopleMap[p.name].monthly, 0), [people, peopleMap]);
+  const totalCapacity = useMemo(() => people.reduce((s, p) => s + (peopleMap[p.name] ? peopleMap[p.name].monthly : 0), 0), [people, peopleMap]);
   const totalDMA = useMemo(() => support.filter((s) => s.from === "DMA (external)").reduce((s, x) => s + hoursOf(x), 0), [support, hoursOf]);
   const totalBillableAllocation = totalCapacity + totalDMA; // total hours the team+DMA is available to deliver
   const difference = totalBillableAllocation - totalDemand;
@@ -532,6 +647,7 @@ function CapacityDashboardInner() {
   /* ---------- filtering ---------- */
   const supportersOf = (owner) => (personCalc[owner] ? personCalc[owner].received.map((r) => r.from) : []);
   const visibleOwners = OWNERS.filter((owner) => {
+    if (!peopleMap[owner]) return false; // resigned as of this month — hide their card entirely
     const okConsultant = !qConsultant || owner.toLowerCase().includes(qConsultant.toLowerCase());
     const okClient = !qClient || (groupedByOwner[owner] || []).some((g) => g.group.toLowerCase().includes(qClient.toLowerCase()) || g.rows.some((r) => r.client.toLowerCase().includes(qClient.toLowerCase())));
     const okSupport = !qSupport || supportersOf(owner).some((n) => n.toLowerCase().includes(qSupport.toLowerCase()));
@@ -551,11 +667,20 @@ function CapacityDashboardInner() {
   const shiftMonth = (d) => setMonth(MONTHS[Math.max(0, Math.min(MONTHS.length - 1, monthIdx + d))]);
   const monthKind = month < CURRENT_MONTH ? "past" : (month === CURRENT_MONTH ? "now" : "future");
 
-  const allocatableNames = ["DMA (external)", ...people.map((p) => p.name)];
+  const allocatableNames = ["DMA (external)", ...people.filter((p) => peopleMap[p.name]).map((p) => p.name)];
 
   const removeSupport = (id) => setSupport((ss) => ss.filter((s) => s.id !== id));
   const updateSupportValue = (id, newValue) => setSupport((ss) => ss.map((s) => s.id === id ? { ...s, value: newValue } : s));
   const updatePerson = (id, field, value) => setPeople((ps) => ps.map((p) => p.id === id ? { ...p, [field]: value } : p));
+  const addPerson = (form) => {
+    const name = (form.name || "").trim();
+    if (!name) return;
+    setPeople((ps) => [...ps, {
+      id: uid("p"), name, role: form.role || "Consultant", state: form.state || "SA",
+      contracted: Number(form.contracted) || 0, rate: Number(form.rate) || 0,
+      note: "", resignationDate: null, alias: "",
+    }]);
+  };
   function proposedHours(from, type, value) {
     if (type === "pct") { const base = peopleMap[from] ? peopleMap[from].monthly : 0; return base * Number(value || 0); }
     return Number(value || 0);
@@ -601,6 +726,7 @@ function CapacityDashboardInner() {
     const rosterHeader = ["Consultant", "Role", "State", "Resource Hrs", "Leaves", "Public Holidays (hrs)", "Public Holidays (days)", "Monthly Hrs", "Billable %", "Billable Capacity", "Allocated Hrs", "Availability"];
     const rosterRows = [rosterHeader];
     people.forEach((p) => {
+      if (!peopleMap[p.name]) return; // resigned before this month
       const pc = personCalc[p.name]; const pm = peopleMap[p.name];
       rosterRows.push([p.name, p.role, p.state, Number(pm.resourceHours.toFixed(1)), Number(pm.leaveHrs.toFixed(1)), Number(pm.publicHolidayHrs.toFixed(1)), pm.holidayDays, Number(pm.totalMonthlyHours.toFixed(1)), p.rate, Number(pc.base.toFixed(1)), Number(pc.allocatedTotal.toFixed(1)), Number(pc.spare.toFixed(1))]);
     });
@@ -885,14 +1011,18 @@ function CapacityDashboardInner() {
               <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
             </div>
             <table className="pg-table" style={{ minWidth: 640 }}>
-              <thead><tr><th>Consultant</th><th className="right num">Resource Hrs</th><th className="right num">Leaves</th><th className="right num">Public Hols</th><th className="right num">Monthly Hrs</th><th className="right num">Billable %</th><th className="right num">Billable Capacity</th><th className="right num">Allocated</th><th className="right num">Availability</th></tr></thead>
+              <thead><tr><th>Consultant</th><th className="right num">Resource Hrs</th><th className="right num">Leaves</th><th className="right num">Public Hols</th><th className="right num">Monthly Hrs</th><th className="right num">Billable %</th><th className="right num">Billable Capacity</th><th className="right num">Allocated</th><th className="right num">Availability</th>{editRoster && <th></th>}</tr></thead>
               <tbody>
-                {people.map((p) => {
+                {people.filter((p) => peopleMap[p.name]).map((p) => {
                   const pc = personCalc[p.name];
                   const pm = peopleMap[p.name];
                   return (
                     <tr key={p.id}>
-                      <td>{p.name} <span className="pg-tag" style={{ color: p.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 5 }}>[{p.role[0]}]</span></td>
+                      <td>
+                        {p.name} <span className="pg-tag" style={{ color: p.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 5 }}>[{p.role[0]}]</span>
+                        {pm.resigningThisMonth && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[resigns {p.resignationDate}]</span>}
+                        {p.alias && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[alias: {p.alias}]</span>}
+                      </td>
                       <td className="right num">{pm.resourceHours.toFixed(1)}</td>
                       <td className="right num">
                         {editRoster
@@ -909,13 +1039,18 @@ function CapacityDashboardInner() {
                       <td className="right num"><b>{pc.base.toFixed(1)}</b></td>
                       <td className="right num">{pc.allocatedTotal > 0 ? pc.allocatedTotal.toFixed(1) : "—"}</td>
                       <td className="right num" style={{ color: pc.spare < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{pc.spare > 0 ? "+" : ""}{pc.spare.toFixed(1)}</td>
+                      {editRoster && <td><RosterMenu person={p} onUpdate={(field, value) => updatePerson(p.id, field, value)} /></td>}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          <p className="pg-footnote">Total Resource Hours and Public Holidays are calculated from {MONTH_LABELS[month]}'s actual weekdays and each person's state. Leaves and Billable Allocation are only editable in Edit mode; everything else recalculates automatically.</p>
+          <p className="pg-footnote">Total Resource Hours and Public Holidays are calculated from {MONTH_LABELS[month]}'s actual weekdays and each person's state. Leaves and Billable Allocation are only editable in Edit mode; everything else recalculates automatically. A resignation date set via the ⋮ menu prorates that month's capacity to their last working day, and drops them from the roster entirely in later months.</p>
+
+          {editRoster && (
+            <AddPersonForm onAdd={addPerson} />
+          )}
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
