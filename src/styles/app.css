@@ -42,6 +42,7 @@ body {
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background-color 0.2s var(--ease), color 0.2s var(--ease);
 }
 ::selection { background: var(--accent-soft); color: #131313; }
 button { font: inherit; }
@@ -74,6 +75,16 @@ button { font: inherit; }
 .pg-sidebar__link:hover { color: var(--fg-primary); background: var(--bg-card); }
 .pg-sidebar__link--active { background: var(--accent-soft); color: var(--accent); }
 .pg-sidebar__link--active svg { opacity: 1; }
+.pg-sidebar__spacer { flex: 1; }
+.pg-theme-toggle {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  background: transparent; border: 1px solid var(--border-soft); border-radius: var(--app-radius-sm);
+  padding: 9px 10px; font-family: var(--font-body); font-size: 13px; font-weight: 500;
+  color: var(--fg-secondary); cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.pg-theme-toggle:hover { color: var(--fg-primary); background: var(--bg-card); border-color: var(--accent-soft); }
+.pg-theme-toggle svg { flex: none; }
 @media (max-width: 760px) {
   .pg-shell { flex-direction: column; }
   .pg-sidebar { width: 100%; border-right: 0; border-bottom: 1px solid var(--border-subtle); flex-direction: row; align-items: center; }
