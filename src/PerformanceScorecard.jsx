@@ -225,7 +225,12 @@ function PerformanceInner() {
       setClickup(cu || null);
       setClients(await loadKey("cap_clients", SEED_CLIENTS));
       setPeople(await loadKey("cap_people", SEED_PEOPLE));
-      setNotes(loadKey(NOTES_KEY, []));
+      // This module's own notes are plain localStorage (see addNote/removeNote below),
+      // never part of the Capacity Planning data now backed by Supabase — read it the
+      // same way it's written, not via the shared (Supabase-backed) loadKey.
+      let localNotes = [];
+      try { const raw = window.localStorage.getItem(NOTES_KEY); localNotes = raw ? JSON.parse(raw) : []; } catch (e) { /* ignore */ }
+      setNotes(localNotes);
       setLoaded(true);
     };
     load();
