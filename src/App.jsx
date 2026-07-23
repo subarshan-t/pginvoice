@@ -179,10 +179,12 @@ function parseStartTextMonth(raw) {
   const m = datePart.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return null;
   const month = parseInt(m[1], 10) - 1;
+  const day = parseInt(m[2], 10);
   const year = parseInt(m[3], 10);
   if (month < 0 || month > 11) return null;
-  return { year, month };
+  return { year, month, day };
 }
+function dateKeyStr(year, month, day) { return `${monthKey(year, month)}-${String(day).padStart(2, "0")}`; }
 
 function parseClickupCsv(file, onDone, onErr) {
   Papa.parse(file, {
@@ -225,6 +227,7 @@ function parseClickupCsv(file, onDone, onErr) {
           isInternal: isInternalFolder(folder),
           monthKey: startMonth ? monthKey(startMonth.year, startMonth.month) : null,
           monthLabel: startMonth ? monthLabel(startMonth.year, startMonth.month) : null,
+          dateKey: startMonth ? dateKeyStr(startMonth.year, startMonth.month, startMonth.day) : null,
         });
       }
       if (rows.length && zeroCount === rows.length) warnings.push("Every row parsed to zero hours — the ClickUp export format may have changed.");

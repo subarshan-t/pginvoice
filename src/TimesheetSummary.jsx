@@ -1,0 +1,374 @@
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { Search, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
+import { findMatch } from "./nameMatch.js";
+import { SEED_PEOPLE, loadKey } from "./CapacityDashboard.jsx";
+import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
+
+const CLICKUP_DB_KEY = "clickup";
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt2 = (n) => (n === null || n === undefined || isNaN(n)) ? "0.00" : n.toFixed(2);
+
+function monthKeyOf(year, month0) { return `${year}-${String(month0 + 1).padStart(2, "0")}`; }
+function monthLabelOf(key) {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
+}
+function daysInMonthOf(key) {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
+}
+function weekdayShort(y, m, d) { return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short" }); }
+function dateLabel(y, m, d) { return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "2-digit", month: "short" }); }
+
+// Weeks are sequential 7-day blocks anchored to day 1 of the month (not
+// Mon-Sun/Sun-Sat calendar weeks) — week 1 is always days 1-7, week 2 is
+// 8-14, and so on, with a short final week for whatever remains. Column 1
+// is whichever weekday day 1 happens to fall on that month.
+function computeWeeks(monthKeyStr) {
+  const [y, m] = monthKeyStr.split("-").map(Number);
+  const days = daysInMonthOf(monthKeyStr);
+  const weeks = [];
+  for (let start = 1; start <= days; start += 7) {
+    const end = Math.min(start + 6, days);
+    const daysArr = [];
+    for (let d = start; d <= end; d++) {
+      daysArr.push({ day: d, dateKey: `${monthKeyStr}-${String(d).padStart(2, "0")}`, weekday: weekdayShort(y, m, d), label: dateLabel(y, m, d) });
+    }
+    weeks.push({ start, end, days: daysArr });
+  }
+  return weeks;
+}
+
+function SearchBox({ label, value, onChange, options, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+  const matches = useMemo(() => {
+    if (!options) return [];
+    const q = (value || "").trim().toLowerCase();
+    const pool = q ? options.filter((o) => o.toLowerCase().includes(q)) : options;
+    return pool.slice(0, 8);
+  }, [options, value]);
+  return (
+    <label className="pg-field" style={{ position: "relative", width: 240 }} ref={ref}>
+      <span className="pg-field__label"><Search size={11} /> {label}</span>
+      <input className="pg-input" value={value} onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder={`Search ${label.toLowerCase()}…`} autoComplete="off" />
+      {open && options && matches.length > 0 && (
+        <div className="pg-menu" style={{ width: "100%", top: "calc(100% + 2px)" }}>
+          {matches.map((m) => (
+            <button key={m} type="button" className="pg-menu-item" onClick={() => { onChange(m); if (onSelect) onSelect(m); setOpen(false); }}>{m}</button>
+          ))}
+        </div>
+      )}
+    </label>
+  );
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("TimesheetSummary error:", error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, padding: 24, margin: 24, color: "var(--status-over)", background: "var(--status-over-soft)", borderRadius: "var(--app-radius)", whiteSpace: "pre-wrap" }}>
+          <b>Something broke while rendering this dashboard:</b>
+          {"\n\n"}{String(this.state.error && this.state.error.message ? this.state.error.message : this.state.error)}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ------------------------------- PDF (print) --------------------------------
+const PRINT = { ink: "#1F1B24", inkSoft: "#6B6172", brand: "#3F008E", line: "#E7E1F0", brandSoft: "#F1EAFB" };
+
+function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDaily, monthlyTotal) {
+  const monthText = monthLabelOf(monthKeyStr);
+  const weekRows = weeksArr.map((w) => {
+    const cells = w.days.map((d) => {
+      const hrs = (personDaily.get(d.dateKey) || 0) / 60;
+      return `<td><div class="daylabel">${esc(d.weekday)}<br/>${esc(d.label)}</div><div class="dayval">${fmt2(hrs)}</div></td>`;
+    }).join("");
+    return `<tr>${cells}</tr>`;
+  }).join("");
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>${esc(consultantName)} — ${esc(monthText)} timesheet</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
+  @page { margin: 18mm 18mm 34mm 18mm; size: A4; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: ${PRINT.ink}; margin: 0; padding: 20px; }
+  .header { border-bottom: 2px solid ${PRINT.ink}; padding-bottom: 14px; margin-bottom: 22px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+  .brand { font-family: 'Quicksand', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+  h1 { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
+  .subtitle { color: ${PRINT.inkSoft}; font-size: 14px; margin-top: 4px; }
+  .totalbox { text-align: right; }
+  .totalbox .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: ${PRINT.brand}; font-weight: 600; }
+  .totalbox .val { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .grid { width: 100%; border-collapse: collapse; margin-top: 22px; table-layout: fixed; }
+  .grid td { border: 1px solid ${PRINT.line}; padding: 8px 6px; text-align: center; vertical-align: top; }
+  .daylabel { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: ${PRINT.inkSoft}; line-height: 1.4; }
+  .dayval { font-size: 16px; font-weight: 600; margin-top: 8px; }
+  .generated-note { margin-top: 24px; font-size: 9px; color: ${PRINT.inkSoft}; text-align: right; font-style: italic; }
+  .letterhead-footer {
+    position: fixed; left: 0; right: 0; bottom: 0; width: 100%; height: 26mm;
+    background-image: url('data:image/jpeg;base64,${LETTERHEAD_FOOTER_B64}');
+    background-repeat: no-repeat; background-position: bottom center; background-size: 100% auto;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  @media print { .noprint { display: none; } body { padding: 0; } }
+</style>
+</head><body>
+  <div class="header">
+    <div>
+      <div class="brand">Purple Giraffe · timesheet summary</div>
+      <h1>${esc(consultantName)}</h1>
+      <div class="subtitle">${esc(monthText)}</div>
+    </div>
+    <div class="totalbox">
+      <div class="lbl">Monthly total</div>
+      <div class="val">${fmt2(monthlyTotal)} h</div>
+    </div>
+  </div>
+
+  <table class="grid"><tbody>${weekRows}</tbody></table>
+
+  <div class="generated-note">Generated ${esc(new Date().toLocaleString())}</div>
+
+  <div class="letterhead-footer"></div>
+
+  <script>window.addEventListener('load', function() { setTimeout(function() { window.print(); }, 300); });</script>
+</body></html>`;
+}
+
+function printTimesheetPdf(consultantName, monthKeyStr, weeksArr, personDaily, monthlyTotal) {
+  const html = buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDaily, monthlyTotal);
+  const w = window.open("", "_blank", "width=900,height=1100");
+  if (!w) {
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.target = "_blank"; a.rel = "noopener";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return;
+  }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+/* ============================================================
+   MAIN
+============================================================ */
+function TimesheetInner() {
+  const [loaded, setLoaded] = useState(false);
+  const [clickup, setClickup] = useState(null);
+  const [people, setPeople] = useState(SEED_PEOPLE);
+
+  const [qConsultant, setQConsultant] = useState("");
+  const [selectedConsultant, setSelectedConsultant] = useState(null);
+  const [monthKeyState, setMonthKeyState] = useState("");
+  const [weekIdx, setWeekIdx] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const cu = await idbGet(CLICKUP_DB_KEY);
+      if (cancelled) return;
+      setClickup(cu || null);
+      setPeople(loadKey("cap_people", SEED_PEOPLE));
+      setLoaded(true);
+    };
+    load();
+    const onUpdate = (e) => { if (!e.detail || ["clickup", "cap_people"].includes(e.detail.key)) load(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
+  }, []);
+
+  const availableMonths = useMemo(() => {
+    if (!clickup?.rows?.length) return [];
+    const set = new Set();
+    for (const r of clickup.rows) if (r.monthKey) set.add(r.monthKey);
+    return [...set].sort();
+  }, [clickup]);
+
+  /* ---- fuzzy-match real ClickUp usernames to the roster, same rule Performance uses ---- */
+  const userMatch = useMemo(() => {
+    const map = new Map();
+    if (!clickup?.rows?.length) return map;
+    const usernames = new Set();
+    for (const r of clickup.rows) if (r.user) usernames.add(r.user);
+    const rosterNames = people.map((p) => p.name);
+    usernames.forEach((u) => {
+      if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, null); return; }
+      const m = findMatch(u, rosterNames);
+      map.set(u, m ? m.name : null);
+    });
+    return map;
+  }, [clickup, people]);
+
+  // key -> Map(dateKey -> minutes). Total time logged, not filtered to billable/
+  // client-only — this is a timesheet, not a billing report.
+  const dailyMinutes = useMemo(() => {
+    const map = new Map();
+    if (!clickup?.rows?.length) return map;
+    for (const r of clickup.rows) {
+      if (!r.dateKey || !r.user) continue;
+      if (r.user.trim().toLowerCase() === "purple giraffe") continue;
+      const key = userMatch.get(r.user) || r.user;
+      if (!map.has(key)) map.set(key, new Map());
+      const byDate = map.get(key);
+      byDate.set(r.dateKey, (byDate.get(r.dateKey) || 0) + r.minutes);
+    }
+    return map;
+  }, [clickup, userMatch]);
+
+  const rosterNamesSet = useMemo(() => new Set(people.map((p) => p.name)), [people]);
+  const unmatchedNames = useMemo(() => [...dailyMinutes.keys()].filter((k) => !rosterNamesSet.has(k)).sort(), [dailyMinutes, rosterNamesSet]);
+  const allConsultants = useMemo(() => [
+    ...people.map((p) => ({ name: p.name, role: p.role })),
+    ...unmatchedNames.map((n) => ({ name: n, role: "Unmatched" })),
+  ], [people, unmatchedNames]);
+
+  // default to the first available consultant, but leave a still-valid manual pick alone
+  useEffect(() => {
+    if (selectedConsultant && allConsultants.some((c) => c.name === selectedConsultant)) return;
+    setSelectedConsultant(allConsultants.length ? allConsultants[0].name : null);
+  }, [allConsultants]); // eslint-disable-line
+
+  // default to the latest month with data, but leave a still-valid manual pick alone
+  useEffect(() => {
+    if (monthKeyState && availableMonths.includes(monthKeyState)) return;
+    setMonthKeyState(availableMonths.length ? availableMonths[availableMonths.length - 1] : "");
+  }, [availableMonths]); // eslint-disable-line
+
+  const weeks = useMemo(() => (monthKeyState ? computeWeeks(monthKeyState) : []), [monthKeyState]);
+
+  // default to the week containing today, if viewing the real current month; else week 1
+  useEffect(() => {
+    if (!weeks.length) { setWeekIdx(0); return; }
+    const now = new Date();
+    if (monthKeyState === monthKeyOf(now.getFullYear(), now.getMonth())) {
+      const idx = weeks.findIndex((w) => now.getDate() >= w.start && now.getDate() <= w.end);
+      setWeekIdx(idx >= 0 ? idx : 0);
+    } else {
+      setWeekIdx(0);
+    }
+  }, [monthKeyState]); // eslint-disable-line
+
+  const personDaily = selectedConsultant ? (dailyMinutes.get(selectedConsultant) || new Map()) : new Map();
+  const currentWeek = weeks[weekIdx] || { start: 1, end: 1, days: [] };
+  const weekDayValues = currentWeek.days.map((d) => ({ ...d, hours: (personDaily.get(d.dateKey) || 0) / 60 }));
+  const weekTotal = weekDayValues.reduce((s, d) => s + d.hours, 0);
+  const monthlyTotal = useMemo(() => {
+    let total = 0;
+    weeks.forEach((w) => w.days.forEach((d) => { total += (personDaily.get(d.dateKey) || 0) / 60; }));
+    return total;
+  }, [weeks, personDaily]);
+
+  const monthIdx = availableMonths.indexOf(monthKeyState);
+  const shiftMonth = (dir) => { const ni = monthIdx + dir; if (ni >= 0 && ni < availableMonths.length) setMonthKeyState(availableMonths[ni]); };
+  const shiftWeek = (dir) => { const ni = weekIdx + dir; if (ni >= 0 && ni < weeks.length) setWeekIdx(ni); };
+
+  const weekEndingLabel = monthKeyState && currentWeek.end
+    ? (() => { const [y, m] = monthKeyState.split("-").map(Number); return new Date(y, m - 1, currentWeek.end).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }); })()
+    : "";
+
+  const hasData = availableMonths.length > 0;
+
+  if (!loaded) return <div className="pg-cap-container"><div className="pg-empty">Loading…</div></div>;
+
+  return (
+    <div className="pg-cap-container">
+      <div className="pg-app-header">
+        <div>
+          <span className="pg-eyebrow">Purple Giraffe · Internal</span>
+          <h1 className="pg-app-header__title">Timesheet summary — daily hours by consultant.</h1>
+          <p className="pg-app-header__sub">Total time logged in ClickUp per day, for whichever consultant and month you pick. Not filtered to billable hours — this mirrors the raw timesheet, not the invoicing view.</p>
+        </div>
+      </div>
+
+      {!hasData && (
+        <div className="pg-banner-warn">
+          No ClickUp data loaded yet — upload a CSV in Client Invoicing to see daily hours here.
+        </div>
+      )}
+
+      <div className="pg-panel" style={{ alignItems: "center" }}>
+        <SearchBox label="Consultant" value={qConsultant} onChange={setQConsultant} options={allConsultants.map((c) => c.name)} onSelect={(name) => setSelectedConsultant(name)} />
+        <label className="pg-field">
+          <span className="pg-field__label">Month</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button className="pg-btn-ghost" style={{ padding: "7px 9px" }} onClick={() => shiftMonth(-1)} disabled={monthIdx <= 0}><ChevronLeft size={13} /></button>
+            <span style={{ fontFamily: "var(--font-display)", fontSize: 16, minWidth: 130, textAlign: "center" }}>{monthKeyState ? monthLabelOf(monthKeyState) : "—"}</span>
+            <button className="pg-btn-ghost" style={{ padding: "7px 9px" }} onClick={() => shiftMonth(1)} disabled={monthIdx < 0 || monthIdx >= availableMonths.length - 1}><ChevronRight size={13} /></button>
+          </div>
+        </label>
+        <button
+          className="pg-btn"
+          style={{ marginLeft: "auto" }}
+          disabled={!selectedConsultant || !monthKeyState}
+          onClick={() => printTimesheetPdf(selectedConsultant, monthKeyState, weeks, personDaily, monthlyTotal)}
+        >
+          <Download size={14} /> Export PDF
+        </button>
+      </div>
+
+      {selectedConsultant && monthKeyState && (
+        <div className="pg-cap-card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <span className="pg-client__name" style={{ fontSize: 21 }}>
+              {selectedConsultant}
+              <span className="pg-tag" style={{ color: "var(--accent)" }}>[{allConsultants.find((c) => c.name === selectedConsultant)?.role || "Consultant"}]</span>
+            </span>
+            <div style={{ textAlign: "right" }}>
+              <div className="pg-field__label">Monthly total</div>
+              <div style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 600 }}>{fmt2(monthlyTotal)} h</div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 18, flexWrap: "wrap", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="pg-field__label">Week ending</span>
+              <button className="pg-btn-ghost" style={{ padding: "6px 8px" }} onClick={() => shiftWeek(-1)} disabled={weekIdx <= 0}><ChevronLeft size={12} /></button>
+              <span style={{ fontFamily: "var(--font-display)", fontSize: 16 }}>{weekEndingLabel}</span>
+              <button className="pg-btn-ghost" style={{ padding: "6px 8px" }} onClick={() => shiftWeek(1)} disabled={weekIdx >= weeks.length - 1}><ChevronRight size={12} /></button>
+            </div>
+            <span className="pg-tag pg-tag--muted">Week {weekIdx + 1} of {weeks.length}</span>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${weekDayValues.length}, 1fr) 90px`, gap: 10, marginTop: 14 }}>
+            {weekDayValues.map((d) => (
+              <div key={d.dateKey} style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
+                <div className="pg-field__label" style={{ textAlign: "center" }}>{d.weekday}<br />{d.label}</div>
+                <div className="pg-input" style={{ width: "100%", textAlign: "center", fontFamily: "var(--font-mono)", fontSize: 15, background: "var(--bg-base)" }}>{fmt2(d.hours)}</div>
+              </div>
+            ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
+              <div className="pg-field__label" style={{ textAlign: "center", color: "var(--accent)" }}>Hours</div>
+              <div className="pg-input" style={{ width: "100%", textAlign: "center", fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 600, color: "var(--accent)", background: "var(--accent-soft)", borderColor: "var(--accent-soft)" }}>{fmt2(weekTotal)}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <p className="pg-footnote">Purple Giraffe · Timesheet Summary · Weeks run in sequential 7-day blocks from the 1st of the month (not calendar Mon-Sun), matching how the exported PDF lays out the full month.</p>
+    </div>
+  );
+}
+
+export default function TimesheetSummary() {
+  return (
+    <ErrorBoundary>
+      <TimesheetInner />
+    </ErrorBoundary>
+  );
+}
