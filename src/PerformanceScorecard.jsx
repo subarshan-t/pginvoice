@@ -223,8 +223,8 @@ function PerformanceInner() {
       const cu = await idbGet(CLICKUP_DB_KEY);
       if (cancelled) return;
       setClickup(cu || null);
-      setClients(loadKey("cap_clients", SEED_CLIENTS));
-      setPeople(loadKey("cap_people", SEED_PEOPLE));
+      setClients(await loadKey("cap_clients", SEED_CLIENTS));
+      setPeople(await loadKey("cap_people", SEED_PEOPLE));
       setNotes(loadKey(NOTES_KEY, []));
       setLoaded(true);
     };

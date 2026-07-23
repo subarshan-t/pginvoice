@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, isInternalFolder } from "./nameMatch.js";
+import { loadState, saveState } from "./capacityStore.js";
 
 /* ============================================================
    MONTHS / CONSTANTS
@@ -226,25 +227,13 @@ const SEED_SUPPORT = [
 export const OWNERS = ["Holly", "Shreya", "Chloe", "Alice", "Amanda", "Lucy", "Vinavie"];
 
 /* ============================================================
-   STORAGE — plain localStorage (the source component targeted a
-   sandboxed window.storage API that doesn't exist in a standalone
-   browser; same fix already applied to the reconciliation module).
-   Exported so Performance can read the same roster/client edits live
-   instead of keeping a stale copy of its own.
+   STORAGE — backed by Supabase (pginvoice_app_state), not localStorage, so
+   roster/client edits are visible from any browser, not just the one that
+   made them. Exported under its old name so Performance and Timesheet
+   Summary's existing `loadKey(...)` calls keep working unchanged.
 ============================================================ */
-export function loadKey(key, fallback) {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch (e) { return fallback; }
-}
-function saveKey(key, value) {
-  try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignore */ }
-  // Same signal idbSet fires for the large IndexedDB datasets — reused here so any
-  // mounted module (e.g. Performance reading the roster/client list this saved) can
-  // react live instead of only picking up the change on its own next mount.
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PG_DATA_EVENT, { detail: { key } }));
-}
+export const loadKey = loadState;
+const saveKey = saveState;
 
 /* ============================================================
    PICKER — dropdown trigger + menu, styled like the app's export menu
@@ -345,22 +334,34 @@ function CapacityDashboardInner() {
   }, []);
 
   useEffect(() => {
-    setPeople(loadKey("cap_people", SEED_PEOPLE));
-    setClients(loadKey("cap_clients", SEED_CLIENTS));
-    setSupport(loadKey("cap_support", SEED_SUPPORT));
+    let cancelled = false;
+    (async () => {
+      const [ppl, clis, supp, loadedNotes, lvs, ovr] = await Promise.all([
+        loadKey("cap_people", SEED_PEOPLE),
+        loadKey("cap_clients", SEED_CLIENTS),
+        loadKey("cap_support", SEED_SUPPORT),
+        loadKey("cap_notes", []),
+        loadKey("cap_leaves", {}),
+        loadKey("cap_overrides", {}),
+      ]);
+      if (cancelled) return;
+      setPeople(ppl);
+      setClients(clis);
+      setSupport(supp);
 
-    const loadedNotes = loadKey("cap_notes", []);
-    if (Array.isArray(loadedNotes)) {
-      setNotes(loadedNotes.every((n) => n && typeof n.text === "string") ? loadedNotes : []);
-    } else if (typeof loadedNotes === "string" && loadedNotes.trim()) {
-      setNotes([{ id: uid("n"), text: loadedNotes.trim(), ts: Date.now() }]);
-    } else {
-      setNotes([]);
-    }
+      if (Array.isArray(loadedNotes)) {
+        setNotes(loadedNotes.every((n) => n && typeof n.text === "string") ? loadedNotes : []);
+      } else if (typeof loadedNotes === "string" && loadedNotes.trim()) {
+        setNotes([{ id: uid("n"), text: loadedNotes.trim(), ts: Date.now() }]);
+      } else {
+        setNotes([]);
+      }
 
-    setLeaves(loadKey("cap_leaves", {}));
-    setOverrides(loadKey("cap_overrides", {}));
-    setLoaded(true);
+      setLeaves(lvs);
+      setOverrides(ovr);
+      setLoaded(true);
+    })();
+    return () => { cancelled = true; };
   }, []);
   useEffect(() => { if (loaded) saveKey("cap_people", people); }, [people, loaded]);
   useEffect(() => { if (loaded) saveKey("cap_clients", clients); }, [clients, loaded]);

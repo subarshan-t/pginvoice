@@ -184,7 +184,7 @@ function TimesheetInner() {
       const cu = await idbGet(CLICKUP_DB_KEY);
       if (cancelled) return;
       setClickup(cu || null);
-      setPeople(loadKey("cap_people", SEED_PEOPLE));
+      setPeople(await loadKey("cap_people", SEED_PEOPLE));
       setLoaded(true);
     };
     load();
