@@ -121,7 +121,7 @@ function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDa
   .generated-note { margin-top: 24px; font-size: 9px; color: ${PRINT.inkSoft}; text-align: right; font-style: italic; }
   .letterhead-footer {
     position: fixed; left: 0; right: 0; bottom: 0; width: 100%; height: 26mm;
-    background-image: url('data:image/jpeg;base64,${LETTERHEAD_FOOTER_B64}');
+    background-image: url('data:image/png;base64,${LETTERHEAD_FOOTER_B64}');
     background-repeat: no-repeat; background-position: bottom center; background-size: 100% auto;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
