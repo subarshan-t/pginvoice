@@ -8,6 +8,9 @@ import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
 
 const CLICKUP_DB_KEY = "clickup";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// The browser's "Save as PDF" dialog suggests <title> as the default filename —
+// strip characters illegal in filenames on Windows/macOS.
+const filenameSafe = (s) => String(s ?? "").replace(/[\\/:*?"<>|]/g, "-").trim();
 const fmt2 = (n) => (n === null || n === undefined || isNaN(n)) ? "0.00" : n.toFixed(2);
 
 function monthKeyOf(year, month0) { return `${year}-${String(month0 + 1).padStart(2, "0")}`; }
@@ -95,59 +98,79 @@ function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDa
   const weekRows = weeksArr.map((w) => {
     const cells = w.days.map((d) => {
       const hrs = (personDaily.get(d.dateKey) || 0) / 60;
-      return `<td><div class="daylabel">${esc(d.weekday)}<br/>${esc(d.label)}</div><div class="dayval">${fmt2(hrs)}</div></td>`;
+      return `<td class="daycell"><div class="daylabel">${esc(d.weekday)}<br/>${esc(d.label)}</div><div class="dayval">${fmt2(hrs)}</div></td>`;
     }).join("");
     return `<tr>${cells}</tr>`;
   }).join("");
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<title>${esc(consultantName)}: ${esc(monthText)} timesheet</title>
+<title>${esc(filenameSafe(consultantName))}: ${esc(filenameSafe(monthText))} timesheet</title>
 <style>
   ${NORDIQUE_FONT_FACE_CSS}
-  @page { margin: 18mm 18mm 34mm 18mm; size: A4; }
+  @page { margin: 18mm 18mm 18mm 18mm; size: A4; }
   * { box-sizing: border-box; }
-  body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 600; color: ${PRINT.ink}; margin: 0; padding: 20px; }
-  .header { border-bottom: 2px solid ${PRINT.ink}; padding-bottom: 14px; margin-bottom: 22px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+  body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 600; color: ${PRINT.ink}; margin: 0; }
+  /* Same reasoning as Client Invoicing's print template: a position:fixed
+     footer hits a longstanding Chromium print bug where the last row
+     before a page break can bleed into it regardless of @page margin, so
+     the footer is a <tfoot> (display:table-footer-group) inside one page-
+     spanning table instead — the mechanism Chromium actually reserves
+     correct per-page space for. */
+  table.doc { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  td { padding: 8px 10px; text-align: left; }
+  .header-cell { border-bottom: 2px solid ${PRINT.ink}; padding-bottom: 14px; }
+  .header-flex { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
   .brand { font-family: 'Nordique Pro', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
   h1 { font-family: 'Nordique Pro', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
   .subtitle { color: ${PRINT.inkSoft}; font-size: 14px; margin-top: 4px; }
   .totalbox { text-align: right; }
   .totalbox .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: ${PRINT.brand}; font-weight: 600; }
   .totalbox .val { font-size: 28px; font-weight: 700; margin-top: 4px; font-family: Arial, "Segoe UI", sans-serif; }
-  .grid { width: 100%; border-collapse: collapse; margin-top: 22px; table-layout: fixed; }
-  .grid td { border: 1px solid ${PRINT.line}; padding: 8px 6px; text-align: center; vertical-align: top; }
+  .daycell { border: 1px solid ${PRINT.line}; padding: 8px 6px; text-align: center; vertical-align: top; page-break-inside: avoid; break-inside: avoid; }
   .daylabel { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: ${PRINT.inkSoft}; line-height: 1.4; }
   .dayval { font-size: 16px; font-weight: 600; margin-top: 8px; font-family: Arial, "Segoe UI", sans-serif; }
-  .generated-note { margin-top: 24px; font-size: 9px; color: ${PRINT.inkSoft}; text-align: right; font-style: italic; }
-  .letterhead-footer {
-    position: fixed; left: 0; right: 0; bottom: 0; width: 100%; height: 26mm;
+  .generated-note-cell { font-size: 9px; color: ${PRINT.inkSoft}; text-align: right; font-style: italic; padding-top: 24px; }
+  .letterhead-footer-cell {
+    height: 26mm; padding: 0; border: none;
     background-image: url('data:image/png;base64,${LETTERHEAD_FOOTER_B64}');
     background-repeat: no-repeat; background-position: bottom center; background-size: 100% auto;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
-  @media print { .noprint { display: none; } body { padding: 0; } }
+  @media print { .noprint { display: none; } }
 </style>
 </head><body>
-  <div class="header">
-    <div>
-      <div class="brand">Purple Giraffe · timesheet summary</div>
-      <h1>${esc(consultantName)}</h1>
-      <div class="subtitle">${esc(monthText)}</div>
-    </div>
-    <div class="totalbox">
-      <div class="lbl">Monthly total</div>
-      <div class="val">${fmt2(monthlyTotal)} h</div>
-    </div>
-  </div>
+  <table class="doc">
+    <tfoot><tr><td colspan="7" class="letterhead-footer-cell"></td></tr></tfoot>
+    <tbody>
+      <tr><td colspan="7" class="header-cell">
+        <div class="header-flex">
+          <div>
+            <div class="brand">Purple Giraffe · timesheet summary</div>
+            <h1>${esc(consultantName)}</h1>
+            <div class="subtitle">${esc(monthText)}</div>
+          </div>
+          <div class="totalbox">
+            <div class="lbl">Monthly total</div>
+            <div class="val">${fmt2(monthlyTotal)} h</div>
+          </div>
+        </div>
+      </td></tr>
 
-  <table class="grid"><tbody>${weekRows}</tbody></table>
+      ${weekRows}
 
-  <div class="generated-note">Generated ${esc(new Date().toLocaleString())}</div>
+      <tr><td colspan="7" class="generated-note-cell">Generated ${esc(new Date().toLocaleString())}</td></tr>
+    </tbody>
+  </table>
 
-  <div class="letterhead-footer"></div>
-
-  <script>window.addEventListener('load', function() { document.fonts.ready.then(function() { window.print(); }); });</script>
+  <script>
+    window.addEventListener('load', function() {
+      var printed = false;
+      function go() { if (!printed) { printed = true; window.print(); } }
+      document.fonts.ready.then(go, go);
+      setTimeout(go, 1500);
+    });
+  </script>
 </body></html>`;
 }
 
