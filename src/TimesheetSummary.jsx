@@ -4,6 +4,7 @@ import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findPersonMatch } from "./nameMatch.js";
 import { SEED_PEOPLE, loadKey } from "./CapacityDashboard.jsx";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
+import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
 
 const CLICKUP_DB_KEY = "clickup";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -103,13 +104,13 @@ function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDa
 <html><head><meta charset="utf-8">
 <title>${esc(consultantName)}: ${esc(monthText)} timesheet</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
+  ${NORDIQUE_FONT_FACE_CSS}
   @page { margin: 18mm 18mm 34mm 18mm; size: A4; }
   * { box-sizing: border-box; }
-  body { font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: ${PRINT.ink}; margin: 0; padding: 20px; }
+  body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 300; color: ${PRINT.ink}; margin: 0; padding: 20px; }
   .header { border-bottom: 2px solid ${PRINT.ink}; padding-bottom: 14px; margin-bottom: 22px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
-  .brand { font-family: 'Quicksand', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
-  h1 { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
+  .brand { font-family: 'Nordique Pro', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+  h1 { font-family: 'Nordique Pro', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
   .subtitle { color: ${PRINT.inkSoft}; font-size: 14px; margin-top: 4px; }
   .totalbox { text-align: right; }
   .totalbox .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: ${PRINT.brand}; font-weight: 600; }
@@ -146,7 +147,7 @@ function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDa
 
   <div class="letterhead-footer"></div>
 
-  <script>window.addEventListener('load', function() { setTimeout(function() { window.print(); }, 300); });</script>
+  <script>window.addEventListener('load', function() { document.fonts.ready.then(function() { window.print(); }); });</script>
 </body></html>`;
 }
 
