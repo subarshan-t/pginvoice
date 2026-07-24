@@ -108,7 +108,7 @@ function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDa
 <title>${esc(filenameSafe(consultantName))}: ${esc(filenameSafe(monthText))} timesheet</title>
 <style>
   ${NORDIQUE_FONT_FACE_CSS}
-  @page { margin: 18mm 18mm 18mm 18mm; size: A4; }
+  @page { margin: 15mm; size: A4; }
   * { box-sizing: border-box; }
   body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 600; color: ${PRINT.ink}; margin: 0; }
   /* Same reasoning as Client Invoicing's print template: a position:fixed
@@ -132,7 +132,7 @@ function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDa
   .dayval { font-size: 16px; font-weight: 600; margin-top: 8px; font-family: Arial, "Segoe UI", sans-serif; }
   .generated-note-cell { font-size: 9px; color: ${PRINT.inkSoft}; text-align: right; font-style: italic; padding-top: 24px; }
   .letterhead-footer-cell {
-    height: 26mm; padding: 0; border: none;
+    height: 15mm; padding: 0; border: none;
     background-image: url('data:image/png;base64,${LETTERHEAD_FOOTER_B64}');
     background-repeat: no-repeat; background-position: bottom center; background-size: 100% auto;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;

@@ -313,7 +313,7 @@ function buildPrintHtml(c, monthText, priorMonthText) {
 <title>${esc(filenameSafe(c.displayName))} ${esc(filenameSafe(monthText))}</title>
 <style>
   ${NORDIQUE_FONT_FACE_CSS}
-  @page { margin: 18mm 18mm 18mm 18mm; size: A4; }
+  @page { margin: 15mm; size: A4; }
   * { box-sizing: border-box; }
   body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 600; color: ${PRINT.ink}; margin: 0; }
   /* The letterhead footer repeats on every printed page via a <tfoot> with
@@ -333,14 +333,14 @@ function buildPrintHtml(c, monthText, priorMonthText) {
   .subtitle { color: ${PRINT.inkSoft}; font-size: 14px; margin-top: 4px; }
   .section-heading { font-family: 'Nordique Pro', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: ${PRINT.brand}; font-weight: 600; padding-top: 22px; }
   .noborder td, tr.noborder { border: none; }
-  .datarow { border-bottom: 1px solid ${PRINT.line}; page-break-inside: avoid; break-inside: avoid; }
+  .datarow { border-bottom: 1px solid ${PRINT.line}; page-break-inside: avoid; break-inside: avoid; font-weight: 300; }
   .right { text-align: right; font-variant-numeric: tabular-nums; font-family: Arial, "Segoe UI", sans-serif; }
   .total td { font-weight: 700; border-top: 2px solid ${PRINT.ink}; border-bottom: none; padding-top: 12px; }
   .label { color: ${PRINT.inkSoft}; }
   .note-cell { font-size: 11px; color: ${PRINT.inkSoft}; font-style: italic; padding-top: 4px; }
   .generated-note-cell { font-size: 9px; color: ${PRINT.inkSoft}; text-align: right; font-style: italic; padding-top: 24px; }
   .letterhead-footer-cell {
-    height: 26mm;
+    height: 15mm; /* the footer image is cropped to fit exactly within a 15mm margin at full page width */
     padding: 0;
     border: none;
     background-image: url('data:image/png;base64,${LETTERHEAD_FOOTER_B64}');
