@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient.js";
 import { fetchClickupFromSupabase } from "./clickupSync.js";
 import { findMatch, isInternalFolder } from "./nameMatch.js";
+import { fetchClients, fetchClientEvents, typeForMonth } from "./clientsSync.js";
 
 const PAGE_SIZE = 1000;
 
@@ -38,7 +39,7 @@ export async function fetchAccrualsFromSupabase() {
   while (true) {
     const { data, error } = await supabase
       .from("pginvoice_accruals")
-      .select("client, account_manager, agreed_hpm, month_key, accrual_value, accrual_note, pct_over_under, comment, worked_hours, is_override")
+      .select("client, account_manager, agreed_hpm, month_key, accrual_value, accrual_note, pct_over_under, comment, worked_hours, is_override, hours_flagged")
       .order("client", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
@@ -67,6 +68,7 @@ function rowsToClients(rows) {
       comment: r.comment || null,
       workedHours: r.worked_hours === null || r.worked_hours === undefined ? null : Number(r.worked_hours),
       isOverride: !!r.is_override,
+      hoursFlagged: !!r.hours_flagged,
     };
   }
   return [...byClient.values()].sort((a, b) => a.client.localeCompare(b.client));
@@ -98,112 +100,18 @@ export async function upsertAccrualRows(rows) {
   }
 }
 
-// -------------------------- manual-upload fallback parser --------------------------
-// Reads the same "Accrued Hours" workbook the user maintains by hand: a client column,
-// an "Agreed h.p.m" column, then repeating month triplets (a date/label header, an
-// optional "% over/under" header, and an optional "Comments" header). Rows whose second
-// column literally reads "Agreed h.p.m" are account-manager separators, not clients.
-export function parseAccrualsWorkbook(buffer) {
-  const wb = XLSX.read(buffer, { type: "array", cellDates: true });
-  const sheetName = wb.SheetNames.find((n) => /accrued/i.test(n)) || wb.SheetNames[0];
-  const ws = wb.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
-
-  let headerIdx = rows.findIndex((r) => r && ((r[0] && /client/i.test(String(r[0]))) || (r[1] && /agreed/i.test(String(r[1])))));
-  if (headerIdx < 0) headerIdx = 2;
-  const header = rows[headerIdx] || [];
-
-  const monthCols = []; // { col, monthKey, pctCol, commentCol }
-  for (let c = 2; c < header.length; c++) {
-    const mk = headerToMonthKey(header[c]);
-    if (!mk) continue;
-    let pctCol = null, commentCol = null;
-    for (let look = c + 1; look <= c + 3 && look < header.length; look++) {
-      if (headerToMonthKey(header[look])) break; // next month column — stop looking
-      const h = header[look] ? String(header[look]) : "";
-      if (!commentCol && /comment/i.test(h)) commentCol = look;
-      else if (!pctCol && /%|over|under/i.test(h)) pctCol = look;
-    }
-    monthCols.push({ col: c, monthKey: mk, pctCol, commentCol });
-  }
-
-  const clients = [];
-  const warnings = [];
-  let manager = null;
-  for (let r = headerIdx + 1; r < rows.length; r++) {
-    const row = rows[r] || [];
-    const name = row[0];
-    const pkgRaw = row[1];
-    if (!name || typeof name !== "string" || !name.trim()) continue;
-    if (typeof pkgRaw === "string" && /agreed\s*h\.?p\.?m/i.test(pkgRaw)) { manager = name.trim(); continue; }
-
-    const agreedHpm = pkgRaw === null || pkgRaw === undefined ? null : String(pkgRaw);
-    const months = {};
-    let hasAny = false;
-    for (const mc of monthCols) {
-      const raw = row[mc.col];
-      const comment = mc.commentCol !== null ? row[mc.commentCol] : null;
-      const pct = mc.pctCol !== null ? row[mc.pctCol] : null;
-      if (raw === null && comment === null && pct === null) continue;
-      hasAny = true;
-      months[mc.monthKey] = {
-        accrualValue: typeof raw === "number" ? raw : null,
-        accrualNote: typeof raw === "string" ? raw : null,
-        pct: typeof pct === "number" ? pct : null,
-        comment: comment ? String(comment) : null,
-        workedHours: null,
-        isOverride: true,
-      };
-    }
-    if (!hasAny && agreedHpm === null) continue;
-    clients.push({ client: name.trim(), manager, agreedHpm, months });
-  }
-
-  if (!clients.length) warnings.push("No client rows were found — check this is the Accrued Hours workbook.");
-  return { clients, monthKeys: monthCols.map((m) => m.monthKey), sheetName, warnings };
-}
-
-function headerToMonthKey(cell) {
-  if (cell instanceof Date) return monthKeyOf(cell.getFullYear(), cell.getMonth());
-  if (typeof cell === "string") {
-    const m = cell.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    if (m) return monthKeyOf(parseInt(m[3], 10), parseInt(m[2], 10) - 1);
-  }
-  return null;
-}
-
-// Flattens the client-list shape back into (client, month_key) rows for Supabase upserts.
-// A manual workbook upload represents a human's authoritative figure for that month, so
-// it's flagged as an override — recomputeAccruals below will never overwrite it.
-export function clientsToRows(clients) {
-  const out = [];
-  for (const c of clients) {
-    for (const [mk, cell] of Object.entries(c.months)) {
-      out.push({
-        client: c.client,
-        account_manager: c.manager || null,
-        agreed_hpm: c.agreedHpm || null,
-        month_key: mk,
-        accrual_value: cell.accrualValue ?? null,
-        accrual_note: cell.accrualNote ?? null,
-        pct_over_under: cell.pct ?? null,
-        comment: cell.comment ?? null,
-        worked_hours: cell.workedHours ?? null,
-        is_override: true,
-      });
-    }
-  }
-  return out;
-}
-
 // -------------------------- auto-compute from live ClickUp hours --------------------------
-// Chains newBalance = worked - agreedHours + prior forward from the latest month already
-// on file for each client, through the current month — the same formula Client Invoicing
-// already uses to reconcile the accrued sheet against ClickUp. Only fills months that don't
-// exist yet or were previously computed (never touches a human-entered/overridden month),
-// so one-off adjustments (payouts, write-offs, etc.) recorded by hand are never clobbered.
+// Chains newBalance = worked - agreedHours + prior forward, replaying every non-override
+// month from each client's earliest month on file through the current one (not just gap-
+// filling forward) — because a retroactive ClickUp edit to an earlier closed month changes
+// that month's "prior" for everything after it. Only clients on a package that month (per
+// the Clients module's type history) accrue at all; a human-entered month (is_override) is
+// a frozen baseline the chain treats as fact and never recalculates. If a past, already-
+// closed month's freshly-computed worked hours differ from what's stored, the row is
+// updated but flagged (hours_flagged) so a retroactive timesheet edit is visible rather than
+// silently changing the numbers underneath everyone.
 export async function recomputeAccruals(clients) {
-  const live = await fetchClickupFromSupabase();
+  const [live, profiles, events] = await Promise.all([fetchClickupFromSupabase(), fetchClients(), fetchClientEvents()]);
   if (!live) return { clients, updatedCount: 0 };
 
   const workedByFolderMonth = new Map(); // folder -> Map(monthKey -> minutes)
@@ -216,38 +124,49 @@ export async function recomputeAccruals(clients) {
     m.set(r.monthKey, (m.get(r.monthKey) || 0) + r.minutes);
   }
   const folderNames = [...workedByFolderMonth.keys()];
+  const profileByClient = new Map(profiles.map((p) => [p.client, p]));
   const cur = currentMonthKey();
   const updatedRows = [];
   const nextClients = clients.map((c) => ({ ...c, months: { ...c.months } }));
 
   for (const c of nextClients) {
-    const agreedNum = parseAgreedHours(c.agreedHpm);
-    if (agreedNum === null) continue;
+    const profile = profileByClient.get(c.client);
+    if (!profile) continue; // no client profile on file — nothing to compute against
     const match = findMatch(c.client, folderNames);
     const folderMinutes = match ? workedByFolderMonth.get(match.name) : null;
 
     const existingMonths = Object.keys(c.months).sort();
-    const lastMonth = existingMonths.length ? existingMonths[existingMonths.length - 1] : shiftMonthKey(cur, -1);
-    let prior = existingMonths.length ? (c.months[lastMonth].accrualValue ?? 0) : 0;
+    const startMonth = existingMonths.length ? existingMonths[0] : (profile.startDate ? profile.startDate.slice(0, 7) : cur);
 
-    let mk = shiftMonthKey(lastMonth, 1);
-    while (mk <= cur) {
+    let prior = 0;
+    let mk = startMonth;
+    let guard = 0;
+    while (mk <= cur && guard++ < 240) {
+      const seg = typeForMonth(profile, events, mk);
+      if (seg.type !== "package" || seg.agreedHours === null) { mk = shiftMonthKey(mk, 1); continue; }
+      const agreedNum = Number(seg.agreedHours);
+
       const existing = c.months[mk];
-      if (!existing || !existing.isOverride) {
+      if (existing?.isOverride) {
+        prior = existing.accrualValue ?? prior;
+      } else {
         const worked = (folderMinutes?.get(mk) || 0) / 60;
+        const workedHours = Math.round(worked * 100) / 100;
         const accrualValue = Math.round((worked - agreedNum + prior) * 100) / 100;
         const pct = agreedNum ? Math.round((accrualValue / agreedNum) * 10000) / 10000 : null;
-        const workedHours = Math.round(worked * 100) / 100;
-        const cell = { accrualValue, accrualNote: null, pct, comment: existing?.comment ?? null, workedHours, isOverride: false };
+        const isClosedMonth = mk < cur;
+        const hoursFlagged = isClosedMonth && existing?.workedHours != null && Math.abs(existing.workedHours - workedHours) > 0.01;
+        const cell = { accrualValue, accrualNote: null, pct, comment: existing?.comment ?? null, workedHours, isOverride: false, hoursFlagged };
+        const changed = !existing || existing.accrualValue !== accrualValue || existing.workedHours !== workedHours;
         c.months[mk] = cell;
-        updatedRows.push({
-          client: c.client, account_manager: c.manager || null, agreed_hpm: c.agreedHpm || null,
-          month_key: mk, accrual_value: accrualValue, accrual_note: null, pct_over_under: pct,
-          comment: cell.comment, worked_hours: workedHours, is_override: false,
-        });
+        if (changed) {
+          updatedRows.push({
+            client: c.client, account_manager: c.manager || null, agreed_hpm: c.agreedHpm || null,
+            month_key: mk, accrual_value: accrualValue, accrual_note: null, pct_over_under: pct,
+            comment: cell.comment, worked_hours: workedHours, is_override: false, hours_flagged: hoursFlagged,
+          });
+        }
         prior = accrualValue;
-      } else {
-        prior = existing.accrualValue ?? prior;
       }
       mk = shiftMonthKey(mk, 1);
     }
