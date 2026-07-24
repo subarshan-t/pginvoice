@@ -275,7 +275,7 @@ const TYPE_TONES = {
 };
 
 // ------------------------------- PDF (print) --------------------------------
-const PRINT = { ink: "#1F1B24", inkSoft: "#6B6172", brand: "#3F008E", line: "#E7E1F0", brandSoft: "#F1EAFB" };
+const PRINT = { ink: "#000000", inkSoft: "#000000", brand: "#3F008E", line: "#E7E1F0", brandSoft: "#F1EAFB" };
 
 function buildPrintHtml(c, monthText, priorMonthText) {
   const type = c.type;
@@ -318,7 +318,7 @@ function buildPrintHtml(c, monthText, priorMonthText) {
   ${NORDIQUE_FONT_FACE_CSS}
   @page { margin: 18mm 18mm 34mm 18mm; size: A4; }
   * { box-sizing: border-box; }
-  body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 300; color: ${PRINT.ink}; margin: 0; padding: 20px; }
+  body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 600; color: ${PRINT.ink}; margin: 0; padding: 20px; }
   .header { border-bottom: 2px solid ${PRINT.ink}; padding-bottom: 14px; margin-bottom: 22px; }
   .brand { font-family: 'Nordique Pro', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
   h1 { font-family: 'Nordique Pro', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
@@ -329,7 +329,7 @@ function buildPrintHtml(c, monthText, priorMonthText) {
   th, td { padding: 8px 10px; text-align: left; }
   thead th { background: ${PRINT.brandSoft}; font-weight: 600; font-size: 12px; color: ${PRINT.ink}; border-bottom: 1px solid ${PRINT.line}; }
   tbody tr, table tr { border-bottom: 1px solid ${PRINT.line}; }
-  .right { text-align: right; font-variant-numeric: tabular-nums; }
+  .right { text-align: right; font-variant-numeric: tabular-nums; font-family: Arial, "Segoe UI", sans-serif; }
   .total td { font-weight: 700; border-top: 2px solid ${PRINT.ink}; border-bottom: none; padding-top: 12px; }
   .label { color: ${PRINT.inkSoft}; }
   .note { margin-top: 10px; font-size: 11px; color: ${PRINT.inkSoft}; font-style: italic; }

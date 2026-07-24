@@ -88,7 +88,7 @@ class ErrorBoundary extends React.Component {
 }
 
 // ------------------------------- PDF (print) --------------------------------
-const PRINT = { ink: "#1F1B24", inkSoft: "#6B6172", brand: "#3F008E", line: "#E7E1F0", brandSoft: "#F1EAFB" };
+const PRINT = { ink: "#000000", inkSoft: "#000000", brand: "#3F008E", line: "#E7E1F0", brandSoft: "#F1EAFB" };
 
 function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDaily, monthlyTotal) {
   const monthText = monthLabelOf(monthKeyStr);
@@ -107,18 +107,18 @@ function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDa
   ${NORDIQUE_FONT_FACE_CSS}
   @page { margin: 18mm 18mm 34mm 18mm; size: A4; }
   * { box-sizing: border-box; }
-  body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 300; color: ${PRINT.ink}; margin: 0; padding: 20px; }
+  body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 600; color: ${PRINT.ink}; margin: 0; padding: 20px; }
   .header { border-bottom: 2px solid ${PRINT.ink}; padding-bottom: 14px; margin-bottom: 22px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
   .brand { font-family: 'Nordique Pro', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
   h1 { font-family: 'Nordique Pro', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
   .subtitle { color: ${PRINT.inkSoft}; font-size: 14px; margin-top: 4px; }
   .totalbox { text-align: right; }
   .totalbox .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: ${PRINT.brand}; font-weight: 600; }
-  .totalbox .val { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .totalbox .val { font-size: 28px; font-weight: 700; margin-top: 4px; font-family: Arial, "Segoe UI", sans-serif; }
   .grid { width: 100%; border-collapse: collapse; margin-top: 22px; table-layout: fixed; }
   .grid td { border: 1px solid ${PRINT.line}; padding: 8px 6px; text-align: center; vertical-align: top; }
   .daylabel { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: ${PRINT.inkSoft}; line-height: 1.4; }
-  .dayval { font-size: 16px; font-weight: 600; margin-top: 8px; }
+  .dayval { font-size: 16px; font-weight: 600; margin-top: 8px; font-family: Arial, "Segoe UI", sans-serif; }
   .generated-note { margin-top: 24px; font-size: 9px; color: ${PRINT.inkSoft}; text-align: right; font-style: italic; }
   .letterhead-footer {
     position: fixed; left: 0; right: 0; bottom: 0; width: 100%; height: 26mm;
