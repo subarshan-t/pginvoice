@@ -26,6 +26,8 @@ export default function ClientAccruals() {
   const [month, setMonth] = useState(currentMonthKey());
   const [rangeStart, setRangeStart] = useState(shiftMonthKey(currentMonthKey(), -2));
   const [rangeEnd, setRangeEnd] = useState(currentMonthKey());
+  const [showAll, setShowAll] = useState(false); // false = only clients with an accrual in the visible months
+  const [signFilter, setSignFilter] = useState("all"); // "all" | "positive" | "negative"
   const [editingCell, setEditingCell] = useState(null); // "client|monthKey"
   const [draftComment, setDraftComment] = useState("");
   const [saving, setSaving] = useState(false);
@@ -47,9 +49,15 @@ export default function ClientAccruals() {
   const filtered = useMemo(() => {
     if (!clients) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return clients;
-    return clients.filter((c) => c.client.toLowerCase().includes(q) || (c.manager || "").toLowerCase().includes(q));
-  }, [clients, search]);
+    return clients.filter((c) => {
+      if (q && !c.client.toLowerCase().includes(q) && !(c.manager || "").toLowerCase().includes(q)) return false;
+      const values = months.map((mk) => c.months[mk]?.accrualValue).filter((v) => typeof v === "number" && v !== 0);
+      if (!showAll && values.length === 0) return false;
+      if (signFilter === "positive" && !values.some((v) => v > 0)) return false;
+      if (signFilter === "negative" && !values.some((v) => v < 0)) return false;
+      return true;
+    });
+  }, [clients, search, month, rangeStart, rangeEnd, rangeMode, showAll, signFilter]);
 
   async function handleUpload(file) {
     if (!file) return;
@@ -146,6 +154,20 @@ export default function ClientAccruals() {
             </div>
           </>
         )}
+
+        <label className="pg-field" style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
+          <span className="pg-field__label" style={{ margin: 0 }}>Select all clients</span>
+        </label>
+
+        <label className="pg-field">
+          <span className="pg-field__label">Accrual sign</span>
+          <select className="pg-input" value={signFilter} onChange={(e) => setSignFilter(e.target.value)}>
+            <option value="all">All</option>
+            <option value="positive">Positive only</option>
+            <option value="negative">Negative only</option>
+          </select>
+        </label>
 
         <button className="pg-btn-ghost" onClick={() => fileInput.current?.click()}><Upload size={14} /> Upload</button>
         <button className="pg-btn" style={{ marginLeft: "auto" }} onClick={exportRange}><Download size={14} /> Export</button>
