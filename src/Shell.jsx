@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { FileText, BarChart3, TrendingUp, CalendarDays, Sun, Moon } from "lucide-react";
+import { FileText, BarChart3, TrendingUp, CalendarDays, Clock, Sun, Moon } from "lucide-react";
 import PGReconciliation from "./App.jsx";
 import CapacityDashboard from "./CapacityDashboard.jsx";
 import PerformanceScorecard from "./PerformanceScorecard.jsx";
 import TimesheetSummary from "./TimesheetSummary.jsx";
+import ClientAccruals from "./ClientAccruals.jsx";
 
 const MODULES = [
   { key: "invoicing", label: "Client Invoicing", icon: FileText },
   { key: "capacity", label: "Capacity planning", icon: BarChart3 },
   { key: "performance", label: "Performance", icon: TrendingUp },
   { key: "timesheet", label: "Timesheet summary", icon: CalendarDays },
+  { key: "accruals", label: "Client Accruals", icon: Clock },
 ];
 
 const THEME_KEY = "pg-theme";
@@ -68,6 +70,7 @@ export default function Shell() {
         <div style={{ display: active === "capacity" ? "block" : "none" }}><CapacityDashboard /></div>
         <div style={{ display: active === "performance" ? "block" : "none" }}><PerformanceScorecard /></div>
         <div style={{ display: active === "timesheet" ? "block" : "none" }}><TimesheetSummary /></div>
+        <div style={{ display: active === "accruals" ? "block" : "none" }}><ClientAccruals /></div>
       </main>
     </div>
   );
