@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Search, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch } from "./nameMatch.js";
+import { findPersonMatch } from "./nameMatch.js";
 import { SEED_PEOPLE, loadKey } from "./CapacityDashboard.jsx";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
+import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
 
 const CLICKUP_DB_KEY = "clickup";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// The browser's "Save as PDF" dialog suggests <title> as the default filename —
+// strip characters illegal in filenames on Windows/macOS.
+const filenameSafe = (s) => String(s ?? "").replace(/[\\/:*?"<>|]/g, "-").trim();
 const fmt2 = (n) => (n === null || n === undefined || isNaN(n)) ? "0.00" : n.toFixed(2);
 
 function monthKeyOf(year, month0) { return `${year}-${String(month0 + 1).padStart(2, "0")}`; }
@@ -87,7 +91,7 @@ class ErrorBoundary extends React.Component {
 }
 
 // ------------------------------- PDF (print) --------------------------------
-const PRINT = { ink: "#1F1B24", inkSoft: "#6B6172", brand: "#3F008E", line: "#E7E1F0", brandSoft: "#F1EAFB" };
+const PRINT = { ink: "#000000", inkSoft: "#000000", brand: "#3F008E", line: "#E7E1F0", brandSoft: "#F1EAFB" };
 
 function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDaily, monthlyTotal) {
   const monthText = monthLabelOf(monthKeyStr);
@@ -101,31 +105,38 @@ function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDa
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<title>${esc(consultantName)} — ${esc(monthText)} timesheet</title>
+<title>${esc(filenameSafe(consultantName))}: ${esc(filenameSafe(monthText))} timesheet</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
-  @page { margin: 18mm 18mm 34mm 18mm; size: A4; }
+  ${NORDIQUE_FONT_FACE_CSS}
+  @page { margin: 15mm; size: A4; }
   * { box-sizing: border-box; }
-  body { font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: ${PRINT.ink}; margin: 0; padding: 20px; }
+  body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 600; color: ${PRINT.ink}; margin: 0; }
+  /* Unlike Client Invoicing's Tasks list (which can grow to any number of
+     rows and hits a real Chromium/Edge print-pagination bug with a fixed
+     footer), a timesheet export is always a bounded handful of weeks —
+     never enough to risk that bug in practice. So this one gets a plain
+     position:fixed footer instead of the <tfoot> table trick, which pins
+     it to the exact same spot on every page rather than wherever content
+     happens to end. */
   .header { border-bottom: 2px solid ${PRINT.ink}; padding-bottom: 14px; margin-bottom: 22px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
-  .brand { font-family: 'Quicksand', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
-  h1 { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
+  .brand { font-family: 'Nordique Pro', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+  h1 { font-family: 'Nordique Pro', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
   .subtitle { color: ${PRINT.inkSoft}; font-size: 14px; margin-top: 4px; }
   .totalbox { text-align: right; }
   .totalbox .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: ${PRINT.brand}; font-weight: 600; }
-  .totalbox .val { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .totalbox .val { font-size: 28px; font-weight: 700; margin-top: 4px; font-family: Arial, "Segoe UI", sans-serif; }
   .grid { width: 100%; border-collapse: collapse; margin-top: 22px; table-layout: fixed; }
-  .grid td { border: 1px solid ${PRINT.line}; padding: 8px 6px; text-align: center; vertical-align: top; }
+  .grid td { border: 1px solid ${PRINT.line}; padding: 8px 6px; text-align: center; vertical-align: top; page-break-inside: avoid; break-inside: avoid; }
   .daylabel { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: ${PRINT.inkSoft}; line-height: 1.4; }
-  .dayval { font-size: 16px; font-weight: 600; margin-top: 8px; }
+  .dayval { font-size: 16px; font-weight: 600; margin-top: 8px; font-family: Arial, "Segoe UI", sans-serif; }
   .generated-note { margin-top: 24px; font-size: 9px; color: ${PRINT.inkSoft}; text-align: right; font-style: italic; }
   .letterhead-footer {
-    position: fixed; left: 0; right: 0; bottom: 0; width: 100%; height: 26mm;
-    background-image: url('data:image/jpeg;base64,${LETTERHEAD_FOOTER_B64}');
+    position: fixed; left: 0; right: 0; bottom: 0; width: 100%; height: 15mm;
+    background-image: url('data:image/png;base64,${LETTERHEAD_FOOTER_B64}');
     background-repeat: no-repeat; background-position: bottom center; background-size: 100% auto;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
-  @media print { .noprint { display: none; } body { padding: 0; } }
+  @media print { .noprint { display: none; } }
 </style>
 </head><body>
   <div class="header">
@@ -146,7 +157,14 @@ function buildTimesheetPrintHtml(consultantName, monthKeyStr, weeksArr, personDa
 
   <div class="letterhead-footer"></div>
 
-  <script>window.addEventListener('load', function() { setTimeout(function() { window.print(); }, 300); });</script>
+  <script>
+    window.addEventListener('load', function() {
+      var printed = false;
+      function go() { if (!printed) { printed = true; window.print(); } }
+      document.fonts.ready.then(go, go);
+      setTimeout(go, 1500);
+    });
+  </script>
 </body></html>`;
 }
 
@@ -184,7 +202,7 @@ function TimesheetInner() {
       const cu = await idbGet(CLICKUP_DB_KEY);
       if (cancelled) return;
       setClickup(cu || null);
-      setPeople(loadKey("cap_people", SEED_PEOPLE));
+      setPeople(await loadKey("cap_people", SEED_PEOPLE));
       setLoaded(true);
     };
     load();
@@ -206,11 +224,10 @@ function TimesheetInner() {
     if (!clickup?.rows?.length) return map;
     const usernames = new Set();
     for (const r of clickup.rows) if (r.user) usernames.add(r.user);
-    const rosterNames = people.map((p) => p.name);
     usernames.forEach((u) => {
       if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, null); return; }
-      const m = findMatch(u, rosterNames);
-      map.set(u, m ? m.name : null);
+      const p = findPersonMatch(u, people);
+      map.set(u, p ? p.name : null);
     });
     return map;
   }, [clickup, people]);
@@ -291,14 +308,14 @@ function TimesheetInner() {
       <div className="pg-app-header">
         <div>
           <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-          <h1 className="pg-app-header__title">Timesheet summary — daily hours by consultant.</h1>
-          <p className="pg-app-header__sub">Total time logged in ClickUp per day, for whichever consultant and month you pick. Not filtered to billable hours — this mirrors the raw timesheet, not the invoicing view.</p>
+          <h1 className="pg-app-header__title">Timesheet summary: daily hours by consultant.</h1>
+          <p className="pg-app-header__sub">Total time logged in ClickUp per day, for whichever consultant and month you pick. Not filtered to billable hours, this mirrors the raw timesheet, not the invoicing view.</p>
         </div>
       </div>
 
       {!hasData && (
         <div className="pg-banner-warn">
-          No ClickUp data loaded yet — upload a CSV in Client Invoicing to see daily hours here.
+          No ClickUp data loaded yet, upload a CSV in Client Invoicing to see daily hours here.
         </div>
       )}
 

@@ -4,7 +4,7 @@ import {
   Search, Download, ChevronDown, Plus, X, Users,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, isInternalFolder } from "./nameMatch.js";
+import { findMatch, findPersonMatch, isInternalFolder } from "./nameMatch.js";
 import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey } from "./CapacityDashboard.jsx";
 
 const CLICKUP_DB_KEY = "clickup";
@@ -223,9 +223,14 @@ function PerformanceInner() {
       const cu = await idbGet(CLICKUP_DB_KEY);
       if (cancelled) return;
       setClickup(cu || null);
-      setClients(loadKey("cap_clients", SEED_CLIENTS));
-      setPeople(loadKey("cap_people", SEED_PEOPLE));
-      setNotes(loadKey(NOTES_KEY, []));
+      setClients(await loadKey("cap_clients", SEED_CLIENTS));
+      setPeople(await loadKey("cap_people", SEED_PEOPLE));
+      // This module's own notes are plain localStorage (see addNote/removeNote below),
+      // never part of the Capacity Planning data now backed by Supabase — read it the
+      // same way it's written, not via the shared (Supabase-backed) loadKey.
+      let localNotes = [];
+      try { const raw = window.localStorage.getItem(NOTES_KEY); localNotes = raw ? JSON.parse(raw) : []; } catch (e) { /* ignore */ }
+      setNotes(localNotes);
       setLoaded(true);
     };
     load();
@@ -408,11 +413,10 @@ function PerformanceInner() {
     if (!clickup?.rows?.length) return map;
     const usernames = new Set();
     for (const r of clickup.rows) if (r.user) usernames.add(r.user);
-    const rosterNames = people.map((p) => p.name);
     usernames.forEach((u) => {
       if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, null); return; }
-      const m = findMatch(u, rosterNames);
-      map.set(u, m ? m.name : null);
+      const p = findPersonMatch(u, people);
+      map.set(u, p ? p.name : null);
     });
     return map;
   }, [clickup, people]);
@@ -554,14 +558,14 @@ function PerformanceInner() {
       <div className="pg-app-header">
         <div>
           <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-          <h1 className="pg-app-header__title">Performance scorecard — how is the business actually doing?</h1>
+          <h1 className="pg-app-header__title">Performance scorecard: how is the business actually doing?</h1>
           <p className="pg-app-header__sub">Select a client or consultant to see their own trend; leave it blank for the whole-business view. Figures come live from whatever ClickUp export is loaded in Client Invoicing, and the roster/client list from Capacity Planning.</p>
         </div>
       </div>
 
       {!hasData && (
         <div className="pg-banner-warn">
-          No ClickUp data loaded yet — upload a CSV in Client Invoicing to see real trends here. The roster and client list below are shown with no actuals until then.
+          No ClickUp data loaded yet, upload a CSV in Client Invoicing to see real trends here. The roster and client list below are shown with no actuals until then.
         </div>
       )}
       {hasData && botHours > 0.05 && (
@@ -622,8 +626,8 @@ function PerformanceInner() {
                 <LineChart series={clientChart.series} months={activeMonths} />
                 {selectedClient && (
                   <p className="pg-footnote" style={{ marginTop: 6 }}>
-                    Showing <b>{selectedClient}</b> — {clientChart.isFixed ? "no Hourly line, since this is a fixed-agreement client." : "no Agreed line, since this client has no fixed agreement."}
-                    {!clientChart.matched && " No matching ClickUp folder found for this client — actuals are 0."}
+                    Showing <b>{selectedClient}</b>: {clientChart.isFixed ? "no Hourly line, since this is a fixed-agreement client." : "no Agreed line, since this client has no fixed agreement."}
+                    {!clientChart.matched && " No matching ClickUp folder found for this client, actuals are 0."}
                   </p>
                 )}
               </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { FileText, BarChart3, TrendingUp, CalendarDays, Clock, Sun, Moon } from "lucide-react";
+import { FileText, BarChart3, TrendingUp, CalendarDays, Clock, Sun, Moon, LogOut } from "lucide-react";
 import PGReconciliation from "./App.jsx";
 import CapacityDashboard from "./CapacityDashboard.jsx";
 import PerformanceScorecard from "./PerformanceScorecard.jsx";
@@ -15,8 +15,56 @@ const MODULES = [
 ];
 
 const THEME_KEY = "pg-theme";
+const AUTH_KEY = "pg-auth";
+// Front-door deterrent only, not real security: a hardcoded check in shipped
+// client JS is visible to anyone who opens dev tools or views the bundle.
+// Fine for keeping casual visitors out of an internal tool; not a substitute
+// for real auth if this ever needs to resist a determined bypass attempt.
+const VALID_USERNAME = "Kelly";
+const VALID_PASSWORD = "Kelly";
+
+function LoginGate({ onSuccess }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (username === VALID_USERNAME && password === VALID_PASSWORD) {
+      try { window.sessionStorage.setItem(AUTH_KEY, "1"); } catch (e) {}
+      setError("");
+      onSuccess();
+    } else {
+      setError("Incorrect username or password.");
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg-base)" }}>
+      <form onSubmit={submit} className="pg-cap-card" style={{ width: 320, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", marginBottom: 4 }}>
+          <img src="/assets/giraffe-mark.png" alt="" style={{ width: 22, height: 22 }} />
+          <span className="pg-eyebrow">Purple Giraffe</span>
+        </div>
+        <label className="pg-field">
+          <span className="pg-field__label">Username</span>
+          <input className="pg-input" autoFocus value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+        </label>
+        <label className="pg-field">
+          <span className="pg-field__label">Password</span>
+          <input className="pg-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+        </label>
+        {error && <p className="pg-footnote" style={{ color: "var(--status-over)" }}>{error}</p>}
+        <button className="pg-btn" type="submit" style={{ justifyContent: "center" }}>Sign in</button>
+      </form>
+    </div>
+  );
+}
 
 export default function Shell() {
+  const [authed, setAuthed] = useState(() => {
+    try { return window.sessionStorage.getItem(AUTH_KEY) === "1"; } catch (e) { return false; }
+  });
   const [active, setActive] = useState("invoicing");
   const [theme, setTheme] = useState(() => {
     try { return window.localStorage.getItem(THEME_KEY) || "dark"; } catch (e) { return "dark"; }
@@ -30,6 +78,13 @@ export default function Shell() {
     document.documentElement.style.colorScheme = theme;
     try { window.localStorage.setItem(THEME_KEY, theme); } catch (e) {}
   }, [theme]);
+
+  if (!authed) return <LoginGate onSuccess={() => setAuthed(true)} />;
+
+  const logOut = () => {
+    try { window.sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
+    setAuthed(false);
+  };
 
   return (
     <div className="pg-shell">
@@ -59,6 +114,15 @@ export default function Shell() {
         >
           {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           {theme === "dark" ? "Light mode" : "Dark mode"}
+        </button>
+        <button
+          className="pg-sidebar__link"
+          onClick={logOut}
+          title="Sign out"
+          aria-label="Sign out"
+        >
+          <LogOut size={16} />
+          Sign out
         </button>
       </aside>
       <main className="pg-shell__main">

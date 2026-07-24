@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
-  ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap,
+  ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap, MoreVertical,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, isInternalFolder } from "./nameMatch.js";
+import { loadState, saveState } from "./capacityStore.js";
 
 /* ============================================================
    MONTHS / CONSTANTS
@@ -77,6 +78,32 @@ function publicHolidayDays(state, monthStr) {
   const list = PUBLIC_HOLIDAYS[state] || PUBLIC_HOLIDAYS.SA;
   return list.filter((h) => h.date.startsWith(monthStr)).length;
 }
+// Same two counts, but capped to day `throughDay` of the month — used to prorate
+// a person's capacity down to their last working day in their resignation month.
+function weekdaysInMonthUpToDay(monthStr, throughDay) {
+  const [y, mo] = monthStr.split("-").map(Number);
+  let count = 0;
+  for (let d = 1; d <= throughDay; d++) {
+    const dow = new Date(y, mo - 1, d).getDay();
+    if (dow >= 1 && dow <= 5) count++;
+  }
+  return count;
+}
+function publicHolidayDaysUpToDay(state, monthStr, throughDay) {
+  const list = PUBLIC_HOLIDAYS[state] || PUBLIC_HOLIDAYS.SA;
+  return list.filter((h) => h.date.startsWith(monthStr) && Number(h.date.slice(8, 10)) <= throughDay).length;
+}
+// Whether a person counts as staff for a given month, given their (optional)
+// resignationDate ("YYYY-MM-DD"): fully active if unset or the resignation falls
+// in a later month; excluded entirely if it's an earlier month; active but capped
+// to their last working day if the resignation falls within this exact month.
+function resignationStatus(person, monthStr) {
+  if (!person.resignationDate) return { active: true, throughDay: null };
+  const resignMonthKey = person.resignationDate.slice(0, 7);
+  if (resignMonthKey > monthStr) return { active: true, throughDay: null };
+  if (resignMonthKey < monthStr) return { active: false, throughDay: null };
+  return { active: true, throughDay: Number(person.resignationDate.slice(8, 10)) };
+}
 // The 6 real calendar months ending with the current one, regardless of which month is
 // selected in the ledger — "average of the last 6 months" is a fixed, always-moving window,
 // not something that changes as you flip through Jan/Feb/... in the capacity view.
@@ -120,7 +147,7 @@ export const SEED_PEOPLE = [
   { id: "p2", name: "Shreya", role: "Consultant", state: "SA", contracted: 38, rate: 0.60, note: "Probation" },
   { id: "p3", name: "Chloe", role: "Consultant", state: "SA", contracted: 30, rate: 0.70, note: "Standard" },
   { id: "p4", name: "Alice", role: "Consultant", state: "SA", contracted: 22.5, rate: 0.70, note: "Standard" },
-  { id: "p5", name: "Amanda", role: "Consultant", state: "WA", contracted: 38, rate: 0.20, note: "Support-heavy role — worth reviewing" },
+  { id: "p5", name: "Amanda", role: "Consultant", state: "WA", contracted: 38, rate: 0.20, note: "Support-heavy role, worth reviewing" },
   { id: "p6", name: "Lucy", role: "Consultant", state: "QLD", contracted: 38, rate: 0.50, note: "Probation + BDM discount" },
   { id: "p7", name: "Vinavie", role: "Consultant", state: "SA", contracted: 38, rate: 0.70, note: "Standard" },
   { id: "p8", name: "Alex", role: "Coordinator", state: "SA", contracted: 38, rate: 0.70, note: "Supports others + Purple Giraffe internal work" },
@@ -142,17 +169,17 @@ export const SEED_CLIENTS = [
   C("c5", "Equippers", "Equippers", "Chloe", "Quoted", null, { "2026-01": 0, "2026-02": 11.2, "2026-03": 5.0, "2026-04": 3.3, "2026-05": 10.0, "2026-06": 0.4 }),
   C("c6", "Spectrum Consultants", "Spectrum Consultants", "Chloe", "Package", 24, { "2026-01": 21.8, "2026-02": 36.9, "2026-03": 35.9, "2026-04": 22.7, "2026-05": 22.8, "2026-06": 21.1 }),
   C("c7", "Treasure Boxes", "Treasure Boxes", "Chloe", "Package", 10, { "2026-01": 21.8, "2026-02": 20.2, "2026-03": 3.4, "2026-04": 0, "2026-05": 0, "2026-06": 11.5 }),
-  C("c8", "Warrina Homes — Package", "Warrina Homes", "Chloe", "Package", 24, { "2026-01": 28.5, "2026-02": 27.8, "2026-03": 7.2, "2026-04": 46.8, "2026-05": 50.0, "2026-06": 44.1 }),
-  C("c9", "Warrina Homes — Employee Handbook", "Warrina Homes", "Chloe", "Project", null, null),
+  C("c8", "Warrina Homes: Package", "Warrina Homes", "Chloe", "Package", 24, { "2026-01": 28.5, "2026-02": 27.8, "2026-03": 7.2, "2026-04": 46.8, "2026-05": 50.0, "2026-06": 44.1 }),
+  C("c9", "Warrina Homes: Employee Handbook", "Warrina Homes", "Chloe", "Project", null, null),
 
   C("c10", "Australian GW", "Australian GW", "Vinavie", "Hourly", 0, null),
   C("c11", "Clare Valley Wine & Grape", "Clare Valley Wine & Grape", "Vinavie", "Package", 8, { "2026-01": 17.9, "2026-02": 5.2, "2026-03": 9.0, "2026-04": 7.8, "2026-05": 2.3, "2026-06": 0.8 }),
   C("c12", "Coonawarra", "Coonawarra", "Vinavie", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 25.5, "2026-04": 17.7, "2026-05": 21.8, "2026-06": 13.6 }),
-  C("c13", "Riverland Wine — Package", "Riverland Wine", "Vinavie", "Package", 8, { "2026-01": 9.8, "2026-02": 14.8, "2026-03": 14.2, "2026-04": 11.9, "2026-05": 23.1, "2026-06": 3.2 }),
-  C("c14", "Riverland Wine — Melbourne Showcase", "Riverland Wine", "Vinavie", "Quoted", 25, null),
+  C("c13", "Riverland Wine: Package", "Riverland Wine", "Vinavie", "Package", 8, { "2026-01": 9.8, "2026-02": 14.8, "2026-03": 14.2, "2026-04": 11.9, "2026-05": 23.1, "2026-06": 3.2 }),
+  C("c14", "Riverland Wine: Melbourne Showcase", "Riverland Wine", "Vinavie", "Quoted", 25, null),
   C("c15", "Sevenhill", "Sevenhill", "Vinavie", "Project", 6, null),
-  C("c16", "Vegetation Solutions — MVS", "Vegetation Solutions — MVS", "Vinavie", "Hourly", null, { "2026-01": 3.8, "2026-02": 3.6, "2026-03": 3.5, "2026-04": 1.3, "2026-05": 1.2, "2026-06": 0.4 }),
-  C("c17", "Vegetation Solutions — Firewood", "Vegetation Solutions — Firewood", "Vinavie", "Hourly", null, { "2026-01": 1.3, "2026-02": 2.5, "2026-03": 22.4, "2026-04": 21.1, "2026-05": 19.3, "2026-06": 13.0 }),
+  C("c16", "Vegetation Solutions: MVS", "Vegetation Solutions: MVS", "Vinavie", "Hourly", null, { "2026-01": 3.8, "2026-02": 3.6, "2026-03": 3.5, "2026-04": 1.3, "2026-05": 1.2, "2026-06": 0.4 }),
+  C("c17", "Vegetation Solutions: Firewood", "Vegetation Solutions: Firewood", "Vinavie", "Hourly", null, { "2026-01": 1.3, "2026-02": 2.5, "2026-03": 22.4, "2026-04": 21.1, "2026-05": 19.3, "2026-06": 13.0 }),
 
   C("c18", "Aus3C", "Aus3C", "Shreya", "Package", 40, { "2026-01": 35.0, "2026-02": 58.9, "2026-03": 56.0, "2026-04": 27.4, "2026-05": 67.6, "2026-06": 18.6 }),
   C("c19", "GPEX", "GPEX", "Shreya", "Package", 70, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 38.6, "2026-05": 105.3, "2026-06": 140.4 }),
@@ -175,15 +202,15 @@ export const SEED_CLIENTS = [
   C("c34", "Bee Squared Consulting", "Bee Squared", "Holly", "Package", 24, { "2026-01": 29.1, "2026-02": 25.7, "2026-03": 24.4, "2026-04": 13.4, "2026-05": 30.1, "2026-06": 29.4 }),
   C("c35", "Comunet", "Comunet", "Holly", "Hourly", 32, { "2026-01": 22.8, "2026-02": 21.8, "2026-03": 20.8, "2026-04": 6.8, "2026-05": 47.4, "2026-06": 32.8 }),
   C("c36", "Clarke Energy (base)", "Clarke Energy", "Holly", "Hourly", null, { "2026-01": 26.9, "2026-02": 37.2, "2026-03": 48.1, "2026-04": 26.0, "2026-05": 67.2, "2026-06": 112.3 }),
-  C("c37", "Clarke Energy — AEP", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c38", "Clarke Energy — ACES", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c39", "Clarke Energy — AIMEX", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c40", "Clarke Energy — WA", "Clarke Energy", "Holly", "Hourly", null, null),
+  C("c37", "Clarke Energy: AEP", "Clarke Energy", "Holly", "Hourly", null, null),
+  C("c38", "Clarke Energy: ACES", "Clarke Energy", "Holly", "Hourly", null, null),
+  C("c39", "Clarke Energy: AIMEX", "Clarke Energy", "Holly", "Hourly", null, null),
+  C("c40", "Clarke Energy: WA", "Clarke Energy", "Holly", "Hourly", null, null),
   C("c41", "History Trust of SA", "History Trust of SA", "Holly", "MAP", 80, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 28.1, "2026-06": 82.6 }),
   C("c42", "PRG Consulting", "PRG Consulting", "Holly", "Package", 8, { "2026-01": 13.5, "2026-02": 15.4, "2026-03": 13.1, "2026-04": 1.0, "2026-05": 5.0, "2026-06": 5.4 }),
   C("c43", "Utter Gutters", "Utter Gutters", "Holly", "Package", 32, { "2026-01": 8.2, "2026-02": 6.5, "2026-03": 6.2, "2026-04": 6.0, "2026-05": 7.1, "2026-06": 9.0 }),
   C("c44", "Villani Jewellers", "Villani Jewellers", "Holly", "Package", 16, { "2026-01": 12.8, "2026-02": 16.8, "2026-03": 16.5, "2026-04": 20.9, "2026-05": 16.8, "2026-06": 12.9 }),
-  C("c45", "Villani — Website Project", "Villani Jewellers", "Holly", "Project", 8, null),
+  C("c45", "Villani: Website Project", "Villani Jewellers", "Holly", "Project", 8, null),
 
   C("c46", "Better Medical", "Better Medical", "Alice", "Package", 32, { "2026-01": 48.0, "2026-02": 43.6, "2026-03": 47.6, "2026-04": 32.9, "2026-05": 18.1, "2026-06": 47.7 }),
   C("c47", "Duco", "Duco", "Alice", "Package", 24, { "2026-01": 16.2, "2026-02": 34.8, "2026-03": 25.6, "2026-04": 27.2, "2026-05": 3.3, "2026-06": 0.0 }),
@@ -226,25 +253,13 @@ const SEED_SUPPORT = [
 export const OWNERS = ["Holly", "Shreya", "Chloe", "Alice", "Amanda", "Lucy", "Vinavie"];
 
 /* ============================================================
-   STORAGE — plain localStorage (the source component targeted a
-   sandboxed window.storage API that doesn't exist in a standalone
-   browser; same fix already applied to the reconciliation module).
-   Exported so Performance can read the same roster/client edits live
-   instead of keeping a stale copy of its own.
+   STORAGE — backed by Supabase (pginvoice_app_state), not localStorage, so
+   roster/client edits are visible from any browser, not just the one that
+   made them. Exported under its old name so Performance and Timesheet
+   Summary's existing `loadKey(...)` calls keep working unchanged.
 ============================================================ */
-export function loadKey(key, fallback) {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch (e) { return fallback; }
-}
-function saveKey(key, value) {
-  try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignore */ }
-  // Same signal idbSet fires for the large IndexedDB datasets — reused here so any
-  // mounted module (e.g. Performance reading the roster/client list this saved) can
-  // react live instead of only picking up the change on its own next mount.
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PG_DATA_EVENT, { detail: { key } }));
-}
+export const loadKey = loadState;
+const saveKey = saveState;
 
 /* ============================================================
    PICKER — dropdown trigger + menu, styled like the app's export menu
@@ -274,6 +289,91 @@ function Picker({ value, label, options, onChange }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ============================================================
+   ROSTER MENU — per-person "⋮" popover for resignation date + ClickUp alias,
+   only rendered in roster edit mode.
+============================================================ */
+function RosterMenu({ person, onUpdate }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+  return (
+    <div style={{ position: "relative", display: "inline-block" }} ref={ref}>
+      <button type="button" className="pg-btn-ghost" style={{ padding: "4px 7px" }} onClick={() => setOpen((o) => !o)}>
+        <MoreVertical size={13} />
+      </button>
+      {open && (
+        <div className="pg-menu" style={{ right: 0, left: "auto", minWidth: 250, padding: 12 }}>
+          <div className="pg-field__label">Resignation date</div>
+          <input
+            className="pg-input" type="date" style={{ marginTop: 4, width: "100%" }}
+            value={person.resignationDate || ""}
+            onChange={(e) => onUpdate("resignationDate", e.target.value || null)}
+          />
+          {person.resignationDate && (
+            <button className="pg-btn-ghost" style={{ marginTop: 6 }} onClick={() => onUpdate("resignationDate", null)}>
+              <X size={11} /> Clear resignation date
+            </button>
+          )}
+
+          <div className="pg-field__label" style={{ marginTop: 12 }}>ClickUp alias</div>
+          <p className="pg-footnote" style={{ marginTop: 2, marginBottom: 4 }}>
+            Only needed if their ClickUp username doesn't match "{person.name}", e.g. a full name ClickUp shows that this roster's short name can't fuzzy-match.
+          </p>
+          <input
+            className="pg-input" type="text" style={{ width: "100%" }}
+            placeholder="e.g. Kelly Wagner"
+            value={person.alias || ""}
+            onChange={(e) => onUpdate("alias", e.target.value)}
+          />
+
+          <button className="pg-btn" style={{ marginTop: 10, width: "100%", justifyContent: "center" }} onClick={() => setOpen(false)}>Done</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   ADD PERSON — small inline form shown under the roster table in edit mode
+============================================================ */
+function AddPersonForm({ onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ name: "", role: "Consultant", state: "SA", contracted: 38, rate: 0.7 });
+  const set = (field) => (v) => setForm((f) => ({ ...f, [field]: v }));
+
+  if (!open) {
+    return (
+      <button className="pg-btn-ghost" style={{ marginTop: 10 }} onClick={() => setOpen(true)}>
+        <Plus size={12} /> Add person
+      </button>
+    );
+  }
+  return (
+    <div className="pg-cap-addform" style={{ marginTop: 10 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <input className="pg-input" style={{ width: 140 }} placeholder="Name" value={form.name} onChange={(e) => set("name")(e.target.value)} />
+        <div style={{ width: 140 }}>
+          <Picker value={form.role} options={[{ value: "Consultant", label: "Consultant" }, { value: "Coordinator", label: "Coordinator" }]} onChange={set("role")} />
+        </div>
+        <div style={{ width: 90 }}>
+          <Picker value={form.state} options={[{ value: "SA", label: "SA" }, { value: "WA", label: "WA" }, { value: "QLD", label: "QLD" }]} onChange={set("state")} />
+        </div>
+        <input className="pg-input" type="number" step="any" style={{ width: 110 }} placeholder="Hrs/wk" value={form.contracted} onChange={(e) => set("contracted")(e.target.value)} />
+        <input className="pg-input" type="number" min="0" max="100" step="1" style={{ width: 110 }} placeholder="Billable %" value={Math.round(form.rate * 100)} onChange={(e) => set("rate")((Number(e.target.value) || 0) / 100)} />
+        <button className="pg-btn" onClick={() => { onAdd(form); setForm({ name: "", role: "Consultant", state: "SA", contracted: 38, rate: 0.7 }); setOpen(false); }} disabled={!form.name.trim()}>
+          <Plus size={13} /> Add
+        </button>
+        <button className="pg-btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
+      </div>
     </div>
   );
 }
@@ -345,22 +445,34 @@ function CapacityDashboardInner() {
   }, []);
 
   useEffect(() => {
-    setPeople(loadKey("cap_people", SEED_PEOPLE));
-    setClients(loadKey("cap_clients", SEED_CLIENTS));
-    setSupport(loadKey("cap_support", SEED_SUPPORT));
+    let cancelled = false;
+    (async () => {
+      const [ppl, clis, supp, loadedNotes, lvs, ovr] = await Promise.all([
+        loadKey("cap_people", SEED_PEOPLE),
+        loadKey("cap_clients", SEED_CLIENTS),
+        loadKey("cap_support", SEED_SUPPORT),
+        loadKey("cap_notes", []),
+        loadKey("cap_leaves", {}),
+        loadKey("cap_overrides", {}),
+      ]);
+      if (cancelled) return;
+      setPeople(ppl);
+      setClients(clis);
+      setSupport(supp);
 
-    const loadedNotes = loadKey("cap_notes", []);
-    if (Array.isArray(loadedNotes)) {
-      setNotes(loadedNotes.every((n) => n && typeof n.text === "string") ? loadedNotes : []);
-    } else if (typeof loadedNotes === "string" && loadedNotes.trim()) {
-      setNotes([{ id: uid("n"), text: loadedNotes.trim(), ts: Date.now() }]);
-    } else {
-      setNotes([]);
-    }
+      if (Array.isArray(loadedNotes)) {
+        setNotes(loadedNotes.every((n) => n && typeof n.text === "string") ? loadedNotes : []);
+      } else if (typeof loadedNotes === "string" && loadedNotes.trim()) {
+        setNotes([{ id: uid("n"), text: loadedNotes.trim(), ts: Date.now() }]);
+      } else {
+        setNotes([]);
+      }
 
-    setLeaves(loadKey("cap_leaves", {}));
-    setOverrides(loadKey("cap_overrides", {}));
-    setLoaded(true);
+      setLeaves(lvs);
+      setOverrides(ovr);
+      setLoaded(true);
+    })();
+    return () => { cancelled = true; };
   }, []);
   useEffect(() => { if (loaded) saveKey("cap_people", people); }, [people, loaded]);
   useEffect(() => { if (loaded) saveKey("cap_clients", clients); }, [clients, loaded]);
@@ -384,14 +496,17 @@ function CapacityDashboardInner() {
     const m = {};
     const wd = weekdaysInMonth(month);
     people.forEach((p) => {
+      const status = resignationStatus(p, month);
+      if (!status.active) return; // resigned in an earlier month — not staff this month at all
       const dailyHrs = p.contracted / 5;
-      const resourceHours = dailyHrs * wd;                       // Total Resource Hours (monthly, weekday-exact)
-      const holidayDays = publicHolidayDays(p.state, month);
+      const effectiveWeekdays = status.throughDay !== null ? weekdaysInMonthUpToDay(month, status.throughDay) : wd;
+      const resourceHours = dailyHrs * effectiveWeekdays;         // Total Resource Hours (monthly, weekday-exact, prorated if resigning this month)
+      const holidayDays = status.throughDay !== null ? publicHolidayDaysUpToDay(p.state, month, status.throughDay) : publicHolidayDays(p.state, month);
       const publicHolidayHrs = dailyHrs * holidayDays;            // Public Holidays (hrs lost, state-specific)
       const leaveHrs = leaveFor(p.id);                            // Leaves (editable, hrs lost)
       const totalMonthlyHours = Math.max(0, resourceHours - publicHolidayHrs - leaveHrs);
       const monthly = totalMonthlyHours * p.rate;                 // Total Monthly Billable Capacity
-      m[p.name] = { ...p, resourceHours, publicHolidayHrs, holidayDays, leaveHrs, totalMonthlyHours, monthly };
+      m[p.name] = { ...p, resourceHours, publicHolidayHrs, holidayDays, leaveHrs, totalMonthlyHours, monthly, resigningThisMonth: status.throughDay !== null };
     });
     return m;
   }, [people, month, leaves]);
@@ -500,6 +615,7 @@ function CapacityDashboardInner() {
   const personCalc = useMemo(() => {
     const m = {};
     people.forEach((p) => {
+      if (!peopleMap[p.name]) return; // resigned in an earlier month — excluded from this month's ledger entirely
       const base = peopleMap[p.name].monthly;
       const away = givenAway[p.name] || 0;
       const remainderAfterAway = base - away; // what's left after committing hours to others — can go negative if over-promised
@@ -523,7 +639,7 @@ function CapacityDashboardInner() {
     Object.values(groupedByOwner).forEach((groups) => groups.forEach((g) => { s += demandForGroup(g.group, g.rows, month).demand; }));
     return s;
   }, [groupedByOwner, month, overrides, dynamicAverages]);
-  const totalCapacity = useMemo(() => people.reduce((s, p) => s + peopleMap[p.name].monthly, 0), [people, peopleMap]);
+  const totalCapacity = useMemo(() => people.reduce((s, p) => s + (peopleMap[p.name] ? peopleMap[p.name].monthly : 0), 0), [people, peopleMap]);
   const totalDMA = useMemo(() => support.filter((s) => s.from === "DMA (external)").reduce((s, x) => s + hoursOf(x), 0), [support, hoursOf]);
   const totalBillableAllocation = totalCapacity + totalDMA; // total hours the team+DMA is available to deliver
   const difference = totalBillableAllocation - totalDemand;
@@ -531,6 +647,7 @@ function CapacityDashboardInner() {
   /* ---------- filtering ---------- */
   const supportersOf = (owner) => (personCalc[owner] ? personCalc[owner].received.map((r) => r.from) : []);
   const visibleOwners = OWNERS.filter((owner) => {
+    if (!peopleMap[owner]) return false; // resigned as of this month — hide their card entirely
     const okConsultant = !qConsultant || owner.toLowerCase().includes(qConsultant.toLowerCase());
     const okClient = !qClient || (groupedByOwner[owner] || []).some((g) => g.group.toLowerCase().includes(qClient.toLowerCase()) || g.rows.some((r) => r.client.toLowerCase().includes(qClient.toLowerCase())));
     const okSupport = !qSupport || supportersOf(owner).some((n) => n.toLowerCase().includes(qSupport.toLowerCase()));
@@ -550,11 +667,20 @@ function CapacityDashboardInner() {
   const shiftMonth = (d) => setMonth(MONTHS[Math.max(0, Math.min(MONTHS.length - 1, monthIdx + d))]);
   const monthKind = month < CURRENT_MONTH ? "past" : (month === CURRENT_MONTH ? "now" : "future");
 
-  const allocatableNames = ["DMA (external)", ...people.map((p) => p.name)];
+  const allocatableNames = ["DMA (external)", ...people.filter((p) => peopleMap[p.name]).map((p) => p.name)];
 
   const removeSupport = (id) => setSupport((ss) => ss.filter((s) => s.id !== id));
   const updateSupportValue = (id, newValue) => setSupport((ss) => ss.map((s) => s.id === id ? { ...s, value: newValue } : s));
   const updatePerson = (id, field, value) => setPeople((ps) => ps.map((p) => p.id === id ? { ...p, [field]: value } : p));
+  const addPerson = (form) => {
+    const name = (form.name || "").trim();
+    if (!name) return;
+    setPeople((ps) => [...ps, {
+      id: uid("p"), name, role: form.role || "Consultant", state: form.state || "SA",
+      contracted: Number(form.contracted) || 0, rate: Number(form.rate) || 0,
+      note: "", resignationDate: null, alias: "",
+    }]);
+  };
   function proposedHours(from, type, value) {
     if (type === "pct") { const base = peopleMap[from] ? peopleMap[from].monthly : 0; return base * Number(value || 0); }
     return Number(value || 0);
@@ -582,7 +708,7 @@ function CapacityDashboardInner() {
     const setCols = (ws, headerLen, widths) => { ws["!cols"] = widths; ws["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(headerLen - 1)}1` }; };
 
     const summaryRows = [
-      ["Purple Giraffe — Capacity Ledger"],
+      ["Purple Giraffe: Capacity Ledger"],
       [`Month: ${MONTH_LABELS[month]}`],
       [`Generated: ${new Date().toLocaleString()}`],
       [],
@@ -600,6 +726,7 @@ function CapacityDashboardInner() {
     const rosterHeader = ["Consultant", "Role", "State", "Resource Hrs", "Leaves", "Public Holidays (hrs)", "Public Holidays (days)", "Monthly Hrs", "Billable %", "Billable Capacity", "Allocated Hrs", "Availability"];
     const rosterRows = [rosterHeader];
     people.forEach((p) => {
+      if (!peopleMap[p.name]) return; // resigned before this month
       const pc = personCalc[p.name]; const pm = peopleMap[p.name];
       rosterRows.push([p.name, p.role, p.state, Number(pm.resourceHours.toFixed(1)), Number(pm.leaveHrs.toFixed(1)), Number(pm.publicHolidayHrs.toFixed(1)), pm.holidayDays, Number(pm.totalMonthlyHours.toFixed(1)), p.rate, Number(pc.base.toFixed(1)), Number(pc.allocatedTotal.toFixed(1)), Number(pc.spare.toFixed(1))]);
     });
@@ -649,7 +776,7 @@ function CapacityDashboardInner() {
       <div className="pg-app-header">
         <div>
           <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-          <h1 className="pg-app-header__title">Capacity ledger — team hours vs. client demand, by month.</h1>
+          <h1 className="pg-app-header__title">Capacity ledger: team hours vs. client demand, by month.</h1>
         </div>
       </div>
 
@@ -762,7 +889,7 @@ function CapacityDashboardInner() {
                                 <td className="right num">
                                   {gIsDynamic && (
                                     <Zap size={11} style={{ verticalAlign: -1, color: "var(--accent)" }}
-                                      title={`Live group average from ClickUp: "${gDyn.matchedFolder}" (${gDyn.monthsCounted} month${gDyn.monthsCounted === 1 ? "" : "s"} of billable data) — applied to the group total, not split across sub-projects`} />
+                                      title={`Live group average from ClickUp: "${gDyn.matchedFolder}" (${gDyn.monthsCounted} month${gDyn.monthsCounted === 1 ? "" : "s"} of billable data), applied to the group total, not split across sub-projects`} />
                                   )}
                                 </td>
                                 <td className="right num"><b>{gDemand.toFixed(1)}</b></td>
@@ -855,7 +982,7 @@ function CapacityDashboardInner() {
                             <div className="pg-alertbar" style={{ background: "var(--status-over-soft)", color: "var(--status-over)", marginTop: 10 }}>
                               <AlertTriangle size={13} />
                               <span className="pg-alertbar__text">
-                                Risk: {addForm.from} would be committing {check.total.toFixed(1)} hrs in total (their own {check.ownDemand.toFixed(1)} hrs of client work + {(check.currentAway + preview).toFixed(1)} hrs given to others) against a capacity of {check.base.toFixed(1)} hrs — {(check.total - check.base).toFixed(1)} hrs over.
+                                Risk: {addForm.from} would be committing {check.total.toFixed(1)} hrs in total (their own {check.ownDemand.toFixed(1)} hrs of client work + {(check.currentAway + preview).toFixed(1)} hrs given to others) against a capacity of {check.base.toFixed(1)} hrs, {(check.total - check.base).toFixed(1)} hrs over.
                               </span>
                             </div>
                           )}
@@ -884,14 +1011,18 @@ function CapacityDashboardInner() {
               <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
             </div>
             <table className="pg-table" style={{ minWidth: 640 }}>
-              <thead><tr><th>Consultant</th><th className="right num">Resource Hrs</th><th className="right num">Leaves</th><th className="right num">Public Hols</th><th className="right num">Monthly Hrs</th><th className="right num">Billable %</th><th className="right num">Billable Capacity</th><th className="right num">Allocated</th><th className="right num">Availability</th></tr></thead>
+              <thead><tr><th>Consultant</th><th className="right num">Resource Hrs</th><th className="right num">Leaves</th><th className="right num">Public Hols</th><th className="right num">Monthly Hrs</th><th className="right num">Billable %</th><th className="right num">Billable Capacity</th><th className="right num">Allocated</th><th className="right num">Availability</th>{editRoster && <th></th>}</tr></thead>
               <tbody>
-                {people.map((p) => {
+                {people.filter((p) => peopleMap[p.name]).map((p) => {
                   const pc = personCalc[p.name];
                   const pm = peopleMap[p.name];
                   return (
                     <tr key={p.id}>
-                      <td>{p.name} <span className="pg-tag" style={{ color: p.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 5 }}>[{p.role[0]}]</span></td>
+                      <td>
+                        {p.name} <span className="pg-tag" style={{ color: p.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 5 }}>[{p.role[0]}]</span>
+                        {pm.resigningThisMonth && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[resigns {p.resignationDate}]</span>}
+                        {p.alias && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[alias: {p.alias}]</span>}
+                      </td>
                       <td className="right num">{pm.resourceHours.toFixed(1)}</td>
                       <td className="right num">
                         {editRoster
@@ -908,13 +1039,18 @@ function CapacityDashboardInner() {
                       <td className="right num"><b>{pc.base.toFixed(1)}</b></td>
                       <td className="right num">{pc.allocatedTotal > 0 ? pc.allocatedTotal.toFixed(1) : "—"}</td>
                       <td className="right num" style={{ color: pc.spare < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{pc.spare > 0 ? "+" : ""}{pc.spare.toFixed(1)}</td>
+                      {editRoster && <td><RosterMenu person={p} onUpdate={(field, value) => updatePerson(p.id, field, value)} /></td>}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          <p className="pg-footnote">Total Resource Hours and Public Holidays are calculated from {MONTH_LABELS[month]}'s actual weekdays and each person's state. Leaves and Billable Allocation are only editable in Edit mode; everything else recalculates automatically.</p>
+          <p className="pg-footnote">Total Resource Hours and Public Holidays are calculated from {MONTH_LABELS[month]}'s actual weekdays and each person's state. Leaves and Billable Allocation are only editable in Edit mode; everything else recalculates automatically. A resignation date set via the ⋮ menu prorates that month's capacity to their last working day, and drops them from the roster entirely in later months.</p>
+
+          {editRoster && (
+            <AddPersonForm onAdd={addPerson} />
+          )}
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -936,7 +1072,7 @@ function CapacityDashboardInner() {
                   return <p key={item.date} style={{ fontFamily: "var(--font-body)", fontSize: 12.5, color: "var(--fg-secondary)", marginTop: 8 }}>{sentence}</p>;
                 });
               })()}
-              <p className="pg-footnote" style={{ marginTop: 8 }}>Sourced from each state's official 2026 public holiday calendar — Christmas Eve/New Year's Eve part-day holidays and weekend-falling dates with no substitute aren't counted here since they don't affect a working day.</p>
+              <p className="pg-footnote" style={{ marginTop: 8 }}>Sourced from each state's official 2026 public holiday calendar. Christmas Eve/New Year's Eve part-day holidays and weekend-falling dates with no substitute aren't counted here since they don't affect a working day.</p>
             </div>
 
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px dashed var(--border-soft)" }}>

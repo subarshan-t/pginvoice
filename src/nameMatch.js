@@ -28,6 +28,25 @@ export function findMatch(name, candidates) {
   return null;
 }
 
+// Matches a raw ClickUp username against a roster of {name, alias} people, trying
+// each person's alias (a manually-set override for when ClickUp's display name
+// doesn't fuzzy-match their roster name at all) alongside their name. Returns the
+// owning person object, keyed back by canonical `name` regardless of which of the
+// two candidates actually matched.
+export function findPersonMatch(name, people) {
+  const owner = new Map();
+  const candidates = [];
+  for (const p of people) {
+    const keys = [p.name];
+    if (p.alias && p.alias.trim()) keys.push(p.alias.trim());
+    for (const k of keys) {
+      if (!owner.has(k)) { owner.set(k, p); candidates.push(k); }
+    }
+  }
+  const m = findMatch(name, candidates);
+  return m ? (owner.get(m.name) || null) : null;
+}
+
 // Internal / non-revenue folders (per the billable-hours guide, §3.1): the literal
 // "Purple Giraffe" bucket, plus onboarding/offboarding/handover/WIP trackers.
 // Case-insensitive substring match — deliberately broader than the guide's literal-case
