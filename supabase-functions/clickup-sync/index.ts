@@ -65,6 +65,25 @@ async function fetchAllTeamMemberIds(token: string, teamId: string): Promise<str
   return (team.members || []).map((m: any) => String(m.user?.id)).filter(Boolean);
 }
 
+// ClickUp's time-entries API only returns entries for users listed in `assignee` — omit it
+// and you get just the token owner's own entries. Scoping that filter to *today's* /team
+// member list (as this used to) means the moment someone is removed from the workspace
+// (resignation, offboarding), their ID silently drops out of every future sync, including
+// backfills of months where they were still active and had genuinely logged time — their
+// history quietly stops being fetchable, not just filtered downstream. Persisting every ID
+// ever seen and using the union going forward means a departure only ever adds to this set,
+// never removes from it, so past months stay syncable indefinitely.
+const KNOWN_USER_IDS_KEY = "clickup_known_user_ids";
+async function unionKnownUserIds(supabase: any, currentIds: string[]): Promise<string[]> {
+  const { data } = await supabase.from("pginvoice_app_state").select("value").eq("key", KNOWN_USER_IDS_KEY).maybeSingle();
+  const known: string[] = Array.isArray(data?.value) ? data.value : [];
+  const union = [...new Set([...known, ...currentIds])];
+  if (union.length !== known.length) {
+    await supabase.from("pginvoice_app_state").upsert({ key: KNOWN_USER_IDS_KEY, value: union, updated_at: new Date().toISOString() }, { onConflict: "key" });
+  }
+  return union;
+}
+
 async function resolveTeamId(token: string, explicitTeamId: string | undefined) {
   if (explicitTeamId) return explicitTeamId;
   const data = await clickupFetch(`/team`, token);
@@ -120,7 +139,8 @@ Deno.serve(async (req: Request) => {
   try {
     const explicitTeamId = Deno.env.get("CLICKUP_TEAM_ID") || undefined;
     const teamId = await resolveTeamId(token, explicitTeamId);
-    const memberIds = await fetchAllTeamMemberIds(token, teamId);
+    const currentMemberIds = await fetchAllTeamMemberIds(token, teamId);
+    const memberIds = await unionKnownUserIds(supabase, currentMemberIds);
     const assignee = memberIds.join(",");
 
     const now = new Date();
