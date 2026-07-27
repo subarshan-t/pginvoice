@@ -264,6 +264,7 @@ function classifyClient(c) {
 }
 
 const TYPE_LABELS = {
+  all: "All Clients",
   package: "Clients on a Package",
   hourly: "Clients on Hourly rate",
   quoted: "Quoted Clients",
@@ -727,7 +728,7 @@ export default function PGReconciliation() {
 
   // counts by type
   const typeCounts = useMemo(() => {
-    const counts = { package: 0, hourly: 0, queensland: 0, quoted: 0 };
+    const counts = { all: clients.length, package: 0, hourly: 0, queensland: 0, quoted: 0 };
     for (const c of clients) counts[c.type] = (counts[c.type] || 0) + 1;
     return counts;
   }, [clients]);
@@ -773,7 +774,7 @@ export default function PGReconciliation() {
 
   // filtered + sorted + consultant-scoped clients for display
   const visible = useMemo(() => {
-    let list = clients.filter((c) => c.type === clientTypeFilter);
+    let list = clientTypeFilter === "all" ? clients.slice() : clients.filter((c) => c.type === clientTypeFilter);
     if (consultantFilter) list = list.filter((c) => c.userMinutes.has(consultantFilter));
     // per-consultant task view: if filter set, use tasksByUser for that consultant; else all tasks
     list = list.map((c) => {
@@ -1053,6 +1054,7 @@ export default function PGReconciliation() {
               <span className="pg-field__label">Client type</span>
               <select value={clientTypeFilter} onChange={(e) => setClientTypeFilter(e.target.value)}
                 className="pg-select" style={{ minWidth: 260 }}>
+                <option value="all">All Clients ({typeCounts.all})</option>
                 <option value="package">Clients on a Package ({typeCounts.package})</option>
                 <option value="hourly">Clients on Hourly rate ({typeCounts.hourly})</option>
                 <option value="quoted" disabled>Quoted Clients ({typeCounts.quoted}), coming later</option>
