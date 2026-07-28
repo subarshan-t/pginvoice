@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import {
   ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap, MoreVertical,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, isInternalFolder } from "./nameMatch.js";
+import { findMatch, isInternalFolder, normalizeName } from "./nameMatch.js";
 import { loadState, saveState } from "./capacityStore.js";
 
 /* ============================================================
@@ -297,21 +298,56 @@ function Picker({ value, label, options, onChange }) {
    ROSTER MENU — per-person "⋮" popover for resignation date + ClickUp alias,
    only rendered in roster edit mode.
 ============================================================ */
-function RosterMenu({ person, onUpdate }) {
+// Rendered via a portal into document.body with fixed positioning (computed from
+// the trigger button's own bounding rect) rather than an absolutely-positioned
+// child of the row — the roster table lives inside .pg-cap-pane, which scrolls
+// (overflow-y: auto), and any scrolling ancestor clips an absolutely-positioned
+// descendant regardless of its z-index. That clipping made the popover invisible
+// on rows near the bottom of the pane (worst on the last row); a portal + fixed
+// position escapes that ancestor entirely.
+function RosterMenu({ person, onUpdate, aliasConflict }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const openMenu = () => {
+    const r = btnRef.current.getBoundingClientRect();
+    const menuWidth = 260;
+    let left = r.right - menuWidth;
+    if (left < 8) left = 8;
+    let top = r.bottom + 4;
+    const estMenuHeight = 260;
+    if (top + estMenuHeight > window.innerHeight - 8) top = Math.max(8, r.top - estMenuHeight - 4);
+    setPos({ top, left });
+    setOpen(true);
+  };
+
   useEffect(() => {
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    if (!open) return;
+    function onDoc(e) {
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      if (btnRef.current && btnRef.current.contains(e.target)) return;
+      setOpen(false);
+    }
+    function onScrollOrResize() { setOpen(false); }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
+  }, [open]);
+
   return (
-    <div style={{ position: "relative", display: "inline-block" }} ref={ref}>
-      <button type="button" className="pg-btn-ghost" style={{ padding: "4px 7px" }} onClick={() => setOpen((o) => !o)}>
+    <>
+      <button ref={btnRef} type="button" className="pg-btn-ghost" style={{ padding: "4px 7px" }} onClick={() => (open ? setOpen(false) : openMenu())}>
         <MoreVertical size={13} />
       </button>
-      {open && (
-        <div className="pg-menu" style={{ right: 0, left: "auto", minWidth: 250, padding: 12 }}>
+      {open && createPortal(
+        <div ref={menuRef} className="pg-menu" style={{ position: "fixed", top: pos.top, left: pos.left, right: "auto", margin: 0, minWidth: 260, padding: 12, zIndex: 1000 }}>
           <div className="pg-field__label">Resignation date</div>
           <input
             className="pg-input" type="date" style={{ marginTop: 4, width: "100%" }}
@@ -334,11 +370,18 @@ function RosterMenu({ person, onUpdate }) {
             value={person.alias || ""}
             onChange={(e) => onUpdate("alias", e.target.value)}
           />
+          {aliasConflict && (
+            <div className="pg-banner-warn" style={{ marginTop: 8, padding: "8px 10px", fontSize: 11 }}>
+              <AlertTriangle size={11} style={{ verticalAlign: -1, marginRight: 4 }} />
+              Also matched to {aliasConflict.join(", ")} — hours for this alias will be double-counted until only one person uses it.
+            </div>
+          )}
 
           <button className="pg-btn" style={{ marginTop: 10, width: "100%", justifyContent: "center" }} onClick={() => setOpen(false)}>Done</button>
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 
@@ -672,6 +715,33 @@ function CapacityDashboardInner() {
   const removeSupport = (id) => setSupport((ss) => ss.filter((s) => s.id !== id));
   const updateSupportValue = (id, newValue) => setSupport((ss) => ss.map((s) => s.id === id ? { ...s, value: newValue } : s));
   const updatePerson = (id, field, value) => setPeople((ps) => ps.map((p) => p.id === id ? { ...p, [field]: value } : p));
+
+  // A person's alias identifies who owns a ClickUp username for downstream matching
+  // (see findPersonMatch) — if two people end up sharing an alias, or someone's alias
+  // collides with another person's own name, that ClickUp user's hours would silently
+  // get attributed to (and thus double-counted for) more than one person. Detect that
+  // here so it can be surfaced both in the per-row menu and as a roster-wide banner.
+  const aliasConflicts = useMemo(() => {
+    const owners = new Map(); // normalized identity -> [{name}]
+    people.forEach((p) => {
+      const keys = new Set([normalizeName(p.name)]);
+      if (p.alias && p.alias.trim()) keys.add(normalizeName(p.alias));
+      keys.forEach((k) => {
+        if (!k) return;
+        if (!owners.has(k)) owners.set(k, []);
+        owners.get(k).push(p);
+      });
+    });
+    const conflicts = new Map(); // person id -> [other person names]
+    owners.forEach((owningPeople) => {
+      if (owningPeople.length < 2) return;
+      owningPeople.forEach((p) => {
+        const others = owningPeople.filter((o) => o.id !== p.id).map((o) => o.name);
+        if (others.length) conflicts.set(p.id, [...(conflicts.get(p.id) || []), ...others]);
+      });
+    });
+    return conflicts;
+  }, [people]);
   const addPerson = (form) => {
     const name = (form.name || "").trim();
     if (!name) return;
@@ -1005,11 +1075,22 @@ function CapacityDashboardInner() {
             <div className="pg-cap-stat"><div className="pg-stat__value" style={{ color: difference < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{difference > 0 ? "+" : ""}{difference.toFixed(0)}</div><div className="pg-stat__label">Difference</div></div>
           </div>
 
-          <div className="pg-table-wrap" style={{ overflowX: "auto", marginTop: 14 }}>
+          {aliasConflicts.size > 0 && (
+            <div className="pg-banner-warn" style={{ marginTop: 14 }}>
+              {[...aliasConflicts.entries()].map(([id, others]) => {
+                const p = people.find((pp) => pp.id === id);
+                if (!p) return null;
+                return <div key={id}>{p.name}'s name/alias is shared with {others.join(", ")} — their ClickUp hours will be double-counted until this is fixed.</div>;
+              })}
+            </div>
+          )}
+
+          <div className="pg-table-wrap" style={{ marginTop: 14 }}>
             <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>Team roster</span>
               <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
             </div>
+            <div style={{ overflowX: "auto" }}>
             <table className="pg-table" style={{ minWidth: 640 }}>
               <thead><tr><th>Consultant</th><th className="right num">Resource Hrs</th><th className="right num">Leaves</th><th className="right num">Public Hols</th><th className="right num">Monthly Hrs</th><th className="right num">Billable %</th><th className="right num">Billable Capacity</th><th className="right num">Allocated</th><th className="right num">Availability</th>{editRoster && <th></th>}</tr></thead>
               <tbody>
@@ -1039,12 +1120,13 @@ function CapacityDashboardInner() {
                       <td className="right num"><b>{pc.base.toFixed(1)}</b></td>
                       <td className="right num">{pc.allocatedTotal > 0 ? pc.allocatedTotal.toFixed(1) : "—"}</td>
                       <td className="right num" style={{ color: pc.spare < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{pc.spare > 0 ? "+" : ""}{pc.spare.toFixed(1)}</td>
-                      {editRoster && <td><RosterMenu person={p} onUpdate={(field, value) => updatePerson(p.id, field, value)} /></td>}
+                      {editRoster && <td><RosterMenu person={p} onUpdate={(field, value) => updatePerson(p.id, field, value)} aliasConflict={aliasConflicts.get(p.id)} /></td>}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            </div>
           </div>
           <p className="pg-footnote">Total Resource Hours and Public Holidays are calculated from {MONTH_LABELS[month]}'s actual weekdays and each person's state. Leaves and Billable Allocation are only editable in Edit mode; everything else recalculates automatically. A resignation date set via the ⋮ menu prorates that month's capacity to their last working day, and drops them from the roster entirely in later months.</p>
 

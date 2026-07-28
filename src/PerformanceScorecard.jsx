@@ -385,8 +385,9 @@ function PerformanceInner() {
         current: { agreed: meta.isFixed ? meta.agreedTotal : null, hourly: meta.isFixed ? null : expandingAvgAt(monthHours, latestMonth), actuals: latestMonth ? (monthHours.get(latestMonth) ?? 0) : null },
       };
     }
-    // aggregate — every matched group
-    const matchedGroups = groups.filter((g) => clientMonthly.has(g.group));
+    // aggregate — every matched group within the current Type filter, so the chart
+    // reacts to the same "Type" picker the table below already respects.
+    const matchedGroups = filteredGroups.filter((g) => clientMonthly.has(g.group));
     const fixedGroups = matchedGroups.filter((g) => groupMeta(g).isFixed);
     const hourlyGroups = matchedGroups.filter((g) => !groupMeta(g).isFixed);
     const agreedTotal = fixedGroups.reduce((s, g) => s + groupMeta(g).agreedTotal, 0);
@@ -405,7 +406,7 @@ function PerformanceInner() {
       ytd: { agreed: agreedTotal * activeMonths.length, hourly: activeMonths.length ? hourlyByMonth.reduce((a, b) => a + b, 0) / activeMonths.length : null, actuals: totYtd },
       current: { agreed: agreedTotal, hourly: lastIdx >= 0 ? hourlyByMonth[lastIdx] : null, actuals: lastIdx >= 0 ? actualsByMonth[lastIdx] : null },
     };
-  }, [selectedClient, groups, clientMonthly, activeMonths, latestMonth]);
+  }, [selectedClient, groups, filteredGroups, clientMonthly, activeMonths, latestMonth]);
 
   /* ---- team: match real ClickUp usernames to the roster by fuzzy name ---- */
   const userMatch = useMemo(() => {
@@ -414,7 +415,9 @@ function PerformanceInner() {
     const usernames = new Set();
     for (const r of clickup.rows) if (r.user) usernames.add(r.user);
     usernames.forEach((u) => {
-      if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, null); return; }
+      // The "Purple Giraffe" ClickUp login is a shared account DMA (an external
+      // contractor) logs time under — attribute it to DMA rather than dropping it.
+      if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, "DMA (external)"); return; }
       const p = findPersonMatch(u, people);
       map.set(u, p ? p.name : null);
     });
@@ -436,7 +439,6 @@ function PerformanceInner() {
     const monthSet = new Set(activeMonths);
     for (const r of clickup.rows) {
       if (!r.monthKey || !r.user || !monthSet.has(r.monthKey)) continue;
-      if (r.user.trim().toLowerCase() === "purple giraffe") continue;
       const key = userMatch.get(r.user) || r.user;
       if (!map.has(key)) map.set(key, new Map());
       const byMonth = map.get(key);
@@ -570,7 +572,7 @@ function PerformanceInner() {
       )}
       {hasData && botHours > 0.05 && (
         <div className="pg-banner-warn">
-          {fmt1(botHours)} h logged under the shared "Purple Giraffe" ClickUp account are excluded from the by-person breakdown below (not a real team member).
+          {fmt1(botHours)} h logged under the shared "Purple Giraffe" ClickUp account are attributed to "DMA (external)" in the by-person breakdown below (that account is how DMA's time is logged).
         </div>
       )}
 

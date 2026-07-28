@@ -96,7 +96,10 @@ body {
 button { font: inherit; }
 
 .pg-app { min-height: 100vh; }
-.pg-container { max-width: 1080px; margin: 0 auto; padding: 56px 32px 96px; }
+.pg-container { max-width: 1320px; margin: 0 auto; padding: 56px 24px 96px; }
+@media (max-width: 760px) {
+  .pg-container, .pg-cap-container { padding-left: 14px; padding-right: 14px; }
+}
 
 /* ---- app shell / sidebar nav ---------------------------------------------*/
 .pg-shell { display: flex; min-height: 100vh; background: var(--bg-base); }
@@ -307,7 +310,7 @@ button { font: inherit; }
    columns and needs the room; everything else (tokens, spacing, radii) is
    the same system, just reusing generic classes (.pg-panel, .pg-table,
    .pg-tag, .pg-btn…) already defined above. */
-.pg-cap-container { max-width: 1320px; margin: 0 auto; padding: 56px 32px 96px; }
+.pg-cap-container { max-width: 1320px; margin: 0 auto; padding: 56px 24px 96px; }
 .pg-cap-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 18px; align-items: start; margin-top: 20px; }
 @media (max-width: 980px) { .pg-cap-grid { grid-template-columns: 1fr; } }
 /* independent scroll regions: each column sticks to the viewport and scrolls on its

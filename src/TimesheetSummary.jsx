@@ -225,7 +225,9 @@ function TimesheetInner() {
     const usernames = new Set();
     for (const r of clickup.rows) if (r.user) usernames.add(r.user);
     usernames.forEach((u) => {
-      if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, null); return; }
+      // The "Purple Giraffe" ClickUp login is a shared account DMA (an external
+      // contractor) logs time under — attribute it to DMA rather than dropping it.
+      if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, "DMA (external)"); return; }
       const p = findPersonMatch(u, people);
       map.set(u, p ? p.name : null);
     });
@@ -239,7 +241,6 @@ function TimesheetInner() {
     if (!clickup?.rows?.length) return map;
     for (const r of clickup.rows) {
       if (!r.dateKey || !r.user) continue;
-      if (r.user.trim().toLowerCase() === "purple giraffe") continue;
       const key = userMatch.get(r.user) || r.user;
       if (!map.has(key)) map.set(key, new Map());
       const byDate = map.get(key);

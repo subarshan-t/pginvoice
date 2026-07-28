@@ -271,6 +271,18 @@ const TYPE_LABELS = {
   queensland: "Queensland Clients (prv)",
 };
 
+// Short canonical name for each client type — same words Capacity Planning and
+// Performance use for their "basis" categories (Package / Quoted / Hourly), so a
+// chip, export column, or copied summary reads identically to those modules
+// instead of Client Invoicing's own longer phrasing above.
+const TYPE_LABELS_SHORT = {
+  all: "All",
+  package: "Package",
+  hourly: "Hourly",
+  quoted: "Quoted",
+  queensland: "Queensland (prv)",
+};
+
 // Category tags borrow the brand's purple family; Queensland (an inactive/
 // legacy bucket) is the one deliberate step outside it.
 const TYPE_TONES = {
@@ -842,7 +854,7 @@ export default function PGReconciliation() {
   const buildSummaryRows = () =>
     clients.map((c) => ({
       "Client (ClickUp)": c.name,
-      "Client type": TYPE_LABELS[c.type],
+      "Client type": TYPE_LABELS_SHORT[c.type],
       "Matched to (Accrued)": c.accruedClient?.name ?? "",
       "Match confidence": c.matchInfo ? `${Math.round(c.matchInfo.confidence * 100)}% (${c.matchInfo.method})` : "unmatched",
       "Package (h/month)": c.pkg ?? "",
@@ -895,7 +907,7 @@ export default function PGReconciliation() {
     const monthText = invoiceMonth || "this month";
     lines.push(`${c.displayName}: hours for ${monthText}`);
     if (c.accruedClient && c.accruedClient.name !== c.name) lines.push(`(ClickUp folder: ${c.name})`);
-    lines.push(`Client type: ${TYPE_LABELS[c.type]}`);
+    lines.push(`Client type: ${TYPE_LABELS_SHORT[c.type]}`);
     if (consultantFilter) lines.push(`Filtered to consultant: ${consultantFilter}`);
     lines.push("");
     lines.push("Tasks:");
@@ -1229,7 +1241,7 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
     return <span className="pg-tag" style={{ color: m.c }}>[{m.t}]</span>;
   };
 
-  const typeChip = () => <span className="pg-tag" style={{ color: TYPE_TONES[c.type] }}>[{TYPE_LABELS[c.type]}]</span>;
+  const typeChip = () => <span className="pg-tag" style={{ color: TYPE_TONES[c.type] }}>[{TYPE_LABELS_SHORT[c.type]}]</span>;
 
   const borderColor = isPackage
     ? (c.status === "over" ? "var(--status-over)" : c.status === "under" ? "var(--status-warn)" : "var(--status-ok)")
