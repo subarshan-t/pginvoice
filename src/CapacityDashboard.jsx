@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import {
-  ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap,
+  ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap, MoreVertical, Link2, Trash2,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, isInternalFolder } from "./nameMatch.js";
@@ -278,6 +279,159 @@ function Picker({ value, label, options, onChange }) {
   );
 }
 
+/* ============================================================
+   ROSTER ROW MENU — per-row "..." action menu for the team roster's edit
+   mode. Rendered via a portal into document.body with fixed positioning
+   (computed from the trigger button's own bounding rect) rather than an
+   absolutely-positioned child of the row — the roster table lives inside
+   .pg-cap-pane, which scrolls (`overflow-y: auto`), and any scrolling
+   ancestor clips an absolutely-positioned descendant regardless of its
+   z-index. That clipping is what made the menu invisible on rows near
+   the bottom of the pane (worst on the last row). A portal + fixed
+   position escapes that ancestor entirely.
+============================================================ */
+function RosterRowMenu({ person, onRemove, onOpenClickUpMatch }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const openMenu = () => {
+    const r = btnRef.current.getBoundingClientRect();
+    const menuWidth = 200;
+    let left = r.right - menuWidth;
+    if (left < 8) left = 8;
+    let top = r.bottom + 4;
+    // flip above the trigger if it would run off the bottom of the viewport
+    const estMenuHeight = 92;
+    if (top + estMenuHeight > window.innerHeight - 8) top = r.top - estMenuHeight - 4;
+    setPos({ top, left });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e) {
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      if (btnRef.current && btnRef.current.contains(e.target)) return;
+      setOpen(false);
+    }
+    function onScrollOrResize() { setOpen(false); }
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className="pg-btn-ghost"
+        style={{ padding: "5px 6px" }}
+        title={`Actions for ${person.name}`}
+        onClick={() => (open ? setOpen(false) : openMenu())}
+      >
+        <MoreVertical size={13} />
+      </button>
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          className="pg-menu"
+          style={{ position: "fixed", top: pos.top, left: pos.left, right: "auto", margin: 0, minWidth: 200, zIndex: 1000 }}
+        >
+          <button type="button" className="pg-menu-item" onClick={() => { setOpen(false); onOpenClickUpMatch(); }}>
+            <Link2 size={13} /> Match to ClickUp…
+          </button>
+          <button
+            type="button"
+            className="pg-menu-item"
+            style={{ color: "var(--status-over)" }}
+            onClick={() => { setOpen(false); if (window.confirm(`Remove ${person.name} from the roster?`)) onRemove(); }}
+          >
+            <Trash2 size={13} /> Remove from roster
+          </button>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+/* ============================================================
+   CLICKUP MATCH MODAL — lets a roster row be pinned to a specific ClickUp
+   username instead of relying on the automatic fuzzy name-match every
+   downstream module (Timesheet Summary, Performance) otherwise falls back
+   to. Warns inline if the chosen username is already matched to someone
+   else on the roster, since that would silently double-count hours.
+============================================================ */
+function ClickUpMatchModal({ person, usernames, currentMatch, matchedElsewhere, onSave, onClose }) {
+  const [choice, setChoice] = useState(currentMatch || "");
+  const [q, setQ] = useState("");
+  const filtered = usernames.filter((u) => u.toLowerCase().includes(q.toLowerCase()));
+  const conflictName = choice ? matchedElsewhere(choice) : null;
+
+  return createPortal(
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="pg-cap-card" style={{ width: 380, maxHeight: "80vh", display: "flex", flexDirection: "column", margin: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span className="pg-field__label">Match "{person.name}" to a ClickUp user</span>
+          <button className="pg-btn-ghost" style={{ padding: "4px 6px" }} onClick={onClose}><X size={13} /></button>
+        </div>
+
+        {usernames.length === 0 ? (
+          <p className="pg-footnote" style={{ marginTop: 12 }}>No ClickUp export loaded yet — upload one in Client Invoicing first.</p>
+        ) : (
+          <>
+            <input className="pg-input" style={{ marginTop: 12 }} placeholder="Search ClickUp users…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+            <div style={{ marginTop: 8, overflowY: "auto", border: "1px solid var(--border-subtle)", borderRadius: "var(--app-radius-sm)" }}>
+              <button
+                type="button"
+                className="pg-menu-item"
+                style={{ color: !choice ? "var(--accent)" : undefined }}
+                onClick={() => setChoice("")}
+              >
+                (no manual match — use automatic name match)
+              </button>
+              {filtered.map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  className="pg-menu-item"
+                  style={{ color: choice === u ? "var(--accent)" : undefined }}
+                  onClick={() => setChoice(u)}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+            {conflictName && (
+              <div className="pg-banner-warn" style={{ marginTop: 10 }}>
+                <AlertTriangle size={12} style={{ verticalAlign: -1, marginRight: 4 }} />
+                "{choice}" is already matched to {conflictName}. Saving will match it to both — their hours will be double-counted until one match is removed.
+              </div>
+            )}
+          </>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+          <button className="pg-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="pg-btn" onClick={() => onSave(choice || null)}>Save match</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function SearchBox({ label, value, onChange }) {
   return (
     <label className="pg-field">
@@ -326,6 +480,13 @@ function CapacityDashboardInner() {
   const [editingCard, setEditingCard] = useState(null);
   const [addForm, setAddForm] = useState({ from: "", type: "pct", value: "" });
 
+  // Manual person -> ClickUp username overrides, set from the roster's per-row "..."
+  // menu. Keyed by person id so a rename doesn't orphan the match. Timesheet Summary
+  // and Performance both read this (via loadKey) ahead of their own fuzzy name-match,
+  // so a manual match here takes effect everywhere ClickUp hours get attributed.
+  const [clickUpMatch, setClickUpMatch] = useState({});
+  const [clickUpMatchTarget, setClickUpMatchTarget] = useState(null); // person being (re)matched, or null
+
   const [qConsultant, setQConsultant] = useState("");
   const [qClient, setQClient] = useState("");
   const [qSupport, setQSupport] = useState("");
@@ -360,6 +521,7 @@ function CapacityDashboardInner() {
 
     setLeaves(loadKey("cap_leaves", {}));
     setOverrides(loadKey("cap_overrides", {}));
+    setClickUpMatch(loadKey("cap_people_clickup_match", {}));
     setLoaded(true);
   }, []);
   useEffect(() => { if (loaded) saveKey("cap_people", people); }, [people, loaded]);
@@ -368,8 +530,48 @@ function CapacityDashboardInner() {
   useEffect(() => { if (loaded) saveKey("cap_notes", notes); }, [notes, loaded]);
   useEffect(() => { if (loaded) saveKey("cap_leaves", leaves); }, [leaves, loaded]);
   useEffect(() => { if (loaded) saveKey("cap_overrides", overrides); }, [overrides, loaded]);
+  useEffect(() => { if (loaded) saveKey("cap_people_clickup_match", clickUpMatch); }, [clickUpMatch, loaded]);
 
   const resetSample = useCallback(() => { setPeople(SEED_PEOPLE); setClients(SEED_CLIENTS); setSupport(SEED_SUPPORT); setNotes([]); setLeaves({}); setOverrides({}); }, []);
+  const removePerson = useCallback((id) => {
+    setPeople((ps) => ps.filter((p) => p.id !== id));
+    setClickUpMatch((m) => { const { [id]: _drop, ...rest } = m; return rest; });
+  }, []);
+
+  // distinct ClickUp usernames seen in the uploaded export, for the match picker
+  const clickUpUsernames = useMemo(() => {
+    if (!clickupData?.rows?.length) return [];
+    const set = new Set();
+    for (const r of clickupData.rows) if (r.user && r.user.trim()) set.add(r.user.trim());
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [clickupData]);
+
+  // any ClickUp username matched to more than one roster person — surfaced as a warning
+  // both inline (match panel) and as a roster-wide banner, since a duplicate match would
+  // silently double-count that person's hours against two roster rows downstream.
+  const duplicateClickUpMatches = useMemo(() => {
+    const byUser = new Map();
+    for (const p of people) {
+      const u = clickUpMatch[p.id];
+      if (!u) continue;
+      if (!byUser.has(u)) byUser.set(u, []);
+      byUser.get(u).push(p.name);
+    }
+    const dupes = [];
+    byUser.forEach((names, u) => { if (names.length > 1) dupes.push({ user: u, names }); });
+    return dupes;
+  }, [clickUpMatch, people]);
+
+  const setPersonClickUpMatch = useCallback((personId, username) => {
+    setClickUpMatch((m) => {
+      if (!username) { const { [personId]: _drop, ...rest } = m; return rest; }
+      return { ...m, [personId]: username };
+    });
+  }, []);
+  const clickUpMatchedElsewhere = useCallback((username, excludePersonId) => {
+    const p = people.find((pp) => pp.id !== excludePersonId && clickUpMatch[pp.id] === username);
+    return p ? p.name : null;
+  }, [people, clickUpMatch]);
   const addNote = () => {
     if (!noteDraft.trim()) return;
     setNotes((ns) => [{ id: uid("n"), text: noteDraft.trim(), ts: Date.now() }, ...ns]);
@@ -878,20 +1080,36 @@ function CapacityDashboardInner() {
             <div className="pg-cap-stat"><div className="pg-stat__value" style={{ color: difference < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{difference > 0 ? "+" : ""}{difference.toFixed(0)}</div><div className="pg-stat__label">Difference</div></div>
           </div>
 
-          <div className="pg-table-wrap" style={{ overflowX: "auto", marginTop: 14 }}>
+          {duplicateClickUpMatches.length > 0 && (
+            <div className="pg-banner-warn" style={{ marginTop: 14 }}>
+              {duplicateClickUpMatches.map((d) => (
+                <div key={d.user}>ClickUp user "{d.user}" is matched to more than one person ({d.names.join(", ")}) — their hours will be double-counted until this is fixed.</div>
+              ))}
+            </div>
+          )}
+
+          <div className="pg-table-wrap" style={{ marginTop: 14 }}>
             <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>Team roster</span>
               <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
             </div>
+            <div style={{ overflowX: "auto" }}>
             <table className="pg-table" style={{ minWidth: 640 }}>
-              <thead><tr><th>Consultant</th><th className="right num">Resource Hrs</th><th className="right num">Leaves</th><th className="right num">Public Hols</th><th className="right num">Monthly Hrs</th><th className="right num">Billable %</th><th className="right num">Billable Capacity</th><th className="right num">Allocated</th><th className="right num">Availability</th></tr></thead>
+              <thead><tr><th>Consultant</th><th className="right num">Resource Hrs</th><th className="right num">Leaves</th><th className="right num">Public Hols</th><th className="right num">Monthly Hrs</th><th className="right num">Billable %</th><th className="right num">Billable Capacity</th><th className="right num">Allocated</th><th className="right num">Availability</th>{editRoster && <th className="right" style={{ width: 36 }}></th>}</tr></thead>
               <tbody>
                 {people.map((p) => {
                   const pc = personCalc[p.name];
                   const pm = peopleMap[p.name];
                   return (
                     <tr key={p.id}>
-                      <td>{p.name} <span className="pg-tag" style={{ color: p.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 5 }}>[{p.role[0]}]</span></td>
+                      <td>
+                        {p.name} <span className="pg-tag" style={{ color: p.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 5 }}>[{p.role[0]}]</span>
+                        {clickUpMatch[p.id] && (
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-tertiary)", marginTop: 2 }}>
+                            <Link2 size={9} style={{ verticalAlign: -1, marginRight: 3 }} />{clickUpMatch[p.id]}
+                          </div>
+                        )}
+                      </td>
                       <td className="right num">{pm.resourceHours.toFixed(1)}</td>
                       <td className="right num">
                         {editRoster
@@ -908,12 +1126,29 @@ function CapacityDashboardInner() {
                       <td className="right num"><b>{pc.base.toFixed(1)}</b></td>
                       <td className="right num">{pc.allocatedTotal > 0 ? pc.allocatedTotal.toFixed(1) : "—"}</td>
                       <td className="right num" style={{ color: pc.spare < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{pc.spare > 0 ? "+" : ""}{pc.spare.toFixed(1)}</td>
+                      {editRoster && (
+                        <td className="right" style={{ position: "static" }}>
+                          <RosterRowMenu person={p} onRemove={() => removePerson(p.id)} onOpenClickUpMatch={() => setClickUpMatchTarget(p)} />
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            </div>
           </div>
+
+          {clickUpMatchTarget && (
+            <ClickUpMatchModal
+              person={clickUpMatchTarget}
+              usernames={clickUpUsernames}
+              currentMatch={clickUpMatch[clickUpMatchTarget.id] || ""}
+              matchedElsewhere={(u) => clickUpMatchedElsewhere(u, clickUpMatchTarget.id)}
+              onSave={(username) => { setPersonClickUpMatch(clickUpMatchTarget.id, username); setClickUpMatchTarget(null); }}
+              onClose={() => setClickUpMatchTarget(null)}
+            />
+          )}
           <p className="pg-footnote">Total Resource Hours and Public Holidays are calculated from {MONTH_LABELS[month]}'s actual weekdays and each person's state. Leaves and Billable Allocation are only editable in Edit mode; everything else recalculates automatically.</p>
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>

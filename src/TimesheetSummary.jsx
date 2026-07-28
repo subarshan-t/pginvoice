@@ -178,6 +178,7 @@ function TimesheetInner() {
   const [monthKeyState, setMonthKeyState] = useState("");
   const [weekIdx, setWeekIdx] = useState(0);
 
+  const [clickUpMatchOverride, setClickUpMatchOverride] = useState({});
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -185,10 +186,11 @@ function TimesheetInner() {
       if (cancelled) return;
       setClickup(cu || null);
       setPeople(loadKey("cap_people", SEED_PEOPLE));
+      setClickUpMatchOverride(loadKey("cap_people_clickup_match", {}));
       setLoaded(true);
     };
     load();
-    const onUpdate = (e) => { if (!e.detail || ["clickup", "cap_people"].includes(e.detail.key)) load(); };
+    const onUpdate = (e) => { if (!e.detail || ["clickup", "cap_people", "cap_people_clickup_match"].includes(e.detail.key)) load(); };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);
@@ -207,13 +209,20 @@ function TimesheetInner() {
     const usernames = new Set();
     for (const r of clickup.rows) if (r.user) usernames.add(r.user);
     const rosterNames = people.map((p) => p.name);
+    // manual person -> ClickUp username matches set from the Team Roster's "..." menu
+    // win over the automatic fuzzy match below
+    const manualByUsername = new Map();
+    people.forEach((p) => { const u = clickUpMatchOverride[p.id]; if (u) manualByUsername.set(u, p.name); });
     usernames.forEach((u) => {
-      if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, null); return; }
+      if (manualByUsername.has(u)) { map.set(u, manualByUsername.get(u)); return; }
+      // The "Purple Giraffe" ClickUp login is a shared account DMA (an external
+      // contractor) logs time under — attribute it to DMA rather than dropping it.
+      if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, "DMA (external)"); return; }
       const m = findMatch(u, rosterNames);
       map.set(u, m ? m.name : null);
     });
     return map;
-  }, [clickup, people]);
+  }, [clickup, people, clickUpMatchOverride]);
 
   // key -> Map(dateKey -> minutes). Total time logged, not filtered to billable/
   // client-only — this is a timesheet, not a billing report.
@@ -222,7 +231,6 @@ function TimesheetInner() {
     if (!clickup?.rows?.length) return map;
     for (const r of clickup.rows) {
       if (!r.dateKey || !r.user) continue;
-      if (r.user.trim().toLowerCase() === "purple giraffe") continue;
       const key = userMatch.get(r.user) || r.user;
       if (!map.has(key)) map.set(key, new Map());
       const byDate = map.get(key);
