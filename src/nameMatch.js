@@ -47,29 +47,34 @@ export function findPersonMatch(name, people) {
   return m ? (owner.get(m.name) || null) : null;
 }
 
-// Canonical client-type vocabulary — the same 4 categories Client Invoicing uses
-// (package/hourly/quoted/queensland). Capacity Planning and Performance track a
-// finer-grained "basis" per client-agreement (Package/Project/Quoted/MAP/Strategy/
-// Hourly/Ad hoc); basisToClientType folds that down to this shared vocabulary so a
-// chip, filter, or export reads the same way in every module instead of surfacing
-// internal-only jargon like "MAP" or "Strategy". Project (bounded, one-off scoped
-// work) maps to Quoted; MAP and Strategy (both ongoing engagements with agreed
-// recurring hours, same shape as a Package) map to Package.
+// Canonical client-type vocabulary — Client Invoicing's own 4 categories
+// (package/hourly/quoted/queensland) plus "map" (Marketing Action Plan), which is
+// its own distinct engagement type rather than a plain Quoted project or Package.
+// Capacity Planning and Performance track a finer-grained "basis" per client
+// agreement (Package/Project/Quoted/MAP/Strategy/Hourly/Ad hoc); basisToClientType
+// folds that down to this shared vocabulary so a chip, filter, or export reads the
+// same way in every module instead of surfacing internal-only jargon like
+// "Strategy". Project (bounded, one-off scoped work) maps to Quoted; Strategy (an
+// ongoing engagement with agreed recurring hours, same shape as a Package) maps to
+// Package; MAP keeps its own identity rather than folding into either.
 export const CLIENT_TYPE_LABELS = {
   package: "Package",
   hourly: "Hourly",
   quoted: "Quoted",
+  map: "MAP",
   queensland: "Queensland (prv)",
 };
 export const CLIENT_TYPE_TONES = {
   package: "var(--accent)",
   hourly: "var(--accent-orchid)",
   quoted: "var(--fg-tertiary)",
+  map: "var(--status-warn)",
   queensland: "var(--status-info)",
 };
 export function basisToClientType(basis) {
   const b = String(basis || "").trim();
-  if (b === "Package" || b === "MAP" || b === "Strategy") return "package";
+  if (b === "MAP") return "map";
+  if (b === "Package" || b === "Strategy") return "package";
   if (b === "Quoted" || b === "Project") return "quoted";
   return "hourly"; // Hourly, Ad hoc, or unrecognised
 }
