@@ -9,7 +9,7 @@ import {
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
 import { idbGet, idbSet } from "./idbStore.js";
-import { findMatch, isInternalFolder } from "./nameMatch.js";
+import { findMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync } from "./clickupSync.js";
 
 // ---------------------------- time text → minutes ----------------------------
@@ -271,26 +271,15 @@ const TYPE_LABELS = {
   queensland: "Queensland Clients (prv)",
 };
 
-// Short canonical name for each client type — same words Capacity Planning and
-// Performance use for their "basis" categories (Package / Quoted / Hourly), so a
-// chip, export column, or copied summary reads identically to those modules
-// instead of Client Invoicing's own longer phrasing above.
-const TYPE_LABELS_SHORT = {
-  all: "All",
-  package: "Package",
-  hourly: "Hourly",
-  quoted: "Quoted",
-  queensland: "Queensland (prv)",
-};
+// Short canonical name for each client type — the shared vocabulary (nameMatch.js)
+// Capacity Planning and Performance also fold their finer-grained "basis" categories
+// down to, so a chip, export column, or copied summary reads identically across every
+// module instead of Client Invoicing's own longer phrasing above.
+const TYPE_LABELS_SHORT = { all: "All", ...CLIENT_TYPE_LABELS };
 
 // Category tags borrow the brand's purple family; Queensland (an inactive/
 // legacy bucket) is the one deliberate step outside it.
-const TYPE_TONES = {
-  package: "var(--accent)",
-  hourly: "var(--accent-orchid)",
-  queensland: "var(--status-info)",
-  quoted: "var(--fg-tertiary)",
-};
+const TYPE_TONES = CLIENT_TYPE_TONES;
 
 // ------------------------------- PDF (print) --------------------------------
 const PRINT = { ink: "#000000", inkSoft: "#000000", brand: "#3F008E", line: "#E7E1F0", brandSoft: "#F1EAFB" };

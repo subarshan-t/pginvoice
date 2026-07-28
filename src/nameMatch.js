@@ -47,6 +47,33 @@ export function findPersonMatch(name, people) {
   return m ? (owner.get(m.name) || null) : null;
 }
 
+// Canonical client-type vocabulary — the same 4 categories Client Invoicing uses
+// (package/hourly/quoted/queensland). Capacity Planning and Performance track a
+// finer-grained "basis" per client-agreement (Package/Project/Quoted/MAP/Strategy/
+// Hourly/Ad hoc); basisToClientType folds that down to this shared vocabulary so a
+// chip, filter, or export reads the same way in every module instead of surfacing
+// internal-only jargon like "MAP" or "Strategy". Project (bounded, one-off scoped
+// work) maps to Quoted; MAP and Strategy (both ongoing engagements with agreed
+// recurring hours, same shape as a Package) map to Package.
+export const CLIENT_TYPE_LABELS = {
+  package: "Package",
+  hourly: "Hourly",
+  quoted: "Quoted",
+  queensland: "Queensland (prv)",
+};
+export const CLIENT_TYPE_TONES = {
+  package: "var(--accent)",
+  hourly: "var(--accent-orchid)",
+  quoted: "var(--fg-tertiary)",
+  queensland: "var(--status-info)",
+};
+export function basisToClientType(basis) {
+  const b = String(basis || "").trim();
+  if (b === "Package" || b === "MAP" || b === "Strategy") return "package";
+  if (b === "Quoted" || b === "Project") return "quoted";
+  return "hourly"; // Hourly, Ad hoc, or unrecognised
+}
+
 // Internal / non-revenue folders (per the billable-hours guide, §3.1): the literal
 // "Purple Giraffe" bucket, plus onboarding/offboarding/handover/WIP trackers.
 // Case-insensitive substring match — deliberately broader than the guide's literal-case

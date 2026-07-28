@@ -4,7 +4,7 @@ import {
   Search, Download, ChevronDown, Plus, X, Users,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, findPersonMatch, isInternalFolder } from "./nameMatch.js";
+import { findMatch, findPersonMatch, isInternalFolder, basisToClientType, CLIENT_TYPE_LABELS } from "./nameMatch.js";
 import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey } from "./CapacityDashboard.jsx";
 
 const CLICKUP_DB_KEY = "clickup";
@@ -301,7 +301,7 @@ function PerformanceInner() {
   function groupMeta(g) {
     const isFixed = g.rows.some((r) => FIXED_BASES.includes(r.basis));
     const agreedTotal = g.rows.reduce((s, r) => s + (r.agreed || 0), 0);
-    const basisLabel = g.rows.length > 1 ? "Combined" : g.rows[0].basis;
+    const basisLabel = g.rows.length > 1 ? "Combined" : CLIENT_TYPE_LABELS[basisToClientType(g.rows[0].basis)];
     return { isFixed, agreedTotal, basisLabel };
   }
 
@@ -345,7 +345,7 @@ function PerformanceInner() {
 
   const filteredGroups = useMemo(() => groups.filter((g) =>
     (!qClient || g.group.toLowerCase().includes(qClient.toLowerCase())) &&
-    (!qBasis || g.rows.some((r) => r.basis === qBasis))
+    (!qBasis || g.rows.some((r) => basisToClientType(r.basis) === qBasis))
   ), [groups, qClient, qBasis]);
 
   const clientTableRows = useMemo(() => filteredGroups.map((g) => {
@@ -519,7 +519,10 @@ function PerformanceInner() {
     };
   }, [selectedConsultant, teamMonthly, activeMonths]);
 
-  const basisOptions = [{ value: null, label: "All types" }, ...Array.from(new Set(clients.map((c) => c.basis))).sort().map((b) => ({ value: b, label: b }))];
+  // Grouped down to the same 4 canonical types Client Invoicing uses (see
+  // basisToClientType), rather than surfacing every raw "basis" value —
+  // MAP/Strategy/Project aren't categories anyone outside this data recognizes.
+  const basisOptions = [{ value: null, label: "All types" }, ...Array.from(new Set(clients.map((c) => basisToClientType(c.basis)))).sort().map((t) => ({ value: t, label: CLIENT_TYPE_LABELS[t] }))];
 
   function exportXlsx() {
     const wb = XLSX.utils.book_new();

@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap, MoreVertical,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, isInternalFolder, normalizeName } from "./nameMatch.js";
+import { findMatch, isInternalFolder, normalizeName, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
 import { loadState, saveState } from "./capacityStore.js";
 
 /* ============================================================
@@ -472,6 +472,7 @@ function CapacityDashboardInner() {
   const [qConsultant, setQConsultant] = useState("");
   const [qClient, setQClient] = useState("");
   const [qSupport, setQSupport] = useState("");
+  const [qRoster, setQRoster] = useState("");
 
   // The same parsed ClickUp export Client Invoicing has already loaded (and persisted to
   // IndexedDB) — read here too so "Average Hrs" can be driven from real billable hours
@@ -919,7 +920,7 @@ function CapacityDashboardInner() {
                             return (
                               <tr key={g.group}>
                                 <td>{r.client}</td>
-                                <td><span className="pg-tag" style={{ color: "var(--accent)" }}>[{r.basis}]</span></td>
+                                <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
                                 <td className="right num">{fmt(r.agreed)}</td>
                                 <td className="right num">
                                   {fmt(avg)}
@@ -969,7 +970,7 @@ function CapacityDashboardInner() {
                                 return (
                                   <tr key={r.id}>
                                     <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}</td>
-                                    <td><span className="pg-tag" style={{ color: "var(--accent)" }}>[{r.basis}]</span></td>
+                                    <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
                                     <td className="right num">{fmt(r.agreed)}</td>
                                     <td className="right num">{fmt(avg)}</td>
                                     <td className="right num">
@@ -1086,15 +1087,27 @@ function CapacityDashboardInner() {
           )}
 
           <div className="pg-table-wrap" style={{ marginTop: 14 }}>
-            <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
               <span>Team roster</span>
-              <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ position: "relative" }}>
+                  <Search size={11} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--fg-tertiary)" }} />
+                  <input
+                    className="pg-input"
+                    style={{ width: 160, padding: "5px 8px 5px 24px", fontSize: 12 }}
+                    placeholder="Search consultant…"
+                    value={qRoster}
+                    onChange={(e) => setQRoster(e.target.value)}
+                  />
+                </div>
+                <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
+              </div>
             </div>
             <div style={{ overflowX: "auto" }}>
             <table className="pg-table" style={{ minWidth: 640 }}>
               <thead><tr><th>Consultant</th><th className="right num">Resource Hrs</th><th className="right num">Leaves</th><th className="right num">Public Hols</th><th className="right num">Monthly Hrs</th><th className="right num">Billable %</th><th className="right num">Billable Capacity</th><th className="right num">Allocated</th><th className="right num">Availability</th>{editRoster && <th></th>}</tr></thead>
               <tbody>
-                {people.filter((p) => peopleMap[p.name]).map((p) => {
+                {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
                   const pc = personCalc[p.name];
                   const pm = peopleMap[p.name];
                   return (
