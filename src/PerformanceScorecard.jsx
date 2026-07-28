@@ -4,7 +4,7 @@ import {
   Search, Download, ChevronDown, Plus, X, Users,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, findPersonMatch, isInternalFolder, basisToClientType, CLIENT_TYPE_LABELS } from "./nameMatch.js";
+import { findMatch, findPersonMatch, isInternalFolder, basisToClientType, dominantClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
 import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey } from "./CapacityDashboard.jsx";
 
 const CLICKUP_DB_KEY = "clickup";
@@ -363,50 +363,109 @@ function PerformanceInner() {
     return bv - av;
   }), [filteredGroups, clientMonthly, latestMonth, activeMonths]);
 
+  // A fixed-agreement client only counts toward Agreed for months it was actually
+  // an active engagement — approximated by whether they logged any ClickUp hours
+  // that specific month. Applying the client's *current* agreed total to every
+  // month in the range regardless (the old behavior) drew a flat Agreed line even
+  // across months before a new client signed on, or after an old one left.
+  function activeInMonth(g, m) {
+    const cm = clientMonthly.get(g.group);
+    return !!cm && (cm.monthHours.get(m) || 0) > 0;
+  }
+
   const clientChart = useMemo(() => {
+    const TYPE_ORDER = ["hourly", "package", "quoted", "map"];
+    const TYPE_LINE_LABEL = { hourly: "Hours for Hourly", package: "Hours for Packaged", quoted: "Hours for Quoted", map: "Hours for MAP" };
+
     if (selectedClient) {
       const g = groups.find((x) => x.group === selectedClient);
-      if (!g) return { series: [], isFixed: null, ytd: {}, current: {} };
+      if (!g) return { series: [], isFixed: null, ytd: [], current: [] };
       const meta = groupMeta(g);
       const cm = clientMonthly.get(g.group);
       const monthHours = cm ? cm.monthHours : new Map();
       const actualsPts = activeMonths.map((m) => monthHours.get(m) ?? 0);
-      const agreedPts = meta.isFixed ? activeMonths.map(() => meta.agreedTotal) : activeMonths.map(() => null);
+      const agreedPts = meta.isFixed ? activeMonths.map((m) => (activeInMonth(g, m) ? meta.agreedTotal : 0)) : activeMonths.map(() => null);
       const hourlyPts = meta.isFixed ? activeMonths.map(() => null) : activeMonths.map((m) => expandingAvgAt(monthHours, m));
       const series = [
         { label: "Agreed", color: "var(--fg-tertiary)", points: agreedPts },
         { label: "Hourly (trailing)", color: "var(--accent-orchid)", points: hourlyPts },
         { label: "Actuals", color: "var(--accent)", points: actualsPts },
       ].filter((s) => s.points.some((v) => v !== null));
+      const ytdAgreed = agreedPts.reduce((s, v) => s + (v || 0), 0);
       const ytdActuals = actualsPts.reduce((s, v) => s + (v || 0), 0);
       return {
         series, isFixed: meta.isFixed, matched: !!cm, matchedFolder: cm?.matchedFolder,
-        ytd: { agreed: meta.isFixed ? meta.agreedTotal * activeMonths.length : null, hourly: meta.isFixed ? null : (activeMonths.length ? ytdActuals / activeMonths.length : null), actuals: ytdActuals },
-        current: { agreed: meta.isFixed ? meta.agreedTotal : null, hourly: meta.isFixed ? null : expandingAvgAt(monthHours, latestMonth), actuals: latestMonth ? (monthHours.get(latestMonth) ?? 0) : null },
+        ytd: [
+          { label: "Agreed", value: meta.isFixed ? fmt0(ytdAgreed) : "—" },
+          { label: "Hourly", value: meta.isFixed ? "—" : (activeMonths.length ? fmt1(ytdActuals / activeMonths.length) : "—") },
+          { label: "Actuals", value: fmt0(ytdActuals) },
+        ],
+        current: [
+          { label: "Agreed", value: meta.isFixed && activeInMonth(g, latestMonth) ? fmt0(meta.agreedTotal) : "—" },
+          { label: "Hourly", value: meta.isFixed ? "—" : fmt1(expandingAvgAt(monthHours, latestMonth)) },
+          { label: "Actuals", value: latestMonth ? fmt0(monthHours.get(latestMonth) ?? 0) : "—" },
+        ],
       };
     }
-    // aggregate — every matched group within the current Type filter, so the chart
-    // reacts to the same "Type" picker the table below already respects.
-    const matchedGroups = filteredGroups.filter((g) => clientMonthly.has(g.group));
-    const fixedGroups = matchedGroups.filter((g) => groupMeta(g).isFixed);
-    const hourlyGroups = matchedGroups.filter((g) => !groupMeta(g).isFixed);
-    const agreedTotal = fixedGroups.reduce((s, g) => s + groupMeta(g).agreedTotal, 0);
-    const hourlyByMonth = activeMonths.map((m) => hourlyGroups.reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0));
-    const actualsByMonth = activeMonths.map((m) => matchedGroups.reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0));
-    const agreedByMonth = activeMonths.map(() => agreedTotal);
-    const series = [
-      { label: "Agreed", color: "var(--fg-tertiary)", points: agreedByMonth },
-      { label: "Hourly clients (actual)", color: "var(--accent-orchid)", points: hourlyByMonth },
-      { label: "Actuals (all)", color: "var(--accent)", points: actualsByMonth },
-    ];
-    const totYtd = actualsByMonth.reduce((a, b) => a + b, 0);
+
+    // aggregate, bucketed by canonical client type — every matched group within
+    // the current name search (qClient), independent of the Type picker (qBasis),
+    // which instead decides *which of these type lines* actually get shown below.
+    const matchedGroups = groups.filter((g) =>
+      (!qClient || g.group.toLowerCase().includes(qClient.toLowerCase())) && clientMonthly.has(g.group)
+    );
+    const groupsByType = { hourly: [], package: [], quoted: [], map: [] };
+    matchedGroups.forEach((g) => groupsByType[dominantClientType(g.rows)].push(g));
+
+    const hoursByType = {}, agreedByType = {};
+    TYPE_ORDER.forEach((t) => {
+      hoursByType[t] = activeMonths.map((m) => groupsByType[t].reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0));
+      agreedByType[t] = t === "hourly" ? null : activeMonths.map((m) => groupsByType[t].reduce((s, g) => s + (activeInMonth(g, m) ? groupMeta(g).agreedTotal : 0), 0));
+    });
+    const sumArrays = (arrs) => activeMonths.map((_, i) => arrs.reduce((s, a) => s + (a ? a[i] : 0), 0));
+    const totalAgreedByMonth = sumArrays(["package", "quoted", "map"].map((t) => agreedByType[t]));
+    const totalHoursByMonth = sumArrays(TYPE_ORDER.map((t) => hoursByType[t]));
+
     const lastIdx = activeMonths.length - 1;
-    return {
-      series, isFixed: null, matched: matchedGroups.length > 0,
-      ytd: { agreed: agreedTotal * activeMonths.length, hourly: activeMonths.length ? hourlyByMonth.reduce((a, b) => a + b, 0) / activeMonths.length : null, actuals: totYtd },
-      current: { agreed: agreedTotal, hourly: lastIdx >= 0 ? hourlyByMonth[lastIdx] : null, actuals: lastIdx >= 0 ? actualsByMonth[lastIdx] : null },
-    };
-  }, [selectedClient, groups, filteredGroups, clientMonthly, activeMonths, latestMonth]);
+    const ytdOf = (arr) => arr.reduce((a, b) => a + b, 0);
+    const atLast = (arr) => lastIdx >= 0 ? arr[lastIdx] : 0;
+
+    let series, ytd, current;
+    if (!qBasis) {
+      // "All" — total Agreed plus every type's own Hours line.
+      series = [
+        { label: "Total Agreed", color: "var(--fg-tertiary)", points: totalAgreedByMonth },
+        ...TYPE_ORDER.map((t) => ({ label: TYPE_LINE_LABEL[t], color: CLIENT_TYPE_TONES[t], points: hoursByType[t] })),
+      ];
+      ytd = [
+        { label: "Total Agreed", value: fmt0(ytdOf(totalAgreedByMonth)) },
+        ...TYPE_ORDER.map((t) => ({ label: TYPE_LINE_LABEL[t], value: fmt0(ytdOf(hoursByType[t])) })),
+      ];
+      current = [
+        { label: "Total Agreed", value: fmt0(atLast(totalAgreedByMonth)) },
+        ...TYPE_ORDER.map((t) => ({ label: TYPE_LINE_LABEL[t], value: fmt0(atLast(hoursByType[t])) })),
+      ];
+    } else if (qBasis === "hourly") {
+      // Hourly has no fixed agreement, so there's no Agreed line to show for it.
+      series = [{ label: TYPE_LINE_LABEL.hourly, color: CLIENT_TYPE_TONES.hourly, points: hoursByType.hourly }];
+      ytd = [{ label: TYPE_LINE_LABEL.hourly, value: fmt0(ytdOf(hoursByType.hourly)) }];
+      current = [{ label: TYPE_LINE_LABEL.hourly, value: fmt0(atLast(hoursByType.hourly)) }];
+    } else {
+      series = [
+        { label: "Agreed", color: "var(--fg-tertiary)", points: agreedByType[qBasis] },
+        { label: TYPE_LINE_LABEL[qBasis], color: CLIENT_TYPE_TONES[qBasis], points: hoursByType[qBasis] },
+      ];
+      ytd = [
+        { label: "Agreed", value: fmt0(ytdOf(agreedByType[qBasis])) },
+        { label: TYPE_LINE_LABEL[qBasis], value: fmt0(ytdOf(hoursByType[qBasis])) },
+      ];
+      current = [
+        { label: "Agreed", value: fmt0(atLast(agreedByType[qBasis])) },
+        { label: TYPE_LINE_LABEL[qBasis], value: fmt0(atLast(hoursByType[qBasis])) },
+      ];
+    }
+    return { series, isFixed: null, matched: matchedGroups.length > 0, ytd, current, totalHoursByMonth };
+  }, [selectedClient, groups, qClient, qBasis, clientMonthly, activeMonths, latestMonth]);
 
   /* ---- team: match real ClickUp usernames to the roster by fuzzy name ---- */
   const userMatch = useMemo(() => {
@@ -635,6 +694,12 @@ function PerformanceInner() {
                     {!clientChart.matched && " No matching ClickUp folder found for this client, actuals are 0."}
                   </p>
                 )}
+                {!selectedClient && qBasis === "hourly" && (
+                  <p className="pg-footnote" style={{ marginTop: 6 }}>No Agreed line for Hourly clients, since they have no fixed agreement.</p>
+                )}
+                {!selectedClient && (
+                  <p className="pg-footnote" style={{ marginTop: 6 }}>A client only counts toward an Agreed line for months it actually logged ClickUp hours, so new clients and departures move the total instead of it staying flat across the whole range.</p>
+                )}
               </div>
 
               <div className="pg-panel" style={{ flexDirection: "column", flexWrap: "nowrap", alignItems: "stretch" }}>
@@ -669,15 +734,11 @@ function PerformanceInner() {
             <div className="pg-cap-pane">
               <div className="pg-cap-stat">
                 <div className="pg-field__label" style={{ marginBottom: 8 }}>All data ({rangeLabel})</div>
-                <StatRow label="Agreed" value={clientChart.ytd.agreed === null || clientChart.ytd.agreed === undefined ? "—" : fmt0(clientChart.ytd.agreed)} />
-                <StatRow label="Hourly" value={clientChart.ytd.hourly === null || clientChart.ytd.hourly === undefined ? "—" : fmt1(clientChart.ytd.hourly)} />
-                <StatRow label="Actuals" value={fmt0(clientChart.ytd.actuals)} />
+                {clientChart.ytd.map((s) => <StatRow key={s.label} label={s.label} value={s.value} />)}
               </div>
               <div className="pg-cap-stat" style={{ marginTop: 12 }}>
                 <div className="pg-field__label" style={{ marginBottom: 8 }}>Current month {latestMonth ? `(${monthLabelShort(latestMonth)})` : ""}</div>
-                <StatRow label="Agreed" value={clientChart.current.agreed === null || clientChart.current.agreed === undefined ? "—" : fmt0(clientChart.current.agreed)} />
-                <StatRow label="Hourly" value={clientChart.current.hourly === null || clientChart.current.hourly === undefined ? "—" : fmt1(clientChart.current.hourly)} />
-                <StatRow label="Actuals" value={fmt0(clientChart.current.actuals)} />
+                {clientChart.current.map((s) => <StatRow key={s.label} label={s.label} value={s.value} />)}
               </div>
 
               <NotesPanel notes={notes} noteDraft={noteDraft} setNoteDraft={setNoteDraft} addNote={addNote} removeNote={removeNote} />

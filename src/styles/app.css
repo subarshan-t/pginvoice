@@ -45,6 +45,12 @@
      text/border contrast; a button's background still needs to stay light so
      --fg-on-accent reads on top of it in both themes. */
   --accent-bg: rgb(210, 187, 255);
+
+  /* The design system's own --fg-tertiary (rgba(207,196,197,0.6) on a near-black
+     page) sits under ~4:1 contrast — too faint for the mono uppercase labels,
+     table headers, and footnotes that lean on it throughout this app. Raise the
+     opacity so it stays clearly legible without changing its hue. */
+  --fg-tertiary: rgba(207, 196, 197, 0.78);
 }
 
 /* ============================================================================
@@ -64,7 +70,9 @@
 
   --fg-primary:   rgb(19, 19, 19);
   --fg-secondary: rgb(90, 87, 86);
-  --fg-tertiary:  rgba(19, 19, 19, 0.5);
+  /* Darkened from 0.5 alpha (~3.5:1 on this near-white page, too faint for the
+     mono uppercase labels/footnotes that lean on it) for reliable legibility. */
+  --fg-tertiary:  rgba(19, 19, 19, 0.68);
 
   --border-subtle: rgba(19, 19, 19, 0.08);
   --border-soft:   rgba(19, 19, 19, 0.14);

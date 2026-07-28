@@ -79,6 +79,22 @@ export function basisToClientType(basis) {
   return "hourly"; // Hourly, Ad hoc, or unrecognised
 }
 
+// A client group's canonical type from its Capacity Planning row(s). Almost every
+// group is a single row, so this is just basisToClientType(that row's basis); a
+// "Combined" group (multiple sub-project rows with different bases — e.g. a
+// Package plus a one-off Project) is bucketed under whichever non-Hourly type
+// carries the most agreed hours, since actual hours can't be split back out
+// between the sub-rows once matched to a single ClickUp folder.
+export function dominantClientType(rows) {
+  const types = rows.map((r) => basisToClientType(r.basis));
+  const uniq = [...new Set(types)];
+  if (uniq.length === 1) return uniq[0];
+  const fixedRows = rows.filter((r) => basisToClientType(r.basis) !== "hourly");
+  if (!fixedRows.length) return "hourly";
+  const dominant = fixedRows.reduce((best, r) => (r.agreed || 0) > (best.agreed || 0) ? r : best, fixedRows[0]);
+  return basisToClientType(dominant.basis);
+}
+
 // Internal / non-revenue folders (per the billable-hours guide, §3.1): the literal
 // "Purple Giraffe" bucket, plus onboarding/offboarding/handover/WIP trackers.
 // Case-insensitive substring match — deliberately broader than the guide's literal-case

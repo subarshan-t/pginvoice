@@ -8,9 +8,10 @@ import {
 } from "lucide-react";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
-import { idbGet, idbSet } from "./idbStore.js";
-import { findMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
+import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
+import { findMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, dominantClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync } from "./clickupSync.js";
+import { SEED_CLIENTS as CAP_SEED_CLIENTS, loadKey as loadCapKey } from "./CapacityDashboard.jsx";
 
 // ---------------------------- time text → minutes ----------------------------
 function parseTimeTextToMinutes(raw) {
@@ -268,6 +269,7 @@ const TYPE_LABELS = {
   package: "Clients on a Package",
   hourly: "Clients on Hourly rate",
   quoted: "Quoted Clients",
+  map: "MAP Clients",
   queensland: "Queensland Clients (prv)",
 };
 
@@ -459,6 +461,30 @@ export default function PGReconciliation() {
       if (raw) setNameMap(JSON.parse(raw));
     } catch (e) {}
   }, []);
+
+  // Capacity Planning's client list (Supabase-backed), read-only here — used only to
+  // cross-reference a client's current "basis" (Package/Project/Quoted/MAP/Strategy/
+  // Hourly/Ad hoc) so a client on a Marketing Action Plan shows up as its own "MAP"
+  // type below instead of whatever Client Invoicing's own package/hourly heuristic
+  // would otherwise guess. Reactive to the same PG_DATA_EVENT Capacity Planning
+  // broadcasts on every edit, so a basis change there is reflected here live.
+  const [capClients, setCapClients] = useState(CAP_SEED_CLIENTS);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => loadCapKey("cap_clients", CAP_SEED_CLIENTS).then((v) => { if (!cancelled) setCapClients(v || CAP_SEED_CLIENTS); });
+    load();
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === "cap_clients") load(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
+  }, []);
+  const capTypeByGroup = useMemo(() => {
+    const byGroup = new Map();
+    capClients.forEach((c) => { if (!byGroup.has(c.group)) byGroup.set(c.group, []); byGroup.get(c.group).push(c); });
+    const result = new Map();
+    byGroup.forEach((rows, group) => result.set(group, dominantClientType(rows)));
+    return result;
+  }, [capClients]);
+  const capGroupNames = useMemo(() => [...capTypeByGroup.keys()], [capTypeByGroup]);
 
   // Restore the uploaded data and filters from a previous session. The parsed CSV can run
   // several MB as JSON, too close to localStorage's shared per-origin quota to risk — so the
@@ -722,15 +748,31 @@ export default function PGReconciliation() {
         displayName: accruedClient?.name ?? c.name,
       };
       clientObj.type = classifyClient(clientObj);
+      // Client Invoicing has no independent way to know a client is on a Marketing
+      // Action Plan (MAP) — that's tracked only in Capacity Planning's "basis" field.
+      // Cross-reference it here by name, purely additively: c.type (which the
+      // package/hourly/Queensland UI below is built around, including the real
+      // accrued-balance tracking) is left exactly as classifyClient() already
+      // determines it, so a MAP client that's also tracked with a package-style
+      // accrual keeps that UI. isMap just layers a separate "MAP" filter option and
+      // an inline tag on top, visible regardless of which type bucket a client
+      // otherwise falls into. Reads live capacity data, so a client moving off MAP
+      // is reflected here automatically next time this recomputes.
+      const capMatch = findMatch(c.name, capGroupNames);
+      clientObj.isMap = capMatch ? capTypeByGroup.get(capMatch.name) === "map" : false;
       out.push(clientObj);
     }
     return out;
-  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked]);
+  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked, capGroupNames, capTypeByGroup]);
 
-  // counts by type
+  // counts by type — "map" counts c.isMap (an overlay tag), not c.type, since a MAP
+  // client keeps whatever c.type its own package/hourly classification landed on.
   const typeCounts = useMemo(() => {
-    const counts = { all: clients.length, package: 0, hourly: 0, queensland: 0, quoted: 0 };
-    for (const c of clients) counts[c.type] = (counts[c.type] || 0) + 1;
+    const counts = { all: clients.length, package: 0, hourly: 0, queensland: 0, quoted: 0, map: 0 };
+    for (const c of clients) {
+      counts[c.type] = (counts[c.type] || 0) + 1;
+      if (c.isMap) counts.map++;
+    }
     return counts;
   }, [clients]);
 
@@ -775,7 +817,9 @@ export default function PGReconciliation() {
 
   // filtered + sorted + consultant-scoped clients for display
   const visible = useMemo(() => {
-    let list = clientTypeFilter === "all" ? clients.slice() : clients.filter((c) => c.type === clientTypeFilter);
+    let list = clientTypeFilter === "all" ? clients.slice()
+      : clientTypeFilter === "map" ? clients.filter((c) => c.isMap)
+      : clients.filter((c) => c.type === clientTypeFilter);
     if (consultantFilter) list = list.filter((c) => c.userMinutes.has(consultantFilter));
     // per-consultant task view: if filter set, use tasksByUser for that consultant; else all tasks
     list = list.map((c) => {
@@ -1059,6 +1103,7 @@ export default function PGReconciliation() {
                 <option value="package">Clients on a Package ({typeCounts.package})</option>
                 <option value="hourly">Clients on Hourly rate ({typeCounts.hourly})</option>
                 <option value="quoted" disabled>Quoted Clients ({typeCounts.quoted}), coming later</option>
+                <option value="map">MAP Clients ({typeCounts.map})</option>
                 <option value="queensland">Queensland Clients (prv) ({typeCounts.queensland})</option>
               </select>
             </label>
@@ -1254,6 +1299,11 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
           </span>
         )}
         {typeChip()}
+        {c.isMap && (
+          <span className="pg-tag" style={{ color: CLIENT_TYPE_TONES.map }} title="Tracked as a Marketing Action Plan (MAP) in Capacity Planning">
+            [MAP]
+          </span>
+        )}
         {statusChip()}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
           <button onClick={onCopy} className="pg-btn-ghost">
