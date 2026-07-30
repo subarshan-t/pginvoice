@@ -28,7 +28,9 @@ const TIMEZONE = "Australia/Adelaide"; // matches the CSV export's "Start Text" 
 
 // Same rule the frontend's nameMatch.js uses — kept in sync manually since this
 // runs in a separate Deno runtime and can't share an import with the Vite app.
-const INTERNAL_KEYWORDS = ["purple giraffe", "onboarding", "induction", "offboarding", "handover", "wip"];
+// "Purple Giraffe" (DMA's ClickUp account) is NOT internal — its hours count like
+// any other consultant's across all reports.
+const INTERNAL_KEYWORDS = ["onboarding", "induction", "offboarding", "handover", "wip"];
 function isInternalFolder(folder: string): boolean {
   const f = (folder || "").toLowerCase();
   if (!f) return false;
