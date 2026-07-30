@@ -741,9 +741,9 @@ export default function PGReconciliation() {
     return [...map.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => a.key.localeCompare(b.key));
   }, [clickup]);
 
-  // folders excluded as internal/non-client (Purple Giraffe, onboarding, WIP, etc.) — surfaced for
-  // transparency rather than silently dropped, since the keyword rule can misfire on a client-named
-  // onboarding folder (see the billable-hours guide, §3.1).
+  // folders excluded as internal/non-client (onboarding, WIP, etc. — NOT Purple Giraffe, which is
+  // DMA's real consultant hours) — surfaced for transparency rather than silently dropped, since the
+  // keyword rule can misfire on a client-named onboarding folder (see the billable-hours guide, §3.1).
   const excludedInternal = useMemo(() => {
     if (!clickup) return { total: 0, folders: [] };
     const byFolder = new Map();

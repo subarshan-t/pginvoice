@@ -28,11 +28,13 @@ export function findMatch(name, candidates) {
   return null;
 }
 
-// Internal / non-revenue folders (per the billable-hours guide, §3.1): the literal
-// "Purple Giraffe" bucket, plus onboarding/offboarding/handover/WIP trackers.
+// Internal / non-revenue folders (per the billable-hours guide, §3.1): onboarding/
+// offboarding/handover/WIP trackers. "Purple Giraffe" is NOT internal — it's the
+// ClickUp account DMA (Digital Marketing Adelaide) logs time under, and its hours
+// count like any other consultant's across all reports.
 // Case-insensitive substring match — deliberately broader than the guide's literal-case
 // example so folders like "Julia Onboarding & Induction" still match regardless of case.
-export const INTERNAL_KEYWORDS = ["purple giraffe", "onboarding", "induction", "offboarding", "handover", "wip"];
+export const INTERNAL_KEYWORDS = ["onboarding", "induction", "offboarding", "handover", "wip"];
 export function isInternalFolder(folder) {
   const f = String(folder || "").toLowerCase();
   if (!f) return false;

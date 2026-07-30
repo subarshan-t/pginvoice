@@ -410,18 +410,11 @@ function PerformanceInner() {
     for (const r of clickup.rows) if (r.user) usernames.add(r.user);
     const rosterNames = people.map((p) => p.name);
     usernames.forEach((u) => {
-      if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, null); return; }
       const m = findMatch(u, rosterNames);
       map.set(u, m ? m.name : null);
     });
     return map;
   }, [clickup, people]);
-
-  const botHours = useMemo(() => {
-    if (!clickup?.rows?.length) return 0;
-    const monthSet = new Set(activeMonths);
-    return clickup.rows.filter((r) => r.monthKey && monthSet.has(r.monthKey) && (r.user || "").trim().toLowerCase() === "purple giraffe").reduce((s, r) => s + r.minutes, 0) / 60;
-  }, [clickup, activeMonths]);
 
   // key -> Map(monthKey -> {total, clientBillable, pgBillable, unbillable}). Unmatched real
   // usernames get their own key (raw name) rather than being silently folded into nothing —
@@ -432,7 +425,6 @@ function PerformanceInner() {
     const monthSet = new Set(activeMonths);
     for (const r of clickup.rows) {
       if (!r.monthKey || !r.user || !monthSet.has(r.monthKey)) continue;
-      if (r.user.trim().toLowerCase() === "purple giraffe") continue;
       const key = userMatch.get(r.user) || r.user;
       if (!map.has(key)) map.set(key, new Map());
       const byMonth = map.get(key);
@@ -564,12 +556,6 @@ function PerformanceInner() {
           No ClickUp data loaded yet — upload a CSV in Client Invoicing to see real trends here. The roster and client list below are shown with no actuals until then.
         </div>
       )}
-      {hasData && botHours > 0.05 && (
-        <div className="pg-banner-warn">
-          {fmt1(botHours)} h logged under the shared "Purple Giraffe" ClickUp account are excluded from the by-person breakdown below (not a real team member).
-        </div>
-      )}
-
       <div className="pg-tabs">
         <button className={`pg-tab ${tab === "client" ? "pg-tab--active" : ""}`} onClick={() => setTab("client")}>Client</button>
         <button className={`pg-tab ${tab === "team" ? "pg-tab--active" : ""}`} onClick={() => setTab("team")}>Team</button>

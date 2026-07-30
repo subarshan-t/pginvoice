@@ -208,7 +208,6 @@ function TimesheetInner() {
     for (const r of clickup.rows) if (r.user) usernames.add(r.user);
     const rosterNames = people.map((p) => p.name);
     usernames.forEach((u) => {
-      if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, null); return; }
       const m = findMatch(u, rosterNames);
       map.set(u, m ? m.name : null);
     });
@@ -222,7 +221,6 @@ function TimesheetInner() {
     if (!clickup?.rows?.length) return map;
     for (const r of clickup.rows) {
       if (!r.dateKey || !r.user) continue;
-      if (r.user.trim().toLowerCase() === "purple giraffe") continue;
       const key = userMatch.get(r.user) || r.user;
       if (!map.has(key)) map.set(key, new Map());
       const byDate = map.get(key);
