@@ -143,10 +143,28 @@ export async function recomputeAccruals(clients) {
     let guard = 0;
     while (mk <= cur && guard++ < 240) {
       const seg = typeForMonth(profile, events, mk);
-      if (seg.type !== "package" || seg.agreedHours === null) { mk = shiftMonthKey(mk, 1); continue; }
+      const existing = c.months[mk];
+      if (seg.type !== "package" || seg.agreedHours === null) {
+        // Not on a package this month -- no accrual applies. A month that WAS package before
+        // (e.g. Baintech before June, GPEx before it briefly switched to hourly) can still have
+        // a stale computed row sitting in the table from back when it did apply; clear it so it
+        // doesn't keep showing an accrual for a period the client wasn't actually on a package.
+        // A human-entered override is presumed intentional regardless of type and is left alone.
+        if (existing && !existing.isOverride && (existing.accrualValue !== null || existing.workedHours !== null)) {
+          const cell = { accrualValue: null, accrualNote: "Not on a package this month", pct: null, comment: existing.comment ?? null, workedHours: null, isOverride: false, hoursFlagged: false };
+          c.months[mk] = cell;
+          updatedRows.push({
+            client: c.client, account_manager: c.manager || null, agreed_hpm: c.agreedHpm || null,
+            month_key: mk, accrual_value: null, accrual_note: "Not on a package this month", pct_over_under: null,
+            comment: cell.comment, worked_hours: null, is_override: false, hours_flagged: false,
+          });
+        }
+        prior = 0; // a package pause doesn't carry an accrual balance across the gap
+        mk = shiftMonthKey(mk, 1);
+        continue;
+      }
       const agreedNum = Number(seg.agreedHours);
 
-      const existing = c.months[mk];
       if (existing?.isOverride) {
         prior = existing.accrualValue ?? prior;
       } else {

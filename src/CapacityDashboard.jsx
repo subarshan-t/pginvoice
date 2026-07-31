@@ -207,7 +207,7 @@ export const SEED_CLIENTS = [
   C("c22", "Media Magnetix", "Media Magnetix", "Shreya", "Strategy", 0, null, { status: "archived", note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified, same standard applied to the Clients module." }),
 
   C("c23", "Baintech", "Baintech", "Lucy", "Package", 38, null, { status: "active", history: [{ from: "2026-06", agreed: 32.0 }] }),
-  C("c24", "BAMSS / Childcare Sec Services", "BAMSS", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 5.8, "2026-06": 13.9 }, { status: "active" }),
+  C("c24", "BAMSS / Childcare Sec Services", "BAMSS Childcare Security Services (Qld)", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 5.8, "2026-06": 13.9 }, { status: "active" }),
   C("c25", "Barclay Recruitment (Verity Cons)", "Barclay Recruitment", "Lucy", "Package", 27, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 14.9, "2026-06": 48.5 }, { status: "active" }),
   C("c26", "Bridge to Best", "Bridge to Best", "Lucy", "Package", 10, null, { status: "active" }),
   C("c27", "By the Rules", "By the Rules", "Lucy", "Package", 5, null, { status: "active" }),
