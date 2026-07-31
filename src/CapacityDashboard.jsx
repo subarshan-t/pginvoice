@@ -191,7 +191,7 @@ export const SEED_CLIENTS = [
   C("c8", "Warrina Homes: Package", "Warrina Homes", "Chloe", "Package", 24, { "2026-01": 28.5, "2026-02": 27.8, "2026-03": 7.2, "2026-04": 46.8, "2026-05": 50.0, "2026-06": 44.1 }, { status: "active" }),
   C("c9", "Warrina Homes: Employee Handbook", "Warrina Homes", "Chloe", "Project", null, null, { status: "active" }),
 
-  C("c10", "Australian GW", "Australian GW", "Vinavie", "Hourly", 0, null, { status: "active", history: [{ from: "2025-07", agreed: 0.0 }] }),
+  C("c10", "Australian GW", "Australian GW", "Vinavie", "Hourly", 0, null, { status: "archived", history: [{ from: "2025-07", agreed: 0.0 }], note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified, same standard applied to the Clients module." }),
   C("c11", "Clare Valley Wine & Grape", "Clare Valley Wine & Grape", "Vinavie", "Package", 8, { "2026-01": 17.9, "2026-02": 5.2, "2026-03": 9.0, "2026-04": 7.8, "2026-05": 2.3, "2026-06": 0.8 }, { status: "active", history: [{ from: "2026-01", agreed: 8.0 }] }),
   C("c12", "Coonawarra", "Coonawarra", "Vinavie", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 25.5, "2026-04": 17.7, "2026-05": 21.8, "2026-06": 13.6 }, { status: "active" }),
   C("c13", "Riverland Wine: Package", "Riverland Wine", "Vinavie", "Package", 8, { "2026-01": 9.8, "2026-02": 14.8, "2026-03": 14.2, "2026-04": 11.9, "2026-05": 23.1, "2026-06": 3.2 }, { status: "active", history: [{ from: "2026-04", agreed: 8.0 }] }),
@@ -204,7 +204,7 @@ export const SEED_CLIENTS = [
   C("c19", "GPEX", "GPEX", "Shreya", "Package", 70, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 38.6, "2026-05": 105.3, "2026-06": 140.4 }, { status: "active" }),
   C("c20", "BusSA", "BusSA", "Shreya", "Project", 25, { "2026-01": 0, "2026-02": 1.5, "2026-03": 9.0, "2026-04": 18.8, "2026-05": 46.5, "2026-06": 19.0 }, { status: "active", note: "A separate 'BusSA / BusSafe' one-off project ended ~May 2026 per the Inactive Clients list, but this account is the ongoing BusSAFE retainer and remains active." }),
   C("c21", "Magain Real Estate", "Magain Real Estate", "Shreya", "Hourly", null, { "2026-01": 13.1, "2026-02": 8.8, "2026-03": 42.9, "2026-04": 24.0, "2026-05": 10.3, "2026-06": 7.6 }, { status: "active" }),
-  C("c22", "Media Magnetix", "Media Magnetix", "Shreya", "Strategy", 0, null, { status: "active" }),
+  C("c22", "Media Magnetix", "Media Magnetix", "Shreya", "Strategy", 0, null, { status: "archived", note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified, same standard applied to the Clients module." }),
 
   C("c23", "Baintech", "Baintech", "Lucy", "Package", 38, null, { status: "active", history: [{ from: "2026-06", agreed: 32.0 }] }),
   C("c24", "BAMSS / Childcare Sec Services", "BAMSS", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 5.8, "2026-06": 13.9 }, { status: "active" }),
@@ -233,12 +233,12 @@ export const SEED_CLIENTS = [
 
   C("c46", "Hills Medical (Better Medical)", "Hills Medical", "Alice", "Package", 32, { "2026-01": 48.0, "2026-02": 43.6, "2026-03": 47.6, "2026-04": 32.9, "2026-05": 18.1, "2026-06": 47.7 }, { status: "active" }),
   C("c47", "Duco", "Duco", "Alice", "Package", 24, { "2026-01": 16.2, "2026-02": 34.8, "2026-03": 25.6, "2026-04": 27.2, "2026-05": 3.3, "2026-06": 0.0 }, { status: "active", history: [{ from: "2026-01", agreed: 24.0 }] }),
-  C("c48", "Osteria Polpo", "Osteria Polpo", "Alice", "Package", 16, null, { status: "active" }),
+  C("c48", "Osteria Polpo", "Osteria Polpo", "Alice", "Package", 16, null, { status: "archived", note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified. Matches the archived status already set on this client in the Supabase Clients module." }),
   C("c49", "Sidewood", "Sidewood", "Alice", "Hourly", null, { "2026-01": 26.6, "2026-02": 32.4, "2026-03": 37.8, "2026-04": 30.0, "2026-05": 31.8, "2026-06": 30.3 }, { status: "active" }),
   C("c50", "Your Success Lab", "Your Success Lab", "Alice", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 33.8, "2026-04": 61.6, "2026-05": 33.2, "2026-06": 35.1 }, { status: "active" }),
 
   C("c51", "Blueforce", "Blueforce", "Amanda", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 6.4, "2026-04": 27.2, "2026-05": 47.2, "2026-06": 51.4 }, { status: "active" }),
-  C("c52", "CLT Website", "CLT Website", "Amanda", "Package", null, null, { status: "active" }),
+  C("c52", "CLT Website", "CLT Website", "Amanda", "Package", null, null, { status: "archived", note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified, same standard applied to the Clients module." }),
   C("c53", "Filter Supplies (WA)", "Filter Supplies", "Amanda", "Package", 16, { "2026-01": 6.4, "2026-02": 9.8, "2026-03": 14.0, "2026-04": 17.8, "2026-05": 8.1, "2026-06": 15.0 }, { status: "active" }),
   C("c54", "Green Shoots", "Green Shoots", "Amanda", "Package", 16, { "2026-01": 19.2, "2026-02": 6.6, "2026-03": 13.9, "2026-04": 7.5, "2026-05": 19.3, "2026-06": 24.8 }, { status: "active" }),
   C("c55", "Majestic Plumbing", "Majestic Plumbing", "Amanda", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 4.6, "2026-04": 11.7, "2026-05": 15.9, "2026-06": 32.2 }, { status: "active" }),
@@ -604,6 +604,12 @@ function CapacityDashboardInner() {
   const givenAway = useMemo(() => { const m = {}; support.forEach((s) => { m[s.from] = (m[s.from] || 0) + hoursOf(s); }); return m; }, [support, hoursOf]);
   const receivedBy = useMemo(() => { const m = {}; support.forEach((s) => { if (!m[s.to]) m[s.to] = []; m[s.to].push({ ...s, hours: hoursOf(s) }); }); return m; }, [support, hoursOf]);
 
+  // Every real ClickUp folder name currently synced -- used only to flag a client group
+  // whose `group` text (the field findMatch actually matches folders against) doesn't
+  // correspond to any real folder right now, the same silent-mismatch bug that hid Mary
+  // Di Marco, HTSA, ARAS, Better Medical, and PRG Consulting's real hours until caught by hand.
+  const realFolderSet = useMemo(() => new Set((clickupData?.rows || []).map((r) => r.folder).filter(Boolean)), [clickupData]);
+
   // Real billable-hours average per client GROUP, from whatever ClickUp export Client
   // Invoicing currently has loaded — trailing 6 real calendar months, billable only,
   // internal folders excluded, averaged only over the months that actually have data
@@ -962,7 +968,7 @@ function CapacityDashboardInner() {
                             const { demand, avg, isOverridden, isDynamic, dyn } = demandForGroup(g.group, g.rows, month);
                             return (
                               <tr key={g.group}>
-                                <td>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}</td>
+                                <td>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}</td>
                                 <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
                                 <td className="right num">{fmt(agreedAt(r, month))}</td>
                                 <td className="right num">
@@ -1012,7 +1018,7 @@ function CapacityDashboardInner() {
                                 const { demand, avg, isOverridden } = demandFor(r, month);
                                 return (
                                   <tr key={r.id}>
-                                    <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}</td>
+                                    <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}</td>
                                     <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
                                     <td className="right num">{fmt(agreedAt(r, month))}</td>
                                     <td className="right num">{fmt(avg)}</td>

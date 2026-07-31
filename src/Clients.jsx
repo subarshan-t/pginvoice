@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Search, ArrowRight } from "lucide-react";
-import { fetchClients, fetchClientEvents, createClientEvent, applyDueClientEvents } from "./clientsSync.js";
+import { Search, ArrowRight, Pencil, Check, AlertTriangle } from "lucide-react";
+import { fetchClients, fetchClientEvents, createClientEvent, applyDueClientEvents, updateClickupFolder } from "./clientsSync.js";
+import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
+
+const CLICKUP_DB_KEY = "clickup";
 
 const TYPE_LABEL = { package: "Package", hourly: "Hourly", quoted: "Quoted", queensland: "Queensland" };
 const TYPES = Object.keys(TYPE_LABEL);
@@ -130,6 +133,10 @@ export default function Clients() {
   const [statusFilter, setStatusFilter] = useState("active");
   const [typeFilter, setTypeFilter] = useState("all");
   const [openModify, setOpenModify] = useState(null);
+  const [folderSet, setFolderSet] = useState(null); // null = not loaded; Set of real ClickUp folder names once loaded
+  const [editingFolder, setEditingFolder] = useState(null); // client name currently being edited
+  const [draftFolder, setDraftFolder] = useState("");
+  const [savingFolder, setSavingFolder] = useState(false);
 
   async function load() {
     try {
@@ -142,7 +149,31 @@ export default function Clients() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  async function loadFolders() {
+    const cu = await idbGet(CLICKUP_DB_KEY);
+    setFolderSet(new Set((cu?.rows || []).map((r) => r.folder).filter(Boolean)));
+  }
+
+  useEffect(() => {
+    load();
+    loadFolders();
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === "clickup") loadFolders(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => window.removeEventListener(PG_DATA_EVENT, onUpdate);
+  }, []);
+
+  async function saveFolder(client) {
+    setSavingFolder(true);
+    try {
+      await updateClickupFolder(client, draftFolder.trim());
+      setClients((prev) => prev.map((c) => (c.client !== client ? c : { ...c, clickupFolder: draftFolder.trim() || null })));
+      setEditingFolder(null);
+    } catch (e) {
+      setLoadError("Couldn't save that ClickUp folder name: " + (e.message || e));
+    } finally {
+      setSavingFolder(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     if (!clients) return [];
@@ -209,17 +240,42 @@ export default function Clients() {
         <table className="pg-table">
           <thead>
             <tr>
-              <th>#</th><th>Client</th><th>Type</th><th>Consultant</th><th>Start Date</th><th>End Date</th><th>Notes</th><th></th>
+              <th>#</th><th>Client</th><th>Type</th><th>Consultant</th><th>ClickUp Folder</th><th>Start Date</th><th>End Date</th><th>Notes</th><th></th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((c, i) => (
+            {filtered.map((c, i) => {
+              const matched = folderSet && c.clickupFolder && folderSet.has(c.clickupFolder);
+              const unmatched = folderSet && c.clickupFolder && !folderSet.has(c.clickupFolder);
+              return (
               <React.Fragment key={c.client}>
                 <tr>
                   <td style={{ color: "var(--fg-tertiary)", fontFamily: "var(--font-mono)" }}>{i + 1}</td>
                   <td>{c.client}</td>
                   <td>{TYPE_LABEL[c.type]}{c.type === "package" && c.agreedHours != null ? ` — ${c.agreedHours} hrs` : ""}</td>
                   <td>{c.consultant || "—"}</td>
+                  <td style={{ minWidth: 220 }}>
+                    {editingFolder === c.client ? (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <input
+                          className="pg-input" autoFocus value={draftFolder} onChange={(e) => setDraftFolder(e.target.value)}
+                          placeholder="Real ClickUp folder name"
+                          onKeyDown={(e) => { if (e.key === "Enter") saveFolder(c.client); if (e.key === "Escape") setEditingFolder(null); }}
+                        />
+                        <button className="pg-btn-ghost" disabled={savingFolder} onClick={() => saveFolder(c.client)}><Check size={12} /></button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+                        onClick={() => { setEditingFolder(c.client); setDraftFolder(c.clickupFolder || ""); }}
+                        title={matched ? "Matches a real ClickUp folder" : unmatched ? "This folder name isn't in the currently-synced ClickUp data -- may be renamed, archived, or a typo" : "No ClickUp folder set for this client"}
+                      >
+                        {matched && <span style={{ color: "var(--status-ok)" }}>✓</span>}
+                        {unmatched && <AlertTriangle size={12} style={{ color: "var(--status-warn)" }} />}
+                        <span style={{ flex: 1, color: c.clickupFolder ? undefined : "var(--fg-tertiary)" }}>{c.clickupFolder || "Not set"}</span>
+                        <Pencil size={11} />
+                      </div>
+                    )}
+                  </td>
                   <td>{c.startDate || "—"}</td>
                   <td>{c.endDate || "—"}</td>
                   <td>
@@ -229,12 +285,13 @@ export default function Clients() {
                   <td><button className="pg-btn" onClick={() => setOpenModify(openModify === c.client ? null : c.client)}>Modify</button></td>
                 </tr>
                 {openModify === c.client && (
-                  <tr><td colSpan={8}>
+                  <tr><td colSpan={9}>
                     <ModifyPanel client={c} onClose={() => setOpenModify(null)} onSaved={() => { setOpenModify(null); load(); }} />
                   </td></tr>
                 )}
               </React.Fragment>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

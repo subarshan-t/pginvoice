@@ -25,7 +25,16 @@ function rowToClient(r) {
     startDate: r.start_date || null,
     endDate: r.end_date || null,
     status: r.status,
+    clickupFolder: r.clickup_folder || null,
   };
+}
+
+// The ClickUp folder name this client's real hours are logged under -- not part of the
+// scheduled-event lifecycle (type/consultant/offboarding), just editable metadata, so it's
+// a direct update rather than an event.
+export async function updateClickupFolder(client, folder) {
+  const { error } = await supabase.from("pginvoice_clients").update({ clickup_folder: folder || null }).eq("client", client);
+  if (error) throw error;
 }
 
 export async function fetchClientEvents(client) {
