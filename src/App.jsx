@@ -1317,6 +1317,7 @@ export default function PGReconciliation() {
                 onSetMatch={(v) => setManualMatch(c.name, v)}
                 onCopy={() => copySummary(c)}
                 onPdf={() => downloadPdf(c)}
+                onSelectConsultant={(u) => setConsultantFilter((cur) => (cur === u ? "" : u))}
                 copied={copied === c.name}
               />
             ))}
@@ -1376,7 +1377,7 @@ function ExportItem({ icon, label, onClick }) {
   );
 }
 
-function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clientTypeFilter, consultantFilter, accruedNames, usedAccruedNames, open, onToggle, onSetMatch, onCopy, onPdf, copied }) {
+function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clientTypeFilter, consultantFilter, accruedNames, usedAccruedNames, open, onToggle, onSetMatch, onCopy, onPdf, onSelectConsultant, copied }) {
   const isPackage = c.type === "package";
   const isQld = c.type === "queensland";
 
@@ -1500,9 +1501,16 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
             {consultantEntries.map(([u, min]) => {
               const active = consultantFilter && u === consultantFilter;
               return (
-                <span key={u || "unknown"} className={"pg-consultants__item" + (active ? " pg-consultants__item--active" : "")}>
+                <button
+                  key={u || "unknown"}
+                  type="button"
+                  onClick={() => onSelectConsultant(u)}
+                  title={active ? `Clear the consultant filter` : `Filter this view to ${u || "this consultant"}`}
+                  className={"pg-consultants__item" + (active ? " pg-consultants__item--active" : "")}
+                  style={{ background: "none", border: 0, padding: 0, cursor: "pointer", font: "inherit" }}
+                >
                   {u || "—"} <span>({fmt(min / 60)} h)</span>
-                </span>
+                </button>
               );
             })}
           </div>
