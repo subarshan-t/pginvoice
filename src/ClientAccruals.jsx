@@ -4,6 +4,9 @@ import {
   fetchAccrualsFromSupabase, upsertAccrualCell, recomputeAccruals, exportAccrualsWorkbook,
   currentMonthKey, monthLabelOf, shiftMonthKey, parseAgreedHours,
 } from "./accrualsSync.js";
+import { fetchClients } from "./clientsSync.js";
+
+const STATUS_LABEL = { active: "Active", offboarded: "Offboarded", archived: "Archived (unverified)" };
 
 function monthRange(start, end) {
   const out = [];
@@ -21,6 +24,7 @@ const fmt = (n) => (typeof n === "number" ? (Math.round(n * 100) / 100).toLocale
 
 export default function ClientAccruals() {
   const [clients, setClients] = useState(null); // null = not loaded yet
+  const [statusByClient, setStatusByClient] = useState(new Map());
   const [loadError, setLoadError] = useState(null);
   const [recomputing, setRecomputing] = useState(false);
   const [recomputeMsg, setRecomputeMsg] = useState(null);
@@ -30,6 +34,7 @@ export default function ClientAccruals() {
   const [rangeStart, setRangeStart] = useState(shiftMonthKey(currentMonthKey(), -2));
   const [rangeEnd, setRangeEnd] = useState(currentMonthKey());
   const [signFilter, setSignFilter] = useState("all"); // "all" | "positive" | "negative"
+  const [statusFilter, setStatusFilter] = useState("active"); // "active" | "offboarded" | "archived" | "all"
   const [editingCell, setEditingCell] = useState(null); // "client|monthKey"
   const [draftComment, setDraftComment] = useState("");
   const [saving, setSaving] = useState(false);
@@ -37,7 +42,8 @@ export default function ClientAccruals() {
 
   async function loadAndRecompute() {
     try {
-      const data = await fetchAccrualsFromSupabase();
+      const [data, profiles] = await Promise.all([fetchAccrualsFromSupabase(), fetchClients()]);
+      setStatusByClient(new Map(profiles.map((p) => [p.client, p.status])));
       if (!data) { setClients([]); return; }
       setClients(data);
       if (!autoRecomputedRef.current) {
@@ -62,13 +68,17 @@ export default function ClientAccruals() {
     const q = search.trim().toLowerCase();
     return clients.filter((c) => {
       if (q && !c.client.toLowerCase().includes(q) && !(c.manager || "").toLowerCase().includes(q)) return false;
+      // A client with no matching Clients-module profile (status unknown) is never hidden by
+      // the status filter — better to surface an orphaned/unmatched record than silently drop it.
+      const status = statusByClient.get(c.client);
+      if (statusFilter !== "all" && status && status !== statusFilter) return false;
       const values = months.map((mk) => c.months[mk]?.accrualValue).filter((v) => typeof v === "number" && v !== 0);
       if (values.length === 0) return false; // months with no accrual for this client are never shown
       if (signFilter === "positive" && !values.some((v) => v > 0)) return false;
       if (signFilter === "negative" && !values.some((v) => v < 0)) return false;
       return true;
     });
-  }, [clients, search, month, rangeStart, rangeEnd, rangeMode, signFilter]);
+  }, [clients, search, month, rangeStart, rangeEnd, rangeMode, signFilter, statusFilter, statusByClient]);
 
   async function runRecompute() {
     if (!clients) return;
@@ -164,6 +174,16 @@ export default function ClientAccruals() {
           </select>
         </label>
 
+        <label className="pg-field">
+          <span className="pg-field__label">Status</span>
+          <select className="pg-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="active">Active</option>
+            <option value="offboarded">Offboarded</option>
+            <option value="archived">Archived (unverified)</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+
         <button className="pg-btn-ghost" disabled={recomputing} onClick={runRecompute}><RefreshCw size={14} /> {recomputing ? "Recomputing…" : "Recompute from ClickUp"}</button>
         <button className="pg-btn" style={{ marginLeft: "auto" }} onClick={exportRange}><Download size={14} /> Export</button>
       </div>
@@ -192,9 +212,14 @@ export default function ClientAccruals() {
           <tbody>
             {filtered.map((c) => {
               const agreedNum = parseAgreedHours(c.agreedHpm);
+              const status = statusByClient.get(c.client);
               return (
                 <tr key={c.client}>
-                  <td>{c.client}</td>
+                  <td>
+                    {c.client}
+                    {status && status !== "active" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 6 }}>{STATUS_LABEL[status] || status}</span>}
+                    {!status && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 6 }} title="No matching client profile in the Clients module">Unmatched</span>}
+                  </td>
                   <td>{c.manager || "—"}</td>
                   <td style={{ textAlign: "right", fontFamily: "var(--font-mono)" }}>{agreedNum ?? c.agreedHpm ?? "—"}</td>
                   {months.map((mk) => {
@@ -239,7 +264,7 @@ export default function ClientAccruals() {
           </tbody>
         </table>
       </div>
-      <p className="pg-footnote">Purple Giraffe · Client Accruals · Accrual = hours worked − agreed hours + prior month's accrual, computed automatically each time from ClickUp. Only package clients (see the Clients module) accrue.</p>
+      <p className="pg-footnote">Purple Giraffe · Client Accruals · Accrual = hours worked − agreed hours + prior month's accrual, computed automatically each time from ClickUp. Only package clients (see the Clients module) accrue. Shows Active clients by default — use the Status filter to include offboarded or archived (unverified) ones.</p>
     </div>
   );
 }
