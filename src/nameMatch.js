@@ -24,6 +24,13 @@ export function tokenSim(a, b) {
 }
 export function findMatch(name, candidates) {
   const norm = normalizeName(name);
+  // A name that normalizes to nothing (e.g. ClickUp's literal "(No folder)" placeholder
+  // for tasks not filed under any folder -- normalizeName strips parenthesized text
+  // entirely, so this collapses to "") must never match anything: the substring rule
+  // below treats "" as a substring of every candidate, which without this guard picks
+  // whichever candidate happens to be first in the list and calls it an 85%-confidence
+  // match -- silently misattributing real hours to a random, unrelated client.
+  if (!norm) return null;
   for (const a of candidates) if (normalizeName(a) === norm) return { name: a, confidence: 1, method: "exact" };
   for (const a of candidates) {
     const na = normalizeName(a);
