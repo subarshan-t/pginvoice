@@ -9,7 +9,7 @@ import {
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
 import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, dominantClientType } from "./nameMatch.js";
+import { findMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, dominantClientType, basisToClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync } from "./clickupSync.js";
 import { SEED_CLIENTS as CAP_SEED_CLIENTS, loadKey as loadCapKey } from "./CapacityDashboard.jsx";
 import { fetchClients as fetchPgClients, fetchClientEvents, applyDueClientEvents, typeForMonth } from "./clientsSync.js";
@@ -534,6 +534,17 @@ export default function PGReconciliation() {
     return result;
   }, [capClients]);
   const capGroupNames = useMemo(() => [...capTypeByGroup.keys()], [capTypeByGroup]);
+  // Exact folder-name -> Capacity Planning row, for clients with more than one real
+  // ClickUp folder under the same group (e.g. Warrina Homes: a Package folder plus a
+  // separate one-off Quoted sub-project folder). classifyClient() below only asks "did
+  // some accrued-sheet row match this folder's name," so when a sub-project's name is
+  // close enough to fuzzy-match the SAME accrued row as the main package, it silently
+  // inherited that package's full $ balance/pacing treatment -- two folders both showing
+  // the exact same "package 24h, over-used 7.67h" figures as if each were its own
+  // independent copy of the same commitment, which is exactly backwards. Capacity
+  // Planning's own per-row basis is more precise than the accrued sheet can be here (the
+  // accrued sheet only tracks Package-type clients at all), so it wins when they disagree.
+  const capRowByClientName = useMemo(() => new Map(capClients.map((c) => [c.client, c])), [capClients]);
 
   // The Clients module's roster + scheduled type-change events (Supabase-backed) — the
   // authoritative source for "what type was this client actually on in a given month,"
@@ -862,6 +873,24 @@ export default function PGReconciliation() {
           clientObj.typeTransitionNote = seg.note;
         }
       }
+      // This exact folder's own Capacity Planning row (not just a fuzzy group match) --
+      // corrects classifyClient()'s "matched an accrued row with a package figure, so it
+      // must be a package" assumption for a sub-project folder that only fuzzy-matched
+      // the MAIN package's accrued-sheet row by name coincidence. When Capacity Planning
+      // already knows this specific folder is really Quoted/Hourly/etc, that overrides
+      // the false "package" guess -- this folder stops carrying the main package's $
+      // balance/pacing math (which was never really its own), instead of two folders
+      // both showing an identical "package 24h, over-used 7.67h" as if each independently
+      // owned the same commitment.
+      const capRow = capRowByClientName.get(c.name);
+      if (capRow) {
+        const capType = basisToClientType(capRow.basis);
+        if (capType !== "package" && clientObj.type === "package") {
+          clientObj.type = capType;
+          clientObj.packageOverriddenBy = capRow.basis;
+        }
+        clientObj.capGroup = capRow.group;
+      }
       // Client Invoicing has no independent way to know a client is on a Marketing
       // Action Plan (MAP) — that's tracked only in Capacity Planning's "basis" field.
       // Cross-reference it here by name, purely additively: c.type (which the
@@ -877,10 +906,11 @@ export default function PGReconciliation() {
       const offboarded = capMatch ? capOffboardedByGroup.get(capMatch.name) : null;
       clientObj.isOffboarded = !!offboarded && (!dataMonthKey || !offboarded.offboardedFrom || dataMonthKey >= offboarded.offboardedFrom);
       clientObj.offboardNote = offboarded?.note || "";
+      if (!clientObj.capGroup && capMatch) clientObj.capGroup = capMatch.name;
       out.push(clientObj);
     }
     return out;
-  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked, capGroupNames, capTypeByGroup, capOffboardedByGroup, pgProfileByFolder, pgClientNames, pgClientByName, pgClientEvents]);
+  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked, capGroupNames, capTypeByGroup, capOffboardedByGroup, capRowByClientName, pgProfileByFolder, pgClientNames, pgClientByName, pgClientEvents]);
 
   // counts by type — "map" counts c.isMap (an overlay tag), not c.type, since a MAP
   // client keeps whatever c.type its own package/hourly classification landed on.
@@ -932,22 +962,63 @@ export default function PGReconciliation() {
     return { total: folders.reduce((a, f) => a + f.hours, 0), folders };
   }, [clickup, billableOnly, dataMonthKey]);
 
+  // A client with more than one real ClickUp folder under the same Capacity Planning
+  // group (e.g. Warrina Homes: the main Package folder plus a one-off Quoted sub-project
+  // folder) previously showed as two unrelated-looking top-level cards, both titled the
+  // same thing -- easy to mistake for a duplicate/broken entry. Pick one member per group
+  // as the "primary" (the Package one, since that's the ongoing relationship; otherwise
+  // whichever logged the most hours) so the other(s) can nest underneath it instead.
+  const primaryNameByGroup = useMemo(() => {
+    const byGroup = new Map();
+    clients.forEach((c) => { if (!c.capGroup) return; if (!byGroup.has(c.capGroup)) byGroup.set(c.capGroup, []); byGroup.get(c.capGroup).push(c); });
+    const result = new Map();
+    byGroup.forEach((members, group) => {
+      if (members.length < 2) return;
+      const primary = members.find((m) => m.type === "package") || [...members].sort((a, b) => b.worked - a.worked)[0];
+      result.set(group, primary.name);
+    });
+    return result;
+  }, [clients]);
+  // primary's folder name -> its sibling sub-project(s), computed against the FULL client
+  // list (not the type-filtered one below) -- a sub-project's own type would otherwise make
+  // it invisible whenever the view is scoped to its parent's type, which is exactly the
+  // "where did the other Warrina Homes card go" confusion this is meant to fix.
+  const siblingsByPrimaryName = useMemo(() => {
+    const byGroup = new Map();
+    clients.forEach((c) => { if (!c.capGroup) return; if (!byGroup.has(c.capGroup)) byGroup.set(c.capGroup, []); byGroup.get(c.capGroup).push(c); });
+    const result = new Map();
+    byGroup.forEach((members, group) => {
+      const primaryName = primaryNameByGroup.get(group);
+      if (!primaryName) return;
+      result.set(primaryName, members.filter((m) => m.name !== primaryName));
+    });
+    return result;
+  }, [clients, primaryNameByGroup]);
+
+  function withConsultantFilter(c, consultant) {
+    const tasksFiltered = consultant ? (c.tasksByUser.get(consultant) || new Map()) : c.tasksAll;
+    const workedFiltered = consultant ? ((c.userMinutes.get(consultant) || 0) / 60) : c.worked;
+    // narrow each task's contributor breakdown to the selected consultant too, when filtering
+    const taskUsersFiltered = consultant
+      ? new Map([...tasksFiltered.keys()].map((task) => [task, new Map([[consultant, tasksFiltered.get(task)]])]))
+      : c.taskUsers;
+    return { ...c, tasksFiltered, workedFiltered, taskUsersFiltered };
+  }
+
   // filtered + sorted + consultant-scoped clients for display
   const visible = useMemo(() => {
     let list = clientTypeFilter === "all" ? clients.slice()
       : clientTypeFilter === "map" ? clients.filter((c) => c.isMap)
       : clients.filter((c) => c.type === clientTypeFilter);
     if (consultantFilter) list = list.filter((c) => c.userMinutes.has(consultantFilter));
-    // per-consultant task view: if filter set, use tasksByUser for that consultant; else all tasks
-    list = list.map((c) => {
-      const tasksFiltered = consultantFilter ? (c.tasksByUser.get(consultantFilter) || new Map()) : c.tasksAll;
-      const workedFiltered = consultantFilter ? ((c.userMinutes.get(consultantFilter) || 0) / 60) : c.worked;
-      // narrow each task's contributor breakdown to the selected consultant too, when filtering
-      const taskUsersFiltered = consultantFilter
-        ? new Map([...tasksFiltered.keys()].map((task) => [task, new Map([[consultantFilter, tasksFiltered.get(task)]])]))
-        : c.taskUsers;
-      return { ...c, tasksFiltered, workedFiltered, taskUsersFiltered };
+    // A non-primary member of a multi-folder group is only ever shown nested under its
+    // primary (see siblingsByPrimaryName above), never again as its own top-level card.
+    list = list.filter((c) => {
+      if (!c.capGroup) return true;
+      const primaryName = primaryNameByGroup.get(c.capGroup);
+      return !primaryName || c.name === primaryName;
     });
+    list = list.map((c) => withConsultantFilter(c, consultantFilter));
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter((c) => c.name.toLowerCase().includes(q) || (c.displayName || "").toLowerCase().includes(q));
@@ -963,7 +1034,7 @@ export default function PGReconciliation() {
       });
     }
     return list;
-  }, [clients, clientTypeFilter, consultantFilter, search, sortMode]);
+  }, [clients, clientTypeFilter, consultantFilter, search, sortMode, primaryNameByGroup]);
 
   const stats = useMemo(() => {
     const hrs = visible.reduce((a, c) => a + (c.workedFiltered ?? c.worked), 0);
@@ -1301,25 +1372,59 @@ export default function PGReconciliation() {
         {/* client cards */}
         {ready && (
           <div>
-            {visible.map((c) => (
-              <ClientCard
-                key={c.name}
-                client={c}
-                priorMonthPretty={priorMonthPretty}
-                monthProgress={monthProgress}
-                hasUser={clickup.hasUser}
-                clientTypeFilter={clientTypeFilter}
-                consultantFilter={consultantFilter}
-                accruedNames={accruedNames}
-                usedAccruedNames={new Set(clients.filter((x) => x.matched).map((x) => x.accruedClient.name))}
-                open={!!expanded[c.name]}
-                onToggle={() => setExpanded((p) => ({ ...p, [c.name]: !p[c.name] }))}
-                onSetMatch={(v) => setManualMatch(c.name, v)}
-                onCopy={() => copySummary(c)}
-                onPdf={() => downloadPdf(c)}
-                copied={copied === c.name}
-              />
-            ))}
+            {visible.map((c) => {
+              const siblings = siblingsByPrimaryName.get(c.name);
+              return (
+                <div key={c.name} className={siblings ? "pg-client-family" : undefined}>
+                  <ClientCard
+                    client={c}
+                    priorMonthPretty={priorMonthPretty}
+                    monthProgress={monthProgress}
+                    hasUser={clickup.hasUser}
+                    clientTypeFilter={clientTypeFilter}
+                    consultantFilter={consultantFilter}
+                    accruedNames={accruedNames}
+                    usedAccruedNames={new Set(clients.filter((x) => x.matched).map((x) => x.accruedClient.name))}
+                    open={!!expanded[c.name]}
+                    onToggle={() => setExpanded((p) => ({ ...p, [c.name]: !p[c.name] }))}
+                    onSetMatch={(v) => setManualMatch(c.name, v)}
+                    onCopy={() => copySummary(c)}
+                    onPdf={() => downloadPdf(c)}
+                    copied={copied === c.name}
+                  />
+                  {siblings && siblings.length > 0 && (
+                    <div className="pg-client-family__subs">
+                      {siblings.map((s) => {
+                        const sc = withConsultantFilter(s, consultantFilter);
+                        return (
+                          <div key={sc.name} className="pg-client-family__sub">
+                            <div className="pg-client-family__sub-label">
+                              <Link2 size={10} /> Related sub-project of {c.displayName}
+                            </div>
+                            <ClientCard
+                              client={sc}
+                              priorMonthPretty={priorMonthPretty}
+                              monthProgress={monthProgress}
+                              hasUser={clickup.hasUser}
+                              clientTypeFilter={clientTypeFilter}
+                              consultantFilter={consultantFilter}
+                              accruedNames={accruedNames}
+                              usedAccruedNames={new Set(clients.filter((x) => x.matched).map((x) => x.accruedClient.name))}
+                              open={!!expanded[sc.name]}
+                              onToggle={() => setExpanded((p) => ({ ...p, [sc.name]: !p[sc.name] }))}
+                              onSetMatch={(v) => setManualMatch(sc.name, v)}
+                              onCopy={() => copySummary(sc)}
+                              onPdf={() => downloadPdf(sc)}
+                              copied={copied === sc.name}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             {visible.length === 0 && (
               <div className="pg-empty">
                 {clientTypeFilter === "quoted"

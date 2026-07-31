@@ -263,6 +263,18 @@ button { font: inherit; }
 .pg-client__name:hover { color: var(--accent); }
 .pg-client__linked { display: flex; align-items: center; gap: 5px; font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); }
 
+/* ---- related sub-project(s), nested under their primary client card -------
+   A client with more than one real ClickUp folder (a main package plus an
+   occasional one-off quoted project, say) shows the extra folder(s) here
+   instead of as their own unrelated-looking top-level card. */
+.pg-client-family__subs { margin-left: 28px; padding-left: 16px; border-left: 2px dashed var(--border-soft); }
+.pg-client-family__sub { margin-top: 4px; }
+.pg-client-family__sub .pg-client { margin-top: 8px; }
+.pg-client-family__sub-label {
+  display: flex; align-items: center; gap: 5px; margin-top: 12px;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary);
+}
+
 .pg-alertbar { margin-top: 12px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; font-size: 12px; font-family: var(--font-body); border-radius: var(--app-radius-sm); }
 .pg-alertbar__text { flex: 1; }
 .pg-alertbar select { font-family: var(--font-body); font-size: 12px; padding: 5px 8px; max-width: 220px; background: rgba(0,0,0,0.15); border: 1px solid currentColor; border-radius: var(--app-radius-sm); color: inherit; outline: none; }
