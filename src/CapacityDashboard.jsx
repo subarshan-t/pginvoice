@@ -730,6 +730,19 @@ function CapacityDashboardInner() {
   const setOverride = (clientId, m, value) => setOverrides((prev) => ({ ...prev, [`${clientId}_${m}`]: value === "" ? null : Number(value) }));
   const todayStr = () => new Date().toISOString().slice(0, 10);
 
+  // A pginvoice_clients consultant is stored as "Holly L", "Alice FS", etc.; SEED_PEOPLE/OWNERS
+  // use just the first name -- this is the only bit of translation needed to treat the two
+  // systems' consultant field as the same value.
+  const firstName = (s) => (s || "").trim().split(" ")[0];
+  // Best-effort reverse lookup for writing a consultant back to Supabase in its full style,
+  // by finding another client already on record with that same first name. Falls back to the
+  // bare first name if this is the first client ever assigned to that person (matches the
+  // "Added from live ClickUp sync, please confirm" pattern already used elsewhere for that case).
+  const fullConsultantName = useCallback((first) => {
+    const hit = pgClients.find((p) => p.consultant && firstName(p.consultant) === first);
+    return hit ? hit.consultant : first;
+  }, [pgClients]);
+
   // Reassigning a client's consultant/owner writes through to pginvoice_clients (the same
   // table the Clients module edits) via the same scheduled-event mechanism its own Modify
   // panel uses, so the change is visible there too -- not just a local-only edit here.
@@ -762,19 +775,6 @@ function CapacityDashboardInner() {
     setShowAddClient(false);
     setAddClientForm({ name: "", lead: OWNERS[0], basis: "Package", agreed: "" });
   }, [addClientForm, fullConsultantName, loadPgClients]);
-
-  // A pginvoice_clients consultant is stored as "Holly L", "Alice FS", etc.; SEED_PEOPLE/OWNERS
-  // use just the first name -- this is the only bit of translation needed to treat the two
-  // systems' consultant field as the same value.
-  const firstName = (s) => (s || "").trim().split(" ")[0];
-  // Best-effort reverse lookup for writing a consultant back to Supabase in its full style,
-  // by finding another client already on record with that same first name. Falls back to the
-  // bare first name if this is the first client ever assigned to that person (matches the
-  // "Added from live ClickUp sync, please confirm" pattern already used elsewhere for that case).
-  const fullConsultantName = useCallback((first) => {
-    const hit = pgClients.find((p) => p.consultant && firstName(p.consultant) === first);
-    return hit ? hit.consultant : first;
-  }, [pgClients]);
 
   const pgClientNames = useMemo(() => pgClients.map((p) => p.client), [pgClients]);
   const matchPgClient = useCallback((c) => {
