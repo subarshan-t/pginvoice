@@ -346,10 +346,22 @@ function PerformanceInner() {
     return prior.reduce((a, b) => a + b, 0) / prior.length;
   }
 
+  // A group only earns a place in the client list if it was still an active engagement as of
+  // the latest month in view, or it actually logged real hours somewhere in the selected
+  // range — an offboarded client with zero matched activity in the period is just noise.
+  function groupIsActiveOrLogged(g) {
+    if (!latestMonth) return true;
+    const stillActive = g.rows.some((r) => !r.offboardedFrom || r.offboardedFrom > latestMonth);
+    if (stillActive) return true;
+    const cm = clientMonthly.get(g.group);
+    return !!cm && activeMonths.some((m) => (cm.monthHours.get(m) || 0) > 0);
+  }
+
   const filteredGroups = useMemo(() => groups.filter((g) =>
     (!qClient || g.group.toLowerCase().includes(qClient.toLowerCase())) &&
-    (!qBasis || g.rows.some((r) => basisToClientType(r.basis) === qBasis))
-  ), [groups, qClient, qBasis]);
+    (!qBasis || g.rows.some((r) => basisToClientType(r.basis) === qBasis)) &&
+    groupIsActiveOrLogged(g)
+  ), [groups, qClient, qBasis, latestMonth, clientMonthly, activeMonths]);
 
   const clientTableRows = useMemo(() => filteredGroups.map((g) => {
     const meta = groupMeta(g, latestMonth);

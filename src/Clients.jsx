@@ -6,6 +6,24 @@ const TYPE_LABEL = { package: "Package", hourly: "Hourly", quoted: "Quoted", que
 const TYPES = Object.keys(TYPE_LABEL);
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
+// Client names carry their state as a "(Qld)"/"(WA)" suffix rather than a dedicated
+// column -- this just reads that same convention back out for the snapshot breakdown.
+function stateOf(clientName) {
+  const n = (clientName || "").toLowerCase();
+  if (n.includes("(qld)")) return "QLD";
+  if (n.includes("(wa)")) return "WA";
+  return "SA / Other";
+}
+
+function Stat({ value, label }) {
+  return (
+    <div>
+      <div className="pg-stat__value">{value}</div>
+      <div className="pg-stat__label">{label}</div>
+    </div>
+  );
+}
+
 function ModifyPanel({ client, onClose, onSaved }) {
   const [action, setAction] = useState(null); // "transition" | "consultant" | "offboarding"
   const [newType, setNewType] = useState(client.type);
@@ -137,6 +155,14 @@ export default function Clients() {
     });
   }, [clients, search, statusFilter, typeFilter]);
 
+  const snapshot = useMemo(() => {
+    if (!clients) return { total: 0, byState: [] };
+    const active = clients.filter((c) => c.status === "active");
+    const byState = new Map();
+    active.forEach((c) => { const s = stateOf(c.client); byState.set(s, (byState.get(s) || 0) + 1); });
+    return { total: active.length, byState: [...byState.entries()].sort((a, b) => b[1] - a[1]) };
+  }, [clients]);
+
   if (clients === null) return <div className="pg-cap-container"><div className="pg-empty">Loading…</div></div>;
 
   return (
@@ -150,6 +176,11 @@ export default function Clients() {
       </div>
 
       {loadError && <div className="pg-banner-warn">{loadError}</div>}
+
+      <div className="pg-panel" style={{ gap: 24, flexWrap: "wrap" }}>
+        <Stat value={snapshot.total} label="Active clients" />
+        {snapshot.byState.map(([state, count]) => <Stat key={state} value={count} label={state} />)}
+      </div>
 
       <div className="pg-panel" style={{ alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <label className="pg-field" style={{ width: 240 }}>
@@ -178,13 +209,14 @@ export default function Clients() {
         <table className="pg-table">
           <thead>
             <tr>
-              <th>Client</th><th>Type</th><th>Consultant</th><th>Start Date</th><th>End Date</th><th>Notes</th><th></th>
+              <th>#</th><th>Client</th><th>Type</th><th>Consultant</th><th>Start Date</th><th>End Date</th><th>Notes</th><th></th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((c) => (
+            {filtered.map((c, i) => (
               <React.Fragment key={c.client}>
                 <tr>
+                  <td style={{ color: "var(--fg-tertiary)", fontFamily: "var(--font-mono)" }}>{i + 1}</td>
                   <td>{c.client}</td>
                   <td>{TYPE_LABEL[c.type]}{c.type === "package" && c.agreedHours != null ? ` — ${c.agreedHours} hrs` : ""}</td>
                   <td>{c.consultant || "—"}</td>
@@ -197,7 +229,7 @@ export default function Clients() {
                   <td><button className="pg-btn" onClick={() => setOpenModify(openModify === c.client ? null : c.client)}>Modify</button></td>
                 </tr>
                 {openModify === c.client && (
-                  <tr><td colSpan={7}>
+                  <tr><td colSpan={8}>
                     <ModifyPanel client={c} onClose={() => setOpenModify(null)} onSaved={() => { setOpenModify(null); load(); }} />
                   </td></tr>
                 )}

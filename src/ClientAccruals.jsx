@@ -143,24 +143,31 @@ export default function ClientAccruals() {
         </label>
 
         {rangeMode === "month" ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <button className="pg-btn-ghost" onClick={() => setMonth((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
-            <span className="pg-tag">{monthLabelOf(month)}</span>
-            <button className="pg-btn-ghost" onClick={() => setMonth((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
+          <div className="pg-field">
+            <span className="pg-field__label" style={{ visibility: "hidden" }}>Month</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <button className="pg-btn-ghost" onClick={() => setMonth((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
+              <span className="pg-tag">{monthLabelOf(month)}</span>
+              <button className="pg-btn-ghost" onClick={() => setMonth((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
+            </div>
           </div>
         ) : (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div className="pg-field">
               <span className="pg-field__label">Start</span>
-              <button className="pg-btn-ghost" onClick={() => setRangeStart((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
-              <span className="pg-tag">{monthLabelOf(rangeStart)}</span>
-              <button className="pg-btn-ghost" onClick={() => setRangeStart((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <button className="pg-btn-ghost" onClick={() => setRangeStart((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
+                <span className="pg-tag">{monthLabelOf(rangeStart)}</span>
+                <button className="pg-btn-ghost" onClick={() => setRangeStart((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
+              </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div className="pg-field">
               <span className="pg-field__label">End</span>
-              <button className="pg-btn-ghost" onClick={() => setRangeEnd((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
-              <span className="pg-tag">{monthLabelOf(rangeEnd)}</span>
-              <button className="pg-btn-ghost" onClick={() => setRangeEnd((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <button className="pg-btn-ghost" onClick={() => setRangeEnd((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
+                <span className="pg-tag">{monthLabelOf(rangeEnd)}</span>
+                <button className="pg-btn-ghost" onClick={() => setRangeEnd((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
+              </div>
             </div>
           </>
         )}
@@ -184,8 +191,14 @@ export default function ClientAccruals() {
           </select>
         </label>
 
-        <button className="pg-btn-ghost" disabled={recomputing} onClick={runRecompute}><RefreshCw size={14} /> {recomputing ? "Recomputing…" : "Recompute from ClickUp"}</button>
-        <button className="pg-btn" style={{ marginLeft: "auto" }} onClick={exportRange}><Download size={14} /> Export</button>
+        <div className="pg-field">
+          <span className="pg-field__label" style={{ visibility: "hidden" }}>Recompute</span>
+          <button className="pg-btn-ghost" disabled={recomputing} onClick={runRecompute}><RefreshCw size={14} /> {recomputing ? "Recomputing…" : "Recompute from ClickUp"}</button>
+        </div>
+        <div className="pg-field" style={{ marginLeft: "auto" }}>
+          <span className="pg-field__label" style={{ visibility: "hidden" }}>Export</span>
+          <button className="pg-btn" onClick={exportRange}><Download size={14} /> Export</button>
+        </div>
       </div>
 
       <div className="pg-cap-card" style={{ overflowX: "auto" }}>
