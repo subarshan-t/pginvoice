@@ -169,7 +169,11 @@ export async function recomputeAccruals(clients) {
           const cell = { accrualValue: null, accrualNote: "Not on a package this month", pct: null, comment: existing.comment ?? null, workedHours: null, isOverride: false, hoursFlagged: false };
           c.months[mk] = cell;
           updatedRows.push({
-            client: c.client, account_manager: c.manager || null, agreed_hpm: c.agreedHpm || null,
+            // Not the client-level c.agreedHpm here -- that's a stale snapshot from whenever a
+            // package month last wrote it and doesn't apply during a non-package period (see
+            // the isPackageNow check in ClientAccruals.jsx, which now prefers the live profile
+            // over this column anyway, but keep the raw data honest too).
+            client: c.client, account_manager: c.manager || null, agreed_hpm: null,
             month_key: mk, accrual_value: null, accrual_note: "Not on a package this month", pct_over_under: null,
             comment: cell.comment, worked_hours: null, is_override: false, hours_flagged: false,
           });

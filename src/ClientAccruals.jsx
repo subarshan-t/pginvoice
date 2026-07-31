@@ -26,6 +26,7 @@ const fmt = (n) => (typeof n === "number" ? (Math.round(n * 100) / 100).toLocale
 export default function ClientAccruals() {
   const [clients, setClients] = useState(null); // null = not loaded yet
   const [statusByClient, setStatusByClient] = useState(new Map());
+  const [profileByClient, setProfileByClient] = useState(new Map());
   const [loadError, setLoadError] = useState(null);
   const [recomputing, setRecomputing] = useState(false);
   const [recomputeMsg, setRecomputeMsg] = useState(null);
@@ -45,6 +46,7 @@ export default function ClientAccruals() {
     try {
       const [data, profiles] = await Promise.all([fetchAccrualsFromSupabase(), fetchClients()]);
       setStatusByClient(new Map(profiles.map((p) => [p.client, p.status])));
+      setProfileByClient(new Map(profiles.map((p) => [p.client, p])));
       if (!data) { setClients([]); return; }
       setClients(data);
       if (!autoRecomputedRef.current) {
@@ -233,8 +235,14 @@ export default function ClientAccruals() {
           </thead>
           <tbody>
             {filtered.map((c) => {
-              const agreedNum = parseAgreedHours(c.agreedHpm);
-              const status = statusByClient.get(c.client);
+              const profile = profileByClient.get(c.client);
+              const status = profile?.status;
+              // Prefer the live Clients-module profile over the historical agreed_hpm text
+              // cached on old accrual rows -- that text is a snapshot from whenever it was
+              // last written and doesn't update when a client's type/hours change later (e.g.
+              // GPEx's rows still said "70" long after it moved off its package to hourly).
+              const isPackageNow = profile ? profile.type === "package" : true;
+              const agreedNum = profile && profile.type === "package" ? profile.agreedHours : (profile ? null : parseAgreedHours(c.agreedHpm));
               return (
                 <tr key={c.client}>
                   <td>
@@ -243,7 +251,9 @@ export default function ClientAccruals() {
                     {!status && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 6 }} title="No matching client profile in the Clients module">Unmatched</span>}
                   </td>
                   <td>{c.manager || "—"}</td>
-                  <td style={{ textAlign: "right", fontFamily: "var(--font-mono)" }}>{agreedNum ?? c.agreedHpm ?? "—"}</td>
+                  <td style={{ textAlign: "right", fontFamily: "var(--font-mono)" }} title={profile && !isPackageNow ? `Currently ${profile.type} -- not on a package, so no agreed hours apply` : undefined}>
+                    {isPackageNow ? (agreedNum ?? c.agreedHpm ?? "—") : "—"}
+                  </td>
                   {months.map((mk) => {
                     const cell = c.months[mk] || {};
                     const commentKey = `${c.client}|${mk}`;
