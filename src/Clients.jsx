@@ -157,7 +157,12 @@ export default function Clients() {
   useEffect(() => {
     load();
     loadFolders();
-    const onUpdate = (e) => { if (!e.detail || e.detail.key === "clickup") loadFolders(); };
+    const onUpdate = (e) => {
+      if (!e.detail || e.detail.key === "clickup") loadFolders();
+      // A consultant/status/new-client change made from Capacity Planning writes to the same
+      // pginvoice_clients table -- refresh so it shows here without a full page reload.
+      if (!e.detail || e.detail.key === "pg_clients") load();
+    };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => window.removeEventListener(PG_DATA_EVENT, onUpdate);
   }, []);

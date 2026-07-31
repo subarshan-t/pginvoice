@@ -4,6 +4,15 @@
 // agreedHoursForMonth()/typeForMonth() replay the type-change history so accrual
 // math stays correct across a client's package changing mid-year.
 import { supabase } from "./supabaseClient.js";
+import { PG_DATA_EVENT } from "./idbStore.js";
+
+// Every module (Clients, Capacity Planning) that reads pginvoice_clients stays mounted for
+// the whole session rather than remounting on tab switch, so a change made in one won't be
+// picked up by the other without an explicit signal -- broadcast the same event the rest of
+// the app already uses for cross-module refresh whenever this table changes.
+function notifyClientsChanged() {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PG_DATA_EVENT, { detail: { key: "pg_clients" } }));
+}
 
 export async function fetchClients() {
   const { data, error } = await supabase.from("pginvoice_clients").select("*").order("client", { ascending: true });
@@ -35,6 +44,20 @@ function rowToClient(r) {
 export async function updateClickupFolder(client, folder) {
   const { error } = await supabase.from("pginvoice_clients").update({ clickup_folder: folder || null }).eq("client", client);
   if (error) throw error;
+  notifyClientsChanged();
+}
+
+// New client, created from either Capacity Planning or the Clients module -- both write
+// to this same table, so a client added in one place shows up in the other immediately.
+export async function createClient(client, { type, agreedHours, consultant, startDate }) {
+  const row = {
+    client, type, agreed_hours: type === "package" ? (agreedHours ?? null) : null,
+    base_type: type, base_agreed_hours: type === "package" ? (agreedHours ?? null) : null,
+    consultant: consultant || null, start_date: startDate || null, status: "active",
+  };
+  const { error } = await supabase.from("pginvoice_clients").insert(row);
+  if (error) throw error;
+  notifyClientsChanged();
 }
 
 export async function fetchClientEvents(client) {
@@ -49,6 +72,7 @@ export async function createClientEvent(client, kind, effectiveDate, fields, not
   const row = { client, kind, effective_date: effectiveDate, note: note || null, applied: false, ...fields };
   const { error } = await supabase.from("pginvoice_client_events").insert(row);
   if (error) throw error;
+  notifyClientsChanged();
 }
 
 // Applies any event whose effective date has arrived (<= today) and isn't applied
@@ -75,6 +99,7 @@ export async function applyDueClientEvents() {
     const { error: markErr } = await supabase.from("pginvoice_client_events").update({ applied: true }).eq("id", ev.id);
     if (markErr) throw markErr;
   }
+  notifyClientsChanged();
   return due.length;
 }
 

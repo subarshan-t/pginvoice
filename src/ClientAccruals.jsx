@@ -5,6 +5,7 @@ import {
   currentMonthKey, monthLabelOf, shiftMonthKey, parseAgreedHours,
 } from "./accrualsSync.js";
 import { fetchClients } from "./clientsSync.js";
+import { PG_DATA_EVENT } from "./idbStore.js";
 
 const STATUS_LABEL = { active: "Active", offboarded: "Offboarded", archived: "Archived (unverified)" };
 
@@ -59,7 +60,15 @@ export default function ClientAccruals() {
     }
   }
 
-  useEffect(() => { loadAndRecompute(); }, []);
+  useEffect(() => {
+    loadAndRecompute();
+    // A consultant/status change made from Capacity Planning or the Clients module writes to
+    // the same pginvoice_clients table this reads for the status filter -- refresh on that
+    // signal since this module stays mounted for the whole session (no remount on tab switch).
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === "pg_clients") loadAndRecompute(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => window.removeEventListener(PG_DATA_EVENT, onUpdate);
+  }, []);
 
   const months = rangeMode === "month" ? [month] : monthRange(rangeStart, rangeEnd);
 

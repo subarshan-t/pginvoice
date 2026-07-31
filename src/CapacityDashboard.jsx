@@ -7,6 +7,7 @@ import {
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, multiFolderMatchesFor, isInternalFolder, normalizeName, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
 import { loadState, saveState } from "./capacityStore.js";
+import { fetchClients as fetchPgClients, createClient as createPgClient, createClientEvent, applyDueClientEvents } from "./clientsSync.js";
 
 /* ============================================================
    MONTHS / CONSTANTS
@@ -170,6 +171,7 @@ export const SEED_PEOPLE = [
   { id: "p11", name: "Vino", role: "Coordinator", state: "SA", contracted: 38, rate: 0.60, note: "Probation" },
   { id: "p12", name: "Julia", role: "Coordinator", state: "QLD", contracted: 38, rate: 0.60, note: "Probation" },
   { id: "p13", name: "Tanya", role: "Coordinator", state: "SA", contracted: 15, rate: 0.70, note: "Part-time, currently unallocated" },
+  { id: "p17", name: "Sarah", role: "Consultant", state: "SA", contracted: 38, rate: 0.70, note: "Owns several active package clients in the Clients module (Amorim Cork, Magain Real Estate, etc.) -- added as an owner here to keep the two systems in sync; please confirm role/state/rate." },
 ];
 
 function C(id, client, group, lead, basis, agreed, actuals, extra) {
@@ -292,7 +294,7 @@ const SEED_SUPPORT = [
   { id: "s20", from: "Alex", to: "Purple Giraffe (internal)", type: "pct", value: 0.20 },
 ];
 
-export const OWNERS = ["Holly", "Shreya", "Chloe", "Alice", "Amanda", "Lucy", "Vinavie"];
+export const OWNERS = ["Holly", "Shreya", "Chloe", "Alice", "Amanda", "Lucy", "Vinavie", "Sarah"];
 
 /* ============================================================
    STORAGE — backed by Supabase (pginvoice_app_state), not localStorage, so
@@ -529,6 +531,31 @@ function CapacityDashboardInner() {
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);
 
+  // The Clients module (pginvoice_clients, Supabase) is the single source of truth for a
+  // client's status and consultant/owner -- reload it here too so Capacity Planning shows
+  // the same active/inactive state and the same consultant assignment, and stays in sync
+  // when either module edits it (a client/consultant change made in either place can only
+  // land in this same table, via createClient/createClientEvent).
+  const [pgClients, setPgClients] = useState([]);
+  const [pgLoaded, setPgLoaded] = useState(false);
+  const loadPgClients = useCallback(async () => {
+    try {
+      await applyDueClientEvents();
+      const data = await fetchPgClients();
+      setPgClients(data);
+    } catch (e) { /* best-effort -- local SEED/cap_clients data still renders on its own */ }
+    finally { setPgLoaded(true); }
+  }, []);
+  useEffect(() => {
+    loadPgClients();
+    // Every module reading pginvoice_clients stays mounted for the session (no remount on
+    // tab switch), so a change made in the Clients module needs this explicit signal to be
+    // picked up here without a full page reload.
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === "pg_clients") loadPgClients(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => window.removeEventListener(PG_DATA_EVENT, onUpdate);
+  }, [loadPgClients]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -701,18 +728,94 @@ function CapacityDashboardInner() {
     return { demand, avg: null, isOverridden: anyOverridden, isDynamic: false, dyn: null };
   }
   const setOverride = (clientId, m, value) => setOverrides((prev) => ({ ...prev, [`${clientId}_${m}`]: value === "" ? null : Number(value) }));
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+
+  // Reassigning a client's consultant/owner writes through to pginvoice_clients (the same
+  // table the Clients module edits) via the same scheduled-event mechanism its own Modify
+  // panel uses, so the change is visible there too -- not just a local-only edit here.
+  const changeConsultant = useCallback(async (row, newLead) => {
+    if (row._pgClient) {
+      try {
+        await createClientEvent(row._pgClient, "consultant", todayStr(), { new_consultant: fullConsultantName(newLead) });
+        await applyDueClientEvents();
+        await loadPgClients();
+      } catch (e) { alert("Couldn't update the consultant in the Clients module: " + (e.message || e)); return; }
+    }
+    setClients((prev) => prev.map((c) => (c.group === row.group ? { ...c, lead: newLead } : c)));
+  }, [fullConsultantName, loadPgClients]);
+
+  const [showAddClient, setShowAddClient] = useState(false);
+  const [addClientForm, setAddClientForm] = useState({ name: "", lead: OWNERS[0], basis: "Package", agreed: "" });
+  const submitAddClient = useCallback(async () => {
+    const name = addClientForm.name.trim();
+    if (!name) return;
+    const typeMap = { Package: "package", Project: "quoted", Quoted: "quoted", MAP: "quoted", Strategy: "package", Hourly: "hourly", "Ad hoc": "hourly" };
+    const agreedNum = addClientForm.agreed === "" ? null : Number(addClientForm.agreed);
+    try {
+      await createPgClient(name, { type: typeMap[addClientForm.basis] || "hourly", agreedHours: agreedNum, consultant: fullConsultantName(addClientForm.lead) });
+      await loadPgClients();
+    } catch (e) { alert("Couldn't create the client in the Clients module: " + (e.message || e)); return; }
+    setClients((prev) => [...prev, {
+      id: uid("c"), client: name, group: name, lead: addClientForm.lead, basis: addClientForm.basis,
+      agreed: agreedNum, actuals: null, note: "", status: "active", offboardedFrom: null, offboardNote: "", history: null,
+    }]);
+    setShowAddClient(false);
+    setAddClientForm({ name: "", lead: OWNERS[0], basis: "Package", agreed: "" });
+  }, [addClientForm, fullConsultantName, loadPgClients]);
+
+  // A pginvoice_clients consultant is stored as "Holly L", "Alice FS", etc.; SEED_PEOPLE/OWNERS
+  // use just the first name -- this is the only bit of translation needed to treat the two
+  // systems' consultant field as the same value.
+  const firstName = (s) => (s || "").trim().split(" ")[0];
+  // Best-effort reverse lookup for writing a consultant back to Supabase in its full style,
+  // by finding another client already on record with that same first name. Falls back to the
+  // bare first name if this is the first client ever assigned to that person (matches the
+  // "Added from live ClickUp sync, please confirm" pattern already used elsewhere for that case).
+  const fullConsultantName = useCallback((first) => {
+    const hit = pgClients.find((p) => p.consultant && firstName(p.consultant) === first);
+    return hit ? hit.consultant : first;
+  }, [pgClients]);
+
+  const pgClientNames = useMemo(() => pgClients.map((p) => p.client), [pgClients]);
+  const matchPgClient = useCallback((c) => {
+    if (!pgClients.length) return null;
+    const byClient = findMatch(c.client, pgClientNames);
+    if (byClient && byClient.confidence >= 0.8) return pgClients.find((p) => p.client === byClient.name) || null;
+    const byGroup = findMatch(c.group, pgClientNames);
+    if (byGroup && byGroup.confidence >= 0.8) return pgClients.find((p) => p.client === byGroup.name) || null;
+    return byClient ? pgClients.find((p) => p.client === byClient.name) || null : null;
+  }, [pgClients, pgClientNames]);
+
+  // The list actually used for the owner-grouped ledger: each row's status and lead come
+  // from the matched pginvoice_clients record when one exists (so a status/consultant change
+  // made in the Clients module is reflected here without any local edit), falling back to the
+  // local SEED/cap_clients value when a client genuinely isn't in that table yet -- e.g. one
+  // just added here, before the Supabase round-trip completes on next load.
+  const syncedClients = useMemo(() => clients.map((c) => {
+    const pg = matchPgClient(c);
+    if (!pg) return { ...c, _pgClient: null, _effectiveStatus: c.status };
+    const mappedLead = pg.consultant ? firstName(pg.consultant) : null;
+    return {
+      ...c,
+      lead: (mappedLead && OWNERS.includes(mappedLead)) ? mappedLead : c.lead,
+      _pgClient: pg.client,
+      _effectiveStatus: pg.status === "active" ? "active" : "inactive",
+    };
+  }), [clients, matchPgClient]);
 
   const groupedByOwner = useMemo(() => {
     const m = {};
     OWNERS.forEach((o) => m[o] = []);
     const seenGroups = {};
-    clients.forEach((c) => {
+    syncedClients.forEach((c) => {
+      if (!pgLoaded) return; // avoid a flash of the un-filtered list before the sync data arrives
+      if (c._effectiveStatus !== "active") return;
       if (!m[c.lead]) return;
       if (!seenGroups[c.group]) { seenGroups[c.group] = { group: c.group, lead: c.lead, rows: [] }; m[c.lead].push(seenGroups[c.group]); }
       seenGroups[c.group].rows.push(c);
     });
     return m;
-  }, [clients]);
+  }, [syncedClients, pgLoaded]);
 
   const demandByOwner = useMemo(() => {
     const m = {};
@@ -873,7 +976,7 @@ function CapacityDashboardInner() {
 
     const demandHeader = ["Consultant", "Client", "Client Group", "Basis", "Agreed Hrs", "Average Hrs (trailing)", "Projected Hrs", "Manually Overridden?"];
     const demandRows = [demandHeader];
-    clients.forEach((c) => {
+    syncedClients.filter((c) => c._effectiveStatus === "active").forEach((c) => {
       const { demand, avg, isOverridden } = demandFor(c, month);
       demandRows.push([c.lead, c.client, c.group, c.basis, agreedAt(c, month) ?? "", avg !== null ? Number(avg.toFixed(1)) : "", Number(demand.toFixed(1)), isOverridden ? "Yes" : "No"]);
     });
@@ -925,8 +1028,39 @@ function CapacityDashboardInner() {
         <span className="pg-tag" style={{ color: monthKind === "past" ? "var(--fg-tertiary)" : monthKind === "now" ? "var(--status-ok)" : "var(--accent)" }}>
           [{monthKind === "past" ? "past record" : monthKind === "now" ? "latest actuals" : "forecast"}]
         </span>
+        <button className="pg-btn-ghost" onClick={() => setShowAddClient((s) => !s)}><Plus size={11} /> Add client</button>
         <button className="pg-btn-ghost" style={{ marginLeft: "auto" }} onClick={resetSample}>Reset sample data</button>
       </div>
+
+      {showAddClient && (
+        <div className="pg-cap-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <span className="pg-field__label">New client -- creates it in the Clients module too, so both stay in sync</span>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <label className="pg-field" style={{ width: 220 }}>
+              <span className="pg-field__label">Client name</span>
+              <input className="pg-input" value={addClientForm.name} onChange={(e) => setAddClientForm((f) => ({ ...f, name: e.target.value }))} placeholder="Client name" />
+            </label>
+            <label className="pg-field">
+              <span className="pg-field__label">Consultant</span>
+              <select className="pg-input" value={addClientForm.lead} onChange={(e) => setAddClientForm((f) => ({ ...f, lead: e.target.value }))}>
+                {OWNERS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </label>
+            <label className="pg-field">
+              <span className="pg-field__label">Type</span>
+              <select className="pg-input" value={addClientForm.basis} onChange={(e) => setAddClientForm((f) => ({ ...f, basis: e.target.value }))}>
+                {FIXED_BASES.concat(["Hourly", "Ad hoc"]).map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </label>
+            <label className="pg-field" style={{ width: 120 }}>
+              <span className="pg-field__label">Agreed hrs</span>
+              <input className="pg-input" type="number" step="any" value={addClientForm.agreed} onChange={(e) => setAddClientForm((f) => ({ ...f, agreed: e.target.value }))} placeholder="e.g. 16" />
+            </label>
+            <button className="pg-btn" disabled={!addClientForm.name.trim()} onClick={submitAddClient}>Create</button>
+            <button className="pg-btn-ghost" onClick={() => setShowAddClient(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       <div className="pg-panel">
         <SearchBox label="Consultant" value={qConsultant} onChange={setQConsultant} />
@@ -985,7 +1119,15 @@ function CapacityDashboardInner() {
                             const { demand, avg, isOverridden, isDynamic, dyn } = demandForGroup(g.group, g.rows, month);
                             return (
                               <tr key={g.group}>
-                                <td>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !multiFolderMatchesFor(r.group, [...realFolderSet])?.length && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}</td>
+                                <td>
+                                  {r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !multiFolderMatchesFor(r.group, [...realFolderSet])?.length && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}
+                                  {editingDemand === owner && (
+                                    <select className="pg-input" style={{ marginLeft: 8, padding: "2px 4px", fontSize: 11, width: 100 }}
+                                      value={owner} onChange={(e) => changeConsultant(r, e.target.value)} title="Reassign consultant -- also updates the Clients module">
+                                      {OWNERS.map((o) => <option key={o} value={o}>{o}</option>)}
+                                    </select>
+                                  )}
+                                </td>
                                 <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
                                 <td className="right num">{fmt(agreedAt(r, month))}</td>
                                 <td className="right num">
