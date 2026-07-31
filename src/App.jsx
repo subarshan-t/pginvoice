@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import {
   Upload, Copy, Check, ChevronDown, ChevronUp, Download, Search,
   AlertTriangle, Link2, FileSpreadsheet, FileText, Printer, Users, ArrowUpDown,
-  RefreshCw, Wifi, WifiOff, ExternalLink,
+  RefreshCw, Wifi, WifiOff,
 } from "lucide-react";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
@@ -87,7 +87,7 @@ function TaskUsersCell({ userMinutesMap, taskUrl }) {
         <React.Fragment key={u || i}>
           {i > 0 && ", "}
           {taskUrl ? (
-            <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" style={{ color: "var(--accent)" }}>
+            <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" className="pg-clickup-link">
               {u || "—"}
             </a>
           ) : (u || "—")}
@@ -1523,7 +1523,7 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
                   onClick={() => selectConsultant(u)}
                   title={drillConsultant === u ? "Clear — show all tasks again" : `See the tasks behind ${u || "this consultant"}'s hours`}
                   className={"pg-consultants__item" + (active ? " pg-consultants__item--active" : "")}
-                  style={{ background: "none", border: 0, padding: 0, font: "inherit" }}
+                  style={{ background: "none", border: 0, padding: 0 }}
                 >
                   {u || "—"} <span>({fmt(min / 60)} h)</span>
                 </button>
@@ -1554,8 +1554,8 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
                   <tr key={task}>
                     <td>
                       {taskUrl ? (
-                        <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" style={{ color: "var(--accent)", display: "inline-flex", alignItems: "center", gap: 5 }}>
-                          {task} <ExternalLink size={11} />
+                        <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" className="pg-clickup-link">
+                          {task}
                         </a>
                       ) : task}
                     </td>

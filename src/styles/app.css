@@ -302,6 +302,12 @@ button { font: inherit; }
 .pg-consultants__item--active { color: var(--accent); font-weight: 500; }
 .pg-consultants__item span { color: var(--fg-tertiary); }
 
+/* ---- inline links to ClickUp (task table) ---------------------------------
+   Plain text by default, same as any other cell — only the hover reveals
+   these are clickable, same pattern as the consultants row above. */
+.pg-clickup-link { color: inherit; text-decoration: none; }
+.pg-clickup-link:hover { color: var(--accent); cursor: pointer; }
+
 /* ---- task table -------------------------------------------------------------*/
 .pg-table-wrap { margin-top: 16px; border: 1px solid var(--border-soft); border-radius: var(--app-radius); overflow: hidden; }
 .pg-table-head { padding: 8px 14px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); background: var(--bg-elevated); }

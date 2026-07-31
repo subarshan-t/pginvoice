@@ -99,14 +99,16 @@ async function resolveTeamId(token: string, explicitTeamId: string | undefined) 
 // path is correct. But ClickUp also allows tracking time with no task selected at all
 // (a bare "start timer" / manually-added entry not linked to anything) — those come
 // back with `task` as the literal string "0" and no `task_location` object whatsoever,
-// not just a missing folder name. There is no folder to resolve for those; "(No folder)"
-// is the honest answer, not a fallback masking a wrong field path.
+// not just a missing folder name. There is no folder to resolve for those (and it may
+// also happen for a task in a space/folder this token isn't granted visibility into) --
+// labeled "Private" rather than a raw "(No folder)", since either way it just means the
+// location isn't something this sync can see or resolve.
 function resolveFolderName(entry: any): string {
   return (
     entry.task_location?.folder_name ??
     entry.task?.folder?.name ??
     entry.folder?.name ??
-    "(No folder)"
+    "Private"
   );
 }
 // A task-less entry (see resolveFolderName's comment) has no `task.name` either, but it
