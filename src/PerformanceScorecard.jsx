@@ -308,51 +308,82 @@ function PerformanceInner() {
     return { isFixed, agreedTotal, basisLabel };
   }
 
-  /* ---- per-group monthly actuals, matched to a ClickUp folder by fuzzy name ----
-     Billable, non-internal minutes only — the same "worked" definition Client
-     Invoicing and Capacity Planning's dynamic average already use. */
-  const clientMonthly = useMemo(() => {
-    const result = new Map();
-    if (!clickup?.rows?.length) return result;
+  // Billable, non-internal minutes per real ClickUp folder per month — the same "worked"
+  // definition Client Invoicing and Capacity Planning's dynamic average already use.
+  // Factored out of clientMonthly below so the per-row matching a multi-basis group needs
+  // (see groupRowMonthly) can reuse it instead of recomputing.
+  const folderMonthMap = useMemo(() => {
     const folderMonth = new Map();
     const folders = new Set();
-    for (const r of clickup.rows) {
-      if (isInternalFolder(r.folder)) continue;
-      if (clickup.hasBillable && !r.billable) continue;
-      if (!r.monthKey) continue;
-      folders.add(r.folder);
-      if (!folderMonth.has(r.folder)) folderMonth.set(r.folder, new Map());
-      const byMonth = folderMonth.get(r.folder);
-      byMonth.set(r.monthKey, (byMonth.get(r.monthKey) || 0) + r.minutes);
-    }
-    const folderList = [...folders];
-    groups.forEach((g) => {
-      // Some clients (Aus3C, Clarke Energy, Magain, etc.) run real work across several
-      // sibling ClickUp folders instead of one umbrella folder -- sum all of them per
-      // month rather than picking a single best-match folder, which silently undercounted
-      // these clients everywhere actuals get computed from ClickUp data.
-      const multi = multiFolderMatchesFor(g.group, folderList);
-      if (multi && multi.length) {
-        const byMonth = new Map();
-        for (const f of multi) {
-          const fm = folderMonth.get(f);
-          if (!fm) continue;
-          for (const [mk, min] of fm) byMonth.set(mk, (byMonth.get(mk) || 0) + min);
-        }
-        const monthHours = new Map();
-        activeMonths.forEach((m) => monthHours.set(m, (byMonth.get(m) || 0) / 60));
-        result.set(g.group, { matchedFolder: `${multi.length} folders`, confidence: 1, monthHours });
-        return;
+    if (clickup?.rows?.length) {
+      for (const r of clickup.rows) {
+        if (isInternalFolder(r.folder)) continue;
+        if (clickup.hasBillable && !r.billable) continue;
+        if (!r.monthKey) continue;
+        folders.add(r.folder);
+        if (!folderMonth.has(r.folder)) folderMonth.set(r.folder, new Map());
+        const byMonth = folderMonth.get(r.folder);
+        byMonth.set(r.monthKey, (byMonth.get(r.monthKey) || 0) + r.minutes);
       }
-      const match = findMatch(g.group, folderList);
-      if (!match) return;
-      const byMonth = folderMonth.get(match.name) || new Map();
+    }
+    return { folderMonth, folderList: [...folders] };
+  }, [clickup]);
+
+  function matchMonthHours(name, folderMonth, folderList) {
+    const multi = multiFolderMatchesFor(name, folderList);
+    if (multi && multi.length) {
+      const byMonth = new Map();
+      for (const f of multi) {
+        const fm = folderMonth.get(f);
+        if (!fm) continue;
+        for (const [mk, min] of fm) byMonth.set(mk, (byMonth.get(mk) || 0) + min);
+      }
       const monthHours = new Map();
       activeMonths.forEach((m) => monthHours.set(m, (byMonth.get(m) || 0) / 60));
-      result.set(g.group, { matchedFolder: match.name, confidence: match.confidence, monthHours });
+      return { matchedFolder: `${multi.length} folders`, confidence: 1, monthHours };
+    }
+    const match = findMatch(name, folderList);
+    if (!match) return null;
+    const byMonth = folderMonth.get(match.name) || new Map();
+    const monthHours = new Map();
+    activeMonths.forEach((m) => monthHours.set(m, (byMonth.get(m) || 0) / 60));
+    return { matchedFolder: match.name, confidence: match.confidence, monthHours };
+  }
+
+  /* ---- per-group monthly actuals, matched to a ClickUp folder by fuzzy name ---- */
+  const clientMonthly = useMemo(() => {
+    const result = new Map();
+    const { folderMonth, folderList } = folderMonthMap;
+    if (!folderList.length) return result;
+    groups.forEach((g) => {
+      const m = matchMonthHours(g.group, folderMonth, folderList);
+      if (m) result.set(g.group, m);
     });
     return result;
-  }, [clickup, groups, activeMonths]);
+  }, [folderMonthMap, groups, activeMonths]);
+
+  // For a "Combined" group whose rows span more than one basis (e.g. Warrina Homes: a
+  // Package row plus a Quoted sub-project row), clientMonthly's single group-level match
+  // can't tell which folder's hours belong to which row — everything gets attributed to
+  // whichever type groupMeta/dominantClientType calls dominant, silently mis-bucketing the
+  // other row's real hours. Try matching each row's own (more specific) name to its own
+  // folder(s) instead; a row that can't be individually matched contributes 0 here rather
+  // than guessing, since folding it into the wrong type is worse than omitting it. Single-
+  // row groups (the vast majority) are untouched — they already have an unambiguous match.
+  const groupRowMonthly = useMemo(() => {
+    const result = new Map(); // group name -> [{ row, monthHours }]
+    const { folderMonth, folderList } = folderMonthMap;
+    if (!folderList.length) return result;
+    groups.forEach((g) => {
+      if (g.rows.length < 2) return;
+      const rows = g.rows.map((row) => {
+        const m = matchMonthHours(row.client, folderMonth, folderList);
+        return { row, monthHours: m ? m.monthHours : new Map() };
+      });
+      result.set(g.group, rows);
+    });
+    return result;
+  }, [folderMonthMap, groups, activeMonths]);
 
   // expanding-window average — same semantics as Capacity Planning's trailingAverage:
   // the mean of every month in the selected range strictly before `m`.
@@ -451,13 +482,28 @@ function PerformanceInner() {
     const matchedGroups = groups.filter((g) =>
       (!qClient || g.group.toLowerCase().includes(qClient.toLowerCase())) && clientMonthly.has(g.group)
     );
+    // Single-row groups (the vast majority) bucket by the group as a whole; a multi-basis
+    // "Combined" group (e.g. Warrina Homes: a Package row plus a Quoted sub-project row)
+    // gets split per row instead — see groupRowMonthly — so its Quoted hours land in the
+    // Quoted line rather than all being swept into whichever basis is "dominant".
     const groupsByType = { hourly: [], package: [], quoted: [], map: [] };
-    matchedGroups.forEach((g) => groupsByType[dominantClientType(g.rows)].push(g));
+    const splitRowsByType = { hourly: [], package: [], quoted: [], map: [] };
+    matchedGroups.forEach((g) => {
+      const rowSplit = groupRowMonthly.get(g.group);
+      if (rowSplit) rowSplit.forEach((rs) => splitRowsByType[basisToClientType(rs.row.basis)].push(rs));
+      else groupsByType[dominantClientType(g.rows)].push(g);
+    });
 
     const hoursByType = {}, agreedByType = {};
     TYPE_ORDER.forEach((t) => {
-      hoursByType[t] = activeMonths.map((m) => groupsByType[t].reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0));
-      agreedByType[t] = t === "hourly" ? null : activeMonths.map((m) => groupsByType[t].reduce((s, g) => s + (activeInMonth(g, m) ? groupMeta(g, m).agreedTotal : 0), 0));
+      hoursByType[t] = activeMonths.map((m) =>
+        groupsByType[t].reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0) +
+        splitRowsByType[t].reduce((s, rs) => s + (rs.monthHours.get(m) || 0), 0)
+      );
+      agreedByType[t] = t === "hourly" ? null : activeMonths.map((m) =>
+        groupsByType[t].reduce((s, g) => s + (activeInMonth(g, m) ? groupMeta(g, m).agreedTotal : 0), 0) +
+        splitRowsByType[t].reduce((s, rs) => s + ((rs.monthHours.get(m) || 0) > 0 ? (agreedAt(rs.row, m) || 0) : 0), 0)
+      );
     });
     const sumArrays = (arrs) => activeMonths.map((_, i) => arrs.reduce((s, a) => s + (a ? a[i] : 0), 0));
     const totalAgreedByMonth = sumArrays(["package", "quoted", "map"].map((t) => agreedByType[t]));
@@ -502,7 +548,7 @@ function PerformanceInner() {
       ];
     }
     return { series, isFixed: null, matched: matchedGroups.length > 0, ytd, current, totalHoursByMonth };
-  }, [selectedClient, groups, qClient, qBasis, clientMonthly, activeMonths, latestMonth]);
+  }, [selectedClient, groups, qClient, qBasis, clientMonthly, groupRowMonthly, activeMonths, latestMonth]);
 
   /* ---- team: match real ClickUp usernames to the roster by fuzzy name ---- */
   const userMatch = useMemo(() => {

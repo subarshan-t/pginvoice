@@ -137,6 +137,14 @@ export default function Clients() {
   const [editingFolder, setEditingFolder] = useState(null); // client name currently being edited
   const [draftFolder, setDraftFolder] = useState("");
   const [savingFolder, setSavingFolder] = useState(false);
+  const [folderMenuOpen, setFolderMenuOpen] = useState(false);
+
+  const folderList = useMemo(() => (folderSet ? [...folderSet].sort((a, b) => a.localeCompare(b)) : []), [folderSet]);
+  const folderSuggestions = useMemo(() => {
+    const q = draftFolder.trim().toLowerCase();
+    const pool = q ? folderList.filter((f) => f.toLowerCase().includes(q)) : folderList;
+    return pool.slice(0, 8);
+  }, [folderList, draftFolder]);
 
   async function load() {
     try {
@@ -167,11 +175,15 @@ export default function Clients() {
     return () => window.removeEventListener(PG_DATA_EVENT, onUpdate);
   }, []);
 
-  async function saveFolder(client) {
+  async function saveFolder(client, folderOverride) {
+    // Accepts an explicit folder value (used when picking a suggestion, since setDraftFolder
+    // just before calling this wouldn't be visible yet — state updates aren't synchronous)
+    // and otherwise falls back to whatever's currently in the draft input.
+    const folder = (folderOverride ?? draftFolder).trim();
     setSavingFolder(true);
     try {
-      await updateClickupFolder(client, draftFolder.trim());
-      setClients((prev) => prev.map((c) => (c.client !== client ? c : { ...c, clickupFolder: draftFolder.trim() || null })));
+      await updateClickupFolder(client, folder);
+      setClients((prev) => prev.map((c) => (c.client !== client ? c : { ...c, clickupFolder: folder || null })));
       setEditingFolder(null);
     } catch (e) {
       setLoadError("Couldn't save that ClickUp folder name: " + (e.message || e));
@@ -261,13 +273,29 @@ export default function Clients() {
                   <td>{c.consultant || "—"}</td>
                   <td style={{ minWidth: 220 }}>
                     {editingFolder === c.client ? (
-                      <div style={{ display: "flex", gap: 4 }}>
+                      <div style={{ display: "flex", gap: 4, position: "relative" }}>
                         <input
-                          className="pg-input" autoFocus value={draftFolder} onChange={(e) => setDraftFolder(e.target.value)}
-                          placeholder="Real ClickUp folder name"
-                          onKeyDown={(e) => { if (e.key === "Enter") saveFolder(c.client); if (e.key === "Escape") setEditingFolder(null); }}
+                          className="pg-input" autoFocus value={draftFolder}
+                          onChange={(e) => { setDraftFolder(e.target.value); setFolderMenuOpen(true); }}
+                          onFocus={() => setFolderMenuOpen(true)}
+                          onBlur={() => setTimeout(() => setFolderMenuOpen(false), 150)}
+                          placeholder={folderSet && folderSet.size ? "Type to search live ClickUp folders…" : "Real ClickUp folder name"}
+                          onKeyDown={(e) => { if (e.key === "Enter") { saveFolder(c.client); setFolderMenuOpen(false); } if (e.key === "Escape") { setEditingFolder(null); setFolderMenuOpen(false); } }}
                         />
                         <button className="pg-btn-ghost" disabled={savingFolder} onClick={() => saveFolder(c.client)}><Check size={12} /></button>
+                        {folderMenuOpen && folderSuggestions.length > 0 && (
+                          <div className="pg-menu" style={{ top: "calc(100% + 2px)", left: 0, right: "auto", width: 320, maxHeight: 240, overflow: "auto" }}>
+                            {folderSuggestions.map((f) => (
+                              <button
+                                key={f} type="button" className="pg-menu-item"
+                                // onMouseDown (not onClick) fires before the input's onBlur closes the menu
+                                onMouseDown={() => { setDraftFolder(f); saveFolder(c.client, f); setFolderMenuOpen(false); }}
+                              >
+                                {f}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}

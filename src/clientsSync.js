@@ -108,11 +108,11 @@ export async function applyDueClientEvents() {
 // can change mid-year and accrual math for a given month must use what was in
 // effect then, not whatever is current today.
 export function typeTimelineFor(client, events) {
-  const segments = [{ from: null, type: client.baseType, agreedHours: client.baseAgreedHours }];
+  const segments = [{ from: null, type: client.baseType, agreedHours: client.baseAgreedHours, note: null }];
   const typeEvents = events
     .filter((e) => e.client === client.client && e.kind === "type" && e.applied)
     .sort((a, b) => a.effective_date.localeCompare(b.effective_date));
-  for (const e of typeEvents) segments.push({ from: e.effective_date, type: e.new_type, agreedHours: e.new_agreed_hours === null ? null : Number(e.new_agreed_hours) });
+  for (const e of typeEvents) segments.push({ from: e.effective_date, type: e.new_type, agreedHours: e.new_agreed_hours === null ? null : Number(e.new_agreed_hours), note: e.note || null });
   return segments;
 }
 

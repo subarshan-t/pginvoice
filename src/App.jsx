@@ -12,6 +12,7 @@ import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, dominantClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync } from "./clickupSync.js";
 import { SEED_CLIENTS as CAP_SEED_CLIENTS, loadKey as loadCapKey } from "./CapacityDashboard.jsx";
+import { fetchClients as fetchPgClients, fetchClientEvents, applyDueClientEvents, typeForMonth } from "./clientsSync.js";
 
 // ---------------------------- time text → minutes ----------------------------
 function parseTimeTextToMinutes(raw) {
@@ -500,6 +501,40 @@ export default function PGReconciliation() {
   }, [capClients]);
   const capGroupNames = useMemo(() => [...capTypeByGroup.keys()], [capTypeByGroup]);
 
+  // The Clients module's roster + scheduled type-change events (Supabase-backed) — the
+  // authoritative source for "what type was this client actually on in a given month,"
+  // including temporary transitions like a package client billing hourly for a couple of
+  // months before reverting (e.g. GPEx, June-July 2026). Client Accruals already replays
+  // this history correctly (see accrualsSync.js's recomputeAccruals); Client Invoicing's
+  // own classifyClient() below only ever guessed from whatever accrued workbook happened
+  // to be uploaded, with no month- or history-awareness, so a scheduled transition never
+  // showed up here. Cross-referenced by ClickUp folder name below so each client card's
+  // type reflects whatever was actually in effect for the month currently in view.
+  const [pgClients, setPgClients] = useState([]);
+  const [pgClientEvents, setPgClientEvents] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try { await applyDueClientEvents(); } catch (e) { /* best-effort */ }
+      const [profiles, events] = await Promise.all([fetchPgClients(), fetchClientEvents()]);
+      if (!cancelled) { setPgClients(profiles); setPgClientEvents(events); }
+    };
+    load();
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === "pg_clients") load(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
+  }, []);
+  const pgClientNames = useMemo(() => pgClients.map((p) => p.client), [pgClients]);
+  // Exact ClickUp-folder -> profile lookup first (the authoritative mapping set via the
+  // Clients module's own folder field), falling back to fuzzy name matching only for
+  // profiles that haven't had their folder set yet.
+  const pgProfileByFolder = useMemo(() => {
+    const m = new Map();
+    pgClients.forEach((p) => { if (p.clickupFolder) m.set(p.clickupFolder, p); });
+    return m;
+  }, [pgClients]);
+  const pgClientByName = useMemo(() => new Map(pgClients.map((p) => [p.client, p])), [pgClients]);
+
   // Restore the uploaded data and filters from a previous session. The parsed CSV can run
   // several MB as JSON, too close to localStorage's shared per-origin quota to risk — so the
   // two large datasets live in IndexedDB, and just the small filter/view settings use
@@ -762,6 +797,28 @@ export default function PGReconciliation() {
         displayName: accruedClient?.name ?? c.name,
       };
       clientObj.type = classifyClient(clientObj);
+      // The Clients module knows what this client was actually billing as for THIS
+      // specific month (typeForMonth replays its scheduled type-change events) — that
+      // always wins over the accrued-workbook guess above, since a temporary transition
+      // (e.g. GPEx briefly moving to hourly for a couple of months before reverting to
+      // its package) has no way to be reflected in classifyClient()'s static, upload-only
+      // logic otherwise. Falls back to classifyClient()'s result for any client not yet
+      // registered in the Clients module.
+      const pgProfile = pgProfileByFolder.get(c.name) || (() => {
+        const m = findMatch(c.name, pgClientNames);
+        return m ? pgClientByName.get(m.name) : null;
+      })();
+      if (pgProfile && dataMonthKey) {
+        const seg = typeForMonth(pgProfile, pgClientEvents, dataMonthKey);
+        if (seg?.type) {
+          clientObj.type = seg.type;
+          // Only worth flagging as a transition when it actually changed something from
+          // the client's normal baseline — otherwise every already-registered client would
+          // show a "scheduled" badge for no reason.
+          clientObj.typeTransitioned = seg.type !== pgProfile.baseType;
+          clientObj.typeTransitionNote = seg.note;
+        }
+      }
       // Client Invoicing has no independent way to know a client is on a Marketing
       // Action Plan (MAP) — that's tracked only in Capacity Planning's "basis" field.
       // Cross-reference it here by name, purely additively: c.type (which the
@@ -780,7 +837,7 @@ export default function PGReconciliation() {
       out.push(clientObj);
     }
     return out;
-  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked, capGroupNames, capTypeByGroup, capOffboardedByGroup]);
+  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked, capGroupNames, capTypeByGroup, capOffboardedByGroup, pgProfileByFolder, pgClientNames, pgClientByName, pgClientEvents]);
 
   // counts by type — "map" counts c.isMap (an overlay tag), not c.type, since a MAP
   // client keeps whatever c.type its own package/hourly classification landed on.
@@ -1317,6 +1374,11 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
           </span>
         )}
         {typeChip()}
+        {c.typeTransitioned && (
+          <span className="pg-tag" style={{ color: "var(--status-warn)" }} title={c.typeTransitionNote || "On a scheduled temporary type change this month — see the Clients module"}>
+            [scheduled change]
+          </span>
+        )}
         {c.isMap && (
           <span className="pg-tag" style={{ color: CLIENT_TYPE_TONES.map }} title="Tracked as a Marketing Action Plan (MAP) in Capacity Planning">
             [MAP]
