@@ -4,7 +4,17 @@
 export function normalizeName(s) {
   return String(s || "").toLowerCase().replace(/&/g, "and").replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
 }
-export function tokens(s) { return normalizeName(s).split(" ").filter((t) => t.length > 1); }
+// Generic connector/corporate-suffix words carry no identifying signal on their own —
+// without filtering them, two unrelated clients that both happen to be "X and Co" (e.g.
+// "Wills and Co" vs "Toto and Co") share enough tokens to clear the fuzzy-match
+// threshold below and get folded into each other's hours. Only strip them when doing so
+// leaves at least one real token, so a name that's ALL stopwords still matches on itself.
+const STOPWORDS = new Set(["and", "the", "co", "pty", "ltd", "inc", "group", "of"]);
+export function tokens(s) {
+  const all = normalizeName(s).split(" ").filter((t) => t.length > 1);
+  const meaningful = all.filter((t) => !STOPWORDS.has(t));
+  return meaningful.length ? meaningful : all;
+}
 export function tokenSim(a, b) {
   const A = new Set(tokens(a)), B = new Set(tokens(b));
   if (A.size === 0 || B.size === 0) return 0;
