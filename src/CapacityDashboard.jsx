@@ -138,6 +138,19 @@ const uid = (p) => p + Math.random().toString(36).slice(2, 9);
 export const FIXED_BASES = ["Package", "Project", "Quoted", "MAP", "Strategy"];
 const VARIABLE_BASES = ["Hourly", "Ad hoc"];
 
+// A client's agreed hours as of a given month, from its `history` (ascending list of
+// { from: "YYYY-MM", agreed }) — the value from the latest entry whose `from` is <= the
+// given month, or the client's base `agreed` if no history entry applies yet. Lets a
+// package-hours change (e.g. Baintech 38 -> 32 hrs/month from June 2026) show correctly
+// for past months in the ledger instead of always showing today's number.
+export function agreedAt(client, monthKey) {
+  if (client.offboardedFrom && monthKey >= client.offboardedFrom) return 0;
+  if (!client.history || !client.history.length) return client.agreed;
+  let value = client.agreed;
+  for (const h of client.history) { if (h.from <= monthKey) value = h.agreed; }
+  return value;
+}
+
 /* ============================================================
    SEED DATA (unchanged from the real Resourcing sheet + ClickUp actuals)
    Exported — Performance reuses this exact roster/client master instead of
@@ -159,73 +172,78 @@ export const SEED_PEOPLE = [
   { id: "p13", name: "Tanya", role: "Coordinator", state: "SA", contracted: 15, rate: 0.70, note: "Part-time, currently unallocated" },
 ];
 
-function C(id, client, group, lead, basis, agreed, actuals, note) {
-  return { id, client, group, lead, basis, agreed, actuals: actuals || null, note: note || "" };
+function C(id, client, group, lead, basis, agreed, actuals, extra) {
+  const e = extra || {};
+  return {
+    id, client, group, lead, basis, agreed, actuals: actuals || null, note: e.note || "",
+    status: e.status || "active", offboardedFrom: e.offboardedFrom || null, offboardNote: e.offboardNote || "",
+    history: e.history || null,
+  };
 }
 export const SEED_CLIENTS = [
-  C("c1", "Amorim Cork", "Amorim Cork", "Chloe", "Package", 16, { "2026-01": 4.5, "2026-02": 5.3, "2026-03": 5.0, "2026-04": 9.5, "2026-05": 0.5, "2026-06": 0.8 }),
-  C("c2", "Apex Energy", "Apex Energy", "Chloe", "Package", 16, { "2026-01": 11.7, "2026-02": 7.8, "2026-03": 22.8, "2026-04": 15.8, "2026-05": 18.3, "2026-06": 36.7 }),
-  C("c3", "Apex Communications", "Apex Communications", "Chloe", "Package", 30.5, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 28.6, "2026-06": 19.5 }),
-  C("c4", "ARAS", "ARAS", "Chloe", "Hourly", null, { "2026-01": 0, "2026-02": 0, "2026-03": 3.1, "2026-04": 5.6, "2026-05": 3.7, "2026-06": 2.7 }),
-  C("c5", "Equippers", "Equippers", "Chloe", "Quoted", null, { "2026-01": 0, "2026-02": 11.2, "2026-03": 5.0, "2026-04": 3.3, "2026-05": 10.0, "2026-06": 0.4 }),
-  C("c6", "Spectrum Consultants", "Spectrum Consultants", "Chloe", "Package", 24, { "2026-01": 21.8, "2026-02": 36.9, "2026-03": 35.9, "2026-04": 22.7, "2026-05": 22.8, "2026-06": 21.1 }),
-  C("c7", "Treasure Boxes", "Treasure Boxes", "Chloe", "Package", 10, { "2026-01": 21.8, "2026-02": 20.2, "2026-03": 3.4, "2026-04": 0, "2026-05": 0, "2026-06": 11.5 }),
-  C("c8", "Warrina Homes: Package", "Warrina Homes", "Chloe", "Package", 24, { "2026-01": 28.5, "2026-02": 27.8, "2026-03": 7.2, "2026-04": 46.8, "2026-05": 50.0, "2026-06": 44.1 }),
-  C("c9", "Warrina Homes: Employee Handbook", "Warrina Homes", "Chloe", "Project", null, null),
+  C("c1", "Amorim Cork", "Amorim Cork", "Chloe", "Package", 16, { "2026-01": 4.5, "2026-02": 5.3, "2026-03": 5.0, "2026-04": 9.5, "2026-05": 0.5, "2026-06": 0.8 }, { status: "active", history: [{ from: "2024-11", agreed: 0.0 }, { from: "2025-07", agreed: 16.0 }] }),
+  C("c2", "Apex Energy", "Apex Energy", "Chloe", "Package", 16, { "2026-01": 11.7, "2026-02": 7.8, "2026-03": 22.8, "2026-04": 15.8, "2026-05": 18.3, "2026-06": 36.7 }, { status: "active", history: [{ from: "2025-06", agreed: 24.0 }, { from: "2026-01", agreed: 16.0 }] }),
+  C("c3", "Apex Communications", "Apex Communications", "Chloe", "Package", 30.5, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 28.6, "2026-06": 19.5 }, { status: "active" }),
+  C("c4", "ARAS", "ARAS", "Chloe", "Hourly", null, { "2026-01": 0, "2026-02": 0, "2026-03": 3.1, "2026-04": 5.6, "2026-05": 3.7, "2026-06": 2.7 }, { status: "active" }),
+  C("c5", "Equippers", "Equippers", "Chloe", "Quoted", null, { "2026-01": 0, "2026-02": 11.2, "2026-03": 5.0, "2026-04": 3.3, "2026-05": 10.0, "2026-06": 0.4 }, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Not recorded — recurring invoicing and ClickUp activity simply stop (source: Inactive Clients list, ~1 Jun 2026)" }),
+  C("c6", "Spectrum Consultants", "Spectrum Consultants", "Chloe", "Package", 24, { "2026-01": 21.8, "2026-02": 36.9, "2026-03": 35.9, "2026-04": 22.7, "2026-05": 22.8, "2026-06": 21.1 }, { status: "active", history: [{ from: "2026-01", agreed: 24.0 }] }),
+  C("c7", "Treasure Boxes", "Treasure Boxes", "Chloe", "Package", 10, { "2026-01": 21.8, "2026-02": 20.2, "2026-03": 3.4, "2026-04": 0, "2026-05": 0, "2026-06": 11.5 }, { status: "active", history: [{ from: "2025-07", agreed: 10.0 }] }),
+  C("c8", "Warrina Homes: Package", "Warrina Homes", "Chloe", "Package", 24, { "2026-01": 28.5, "2026-02": 27.8, "2026-03": 7.2, "2026-04": 46.8, "2026-05": 50.0, "2026-06": 44.1 }, { status: "active" }),
+  C("c9", "Warrina Homes: Employee Handbook", "Warrina Homes", "Chloe", "Project", null, null, { status: "active" }),
 
-  C("c10", "Australian GW", "Australian GW", "Vinavie", "Hourly", 0, null),
-  C("c11", "Clare Valley Wine & Grape", "Clare Valley Wine & Grape", "Vinavie", "Package", 8, { "2026-01": 17.9, "2026-02": 5.2, "2026-03": 9.0, "2026-04": 7.8, "2026-05": 2.3, "2026-06": 0.8 }),
-  C("c12", "Coonawarra", "Coonawarra", "Vinavie", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 25.5, "2026-04": 17.7, "2026-05": 21.8, "2026-06": 13.6 }),
-  C("c13", "Riverland Wine: Package", "Riverland Wine", "Vinavie", "Package", 8, { "2026-01": 9.8, "2026-02": 14.8, "2026-03": 14.2, "2026-04": 11.9, "2026-05": 23.1, "2026-06": 3.2 }),
-  C("c14", "Riverland Wine: Melbourne Showcase", "Riverland Wine", "Vinavie", "Quoted", 25, null),
-  C("c15", "Sevenhill", "Sevenhill", "Vinavie", "Project", 6, null),
-  C("c16", "Vegetation Solutions: MVS", "Vegetation Solutions: MVS", "Vinavie", "Hourly", null, { "2026-01": 3.8, "2026-02": 3.6, "2026-03": 3.5, "2026-04": 1.3, "2026-05": 1.2, "2026-06": 0.4 }),
-  C("c17", "Vegetation Solutions: Firewood", "Vegetation Solutions: Firewood", "Vinavie", "Hourly", null, { "2026-01": 1.3, "2026-02": 2.5, "2026-03": 22.4, "2026-04": 21.1, "2026-05": 19.3, "2026-06": 13.0 }),
+  C("c10", "Australian GW", "Australian GW", "Vinavie", "Hourly", 0, null, { status: "active", history: [{ from: "2025-07", agreed: 0.0 }] }),
+  C("c11", "Clare Valley Wine & Grape", "Clare Valley Wine & Grape", "Vinavie", "Package", 8, { "2026-01": 17.9, "2026-02": 5.2, "2026-03": 9.0, "2026-04": 7.8, "2026-05": 2.3, "2026-06": 0.8 }, { status: "active", history: [{ from: "2026-01", agreed: 8.0 }] }),
+  C("c12", "Coonawarra", "Coonawarra", "Vinavie", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 25.5, "2026-04": 17.7, "2026-05": 21.8, "2026-06": 13.6 }, { status: "active" }),
+  C("c13", "Riverland Wine: Package", "Riverland Wine", "Vinavie", "Package", 8, { "2026-01": 9.8, "2026-02": 14.8, "2026-03": 14.2, "2026-04": 11.9, "2026-05": 23.1, "2026-06": 3.2 }, { status: "active", history: [{ from: "2026-04", agreed: 8.0 }] }),
+  C("c14", "Riverland Wine: Melbourne Showcase", "Riverland Wine", "Vinavie", "Quoted", 25, null, { status: "active" }),
+  C("c15", "Sevenhill", "Sevenhill", "Vinavie", "Project", 6, null, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Reduced to 'Media Release only' then dropped (source: Inactive Clients list, ~Feb-Jun 2026)" }),
+  C("c16", "Vegetation Solutions: MVS", "Vegetation Solutions: MVS", "Vinavie", "Hourly", null, { "2026-01": 3.8, "2026-02": 3.6, "2026-03": 3.5, "2026-04": 1.3, "2026-05": 1.2, "2026-06": 0.4 }, { status: "active" }),
+  C("c17", "Vegetation Solutions: Firewood", "Vegetation Solutions: Firewood", "Vinavie", "Hourly", null, { "2026-01": 1.3, "2026-02": 2.5, "2026-03": 22.4, "2026-04": 21.1, "2026-05": 19.3, "2026-06": 13.0 }, { status: "active" }),
 
-  C("c18", "Aus3C", "Aus3C", "Shreya", "Package", 40, { "2026-01": 35.0, "2026-02": 58.9, "2026-03": 56.0, "2026-04": 27.4, "2026-05": 67.6, "2026-06": 18.6 }),
-  C("c19", "GPEX", "GPEX", "Shreya", "Package", 70, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 38.6, "2026-05": 105.3, "2026-06": 140.4 }),
-  C("c20", "BusSA", "BusSA", "Shreya", "Project", 25, { "2026-01": 0, "2026-02": 1.5, "2026-03": 9.0, "2026-04": 18.8, "2026-05": 46.5, "2026-06": 19.0 }),
-  C("c21", "Magain Real Estate", "Magain Real Estate", "Shreya", "Hourly", null, { "2026-01": 13.1, "2026-02": 8.8, "2026-03": 42.9, "2026-04": 24.0, "2026-05": 10.3, "2026-06": 7.6 }),
-  C("c22", "Media Magnetix", "Media Magnetix", "Shreya", "Strategy", 0, null),
+  C("c18", "Aus3C", "Aus3C", "Shreya", "Package", 40, { "2026-01": 35.0, "2026-02": 58.9, "2026-03": 56.0, "2026-04": 27.4, "2026-05": 67.6, "2026-06": 18.6 }, { status: "active" }),
+  C("c19", "GPEX", "GPEX", "Shreya", "Package", 70, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 38.6, "2026-05": 105.3, "2026-06": 140.4 }, { status: "active" }),
+  C("c20", "BusSA", "BusSA", "Shreya", "Project", 25, { "2026-01": 0, "2026-02": 1.5, "2026-03": 9.0, "2026-04": 18.8, "2026-05": 46.5, "2026-06": 19.0 }, { status: "active", note: "A separate 'BusSA / BusSafe' one-off project ended ~May 2026 per the Inactive Clients list, but this account is the ongoing BusSAFE retainer and remains active." }),
+  C("c21", "Magain Real Estate", "Magain Real Estate", "Shreya", "Hourly", null, { "2026-01": 13.1, "2026-02": 8.8, "2026-03": 42.9, "2026-04": 24.0, "2026-05": 10.3, "2026-06": 7.6 }, { status: "active" }),
+  C("c22", "Media Magnetix", "Media Magnetix", "Shreya", "Strategy", 0, null, { status: "active" }),
 
-  C("c23", "Baintech", "Baintech", "Lucy", "Package", 38, null),
-  C("c24", "BAMSS / Childcare Sec Services", "BAMSS", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 5.8, "2026-06": 13.9 }),
-  C("c25", "Barclay Recruitment (Verity Cons)", "Barclay Recruitment", "Lucy", "Package", 27, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 14.9, "2026-06": 48.5 }),
-  C("c26", "Bridge to Best", "Bridge to Best", "Lucy", "Package", 10, null),
-  C("c27", "By the Rules", "By the Rules", "Lucy", "Package", 5, null),
-  C("c28", "Connection Central", "Connection Central", "Lucy", "Project", 25, null),
-  C("c29", "Cowie Environmental", "Cowie Environmental", "Lucy", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 31.7, "2026-05": 16.2, "2026-06": 33.5 }),
-  C("c30", "CRA Construction", "CRA Construction", "Lucy", "Package", 24, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 7.8, "2026-05": 25.7, "2026-06": 23.5 }),
-  C("c31", "May Di Marco – Ray White", "May Di Marco", "Lucy", "Package", 11, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 6.4, "2026-06": 11.5 }),
-  C("c32", "Plumbaround", "Plumbaround", "Lucy", "Package", 16, null),
-  C("c33", "Sunfresh Linen", "Sunfresh Linen", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0.3, "2026-04": 22.6, "2026-05": 21.7, "2026-06": 32.9 }),
+  C("c23", "Baintech", "Baintech", "Lucy", "Package", 38, null, { status: "active", history: [{ from: "2026-06", agreed: 32.0 }] }),
+  C("c24", "BAMSS / Childcare Sec Services", "BAMSS", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 5.8, "2026-06": 13.9 }, { status: "active" }),
+  C("c25", "Barclay Recruitment (Verity Cons)", "Barclay Recruitment", "Lucy", "Package", 27, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 14.9, "2026-06": 48.5 }, { status: "active" }),
+  C("c26", "Bridge to Best", "Bridge to Best", "Lucy", "Package", 10, null, { status: "active" }),
+  C("c27", "By the Rules", "By the Rules", "Lucy", "Package", 5, null, { status: "active" }),
+  C("c28", "Connection Central", "Connection Central", "Lucy", "Project", 25, null, { status: "inactive", offboardedFrom: "2026-05", offboardNote: "Project ended (source: Inactive Clients list, ~1 May 2026)" }),
+  C("c29", "Cowie Environmental", "Cowie Environmental", "Lucy", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 31.7, "2026-05": 16.2, "2026-06": 33.5 }, { status: "active" }),
+  C("c30", "CRA Construction", "CRA Construction", "Lucy", "Package", 24, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 7.8, "2026-05": 25.7, "2026-06": 23.5 }, { status: "active" }),
+  C("c31", "May Di Marco – Ray White", "May Di Marco", "Lucy", "Package", 11, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 6.4, "2026-06": 11.5 }, { status: "active" }),
+  C("c32", "Plumbaround", "Plumbaround", "Lucy", "Package", 16, null, { status: "active" }),
+  C("c33", "Sunfresh Linen", "Sunfresh Linen", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0.3, "2026-04": 22.6, "2026-05": 21.7, "2026-06": 32.9 }, { status: "active" }),
 
-  C("c34", "Bee Squared Consulting", "Bee Squared", "Holly", "Package", 24, { "2026-01": 29.1, "2026-02": 25.7, "2026-03": 24.4, "2026-04": 13.4, "2026-05": 30.1, "2026-06": 29.4 }),
-  C("c35", "Comunet", "Comunet", "Holly", "Hourly", 32, { "2026-01": 22.8, "2026-02": 21.8, "2026-03": 20.8, "2026-04": 6.8, "2026-05": 47.4, "2026-06": 32.8 }),
-  C("c36", "Clarke Energy (base)", "Clarke Energy", "Holly", "Hourly", null, { "2026-01": 26.9, "2026-02": 37.2, "2026-03": 48.1, "2026-04": 26.0, "2026-05": 67.2, "2026-06": 112.3 }),
-  C("c37", "Clarke Energy: AEP", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c38", "Clarke Energy: ACES", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c39", "Clarke Energy: AIMEX", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c40", "Clarke Energy: WA", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c41", "History Trust of SA", "History Trust of SA", "Holly", "MAP", 80, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 28.1, "2026-06": 82.6 }),
-  C("c42", "PRG Consulting", "PRG Consulting", "Holly", "Package", 8, { "2026-01": 13.5, "2026-02": 15.4, "2026-03": 13.1, "2026-04": 1.0, "2026-05": 5.0, "2026-06": 5.4 }),
-  C("c43", "Utter Gutters", "Utter Gutters", "Holly", "Package", 32, { "2026-01": 8.2, "2026-02": 6.5, "2026-03": 6.2, "2026-04": 6.0, "2026-05": 7.1, "2026-06": 9.0 }),
-  C("c44", "Villani Jewellers", "Villani Jewellers", "Holly", "Package", 16, { "2026-01": 12.8, "2026-02": 16.8, "2026-03": 16.5, "2026-04": 20.9, "2026-05": 16.8, "2026-06": 12.9 }),
-  C("c45", "Villani: Website Project", "Villani Jewellers", "Holly", "Project", 8, null),
+  C("c34", "Bee Squared Consulting", "Bee Squared", "Holly", "Package", 24, { "2026-01": 29.1, "2026-02": 25.7, "2026-03": 24.4, "2026-04": 13.4, "2026-05": 30.1, "2026-06": 29.4 }, { status: "active", history: [{ from: "2025-07", agreed: 24.0 }] }),
+  C("c35", "Comunet", "Comunet", "Holly", "Hourly", 32, { "2026-01": 22.8, "2026-02": 21.8, "2026-03": 20.8, "2026-04": 6.8, "2026-05": 47.4, "2026-06": 32.8 }, { status: "active" }),
+  C("c36", "Clarke Energy (base)", "Clarke Energy", "Holly", "Hourly", null, { "2026-01": 26.9, "2026-02": 37.2, "2026-03": 48.1, "2026-04": 26.0, "2026-05": 67.2, "2026-06": 112.3 }, { status: "active" }),
+  C("c37", "Clarke Energy: AEP", "Clarke Energy", "Holly", "Hourly", null, null, { status: "active" }),
+  C("c38", "Clarke Energy: ACES", "Clarke Energy", "Holly", "Hourly", null, null, { status: "active" }),
+  C("c39", "Clarke Energy: AIMEX", "Clarke Energy", "Holly", "Hourly", null, null, { status: "active" }),
+  C("c40", "Clarke Energy: WA", "Clarke Energy", "Holly", "Hourly", null, null, { status: "active" }),
+  C("c41", "History Trust of SA", "History Trust of SA", "Holly", "MAP", 80, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 28.1, "2026-06": 82.6 }, { status: "active" }),
+  C("c42", "PRG Consulting", "PRG Consulting", "Holly", "Package", 8, { "2026-01": 13.5, "2026-02": 15.4, "2026-03": 13.1, "2026-04": 1.0, "2026-05": 5.0, "2026-06": 5.4 }, { status: "active", history: [{ from: "2026-01", agreed: 8.0 }] }),
+  C("c43", "Utter Gutters", "Utter Gutters", "Holly", "Package", 32, { "2026-01": 8.2, "2026-02": 6.5, "2026-03": 6.2, "2026-04": 6.0, "2026-05": 7.1, "2026-06": 9.0 }, { status: "active" }),
+  C("c44", "Villani Jewellers", "Villani Jewellers", "Holly", "Package", 16, { "2026-01": 12.8, "2026-02": 16.8, "2026-03": 16.5, "2026-04": 20.9, "2026-05": 16.8, "2026-06": 12.9 }, { status: "active", history: [{ from: "2025-09", agreed: 24.0 }, { from: "2026-05", agreed: 16.0 }] }),
+  C("c45", "Villani: Website Project", "Villani Jewellers", "Holly", "Project", 8, null, { status: "active" }),
 
-  C("c46", "Better Medical", "Better Medical", "Alice", "Package", 32, { "2026-01": 48.0, "2026-02": 43.6, "2026-03": 47.6, "2026-04": 32.9, "2026-05": 18.1, "2026-06": 47.7 }),
-  C("c47", "Duco", "Duco", "Alice", "Package", 24, { "2026-01": 16.2, "2026-02": 34.8, "2026-03": 25.6, "2026-04": 27.2, "2026-05": 3.3, "2026-06": 0.0 }),
-  C("c48", "Osteria Polpo", "Osteria Polpo", "Alice", "Package", 16, null),
-  C("c49", "Sidewood", "Sidewood", "Alice", "Hourly", null, { "2026-01": 26.6, "2026-02": 32.4, "2026-03": 37.8, "2026-04": 30.0, "2026-05": 31.8, "2026-06": 30.3 }),
-  C("c50", "Your Success Lab", "Your Success Lab", "Alice", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 33.8, "2026-04": 61.6, "2026-05": 33.2, "2026-06": 35.1 }),
+  C("c46", "Better Medical", "Better Medical", "Alice", "Package", 32, { "2026-01": 48.0, "2026-02": 43.6, "2026-03": 47.6, "2026-04": 32.9, "2026-05": 18.1, "2026-06": 47.7 }, { status: "active" }),
+  C("c47", "Duco", "Duco", "Alice", "Package", 24, { "2026-01": 16.2, "2026-02": 34.8, "2026-03": 25.6, "2026-04": 27.2, "2026-05": 3.3, "2026-06": 0.0 }, { status: "active", history: [{ from: "2026-01", agreed: 24.0 }] }),
+  C("c48", "Osteria Polpo", "Osteria Polpo", "Alice", "Package", 16, null, { status: "active" }),
+  C("c49", "Sidewood", "Sidewood", "Alice", "Hourly", null, { "2026-01": 26.6, "2026-02": 32.4, "2026-03": 37.8, "2026-04": 30.0, "2026-05": 31.8, "2026-06": 30.3 }, { status: "active" }),
+  C("c50", "Your Success Lab", "Your Success Lab", "Alice", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 33.8, "2026-04": 61.6, "2026-05": 33.2, "2026-06": 35.1 }, { status: "active" }),
 
-  C("c51", "Blueforce", "Blueforce", "Amanda", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 6.4, "2026-04": 27.2, "2026-05": 47.2, "2026-06": 51.4 }),
-  C("c52", "CLT Website", "CLT Website", "Amanda", "Package", null, null),
-  C("c53", "Filter Supplies (WA)", "Filter Supplies", "Amanda", "Package", 16, { "2026-01": 6.4, "2026-02": 9.8, "2026-03": 14.0, "2026-04": 17.8, "2026-05": 8.1, "2026-06": 15.0 }),
-  C("c54", "Green Shoots", "Green Shoots", "Amanda", "Package", 16, { "2026-01": 19.2, "2026-02": 6.6, "2026-03": 13.9, "2026-04": 7.5, "2026-05": 19.3, "2026-06": 24.8 }),
-  C("c55", "Majestic Plumbing", "Majestic Plumbing", "Amanda", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 4.6, "2026-04": 11.7, "2026-05": 15.9, "2026-06": 32.2 }),
-  C("c56", "Rent Busters WA", "Rent Busters WA", "Amanda", "Package", 8, { "2026-01": 6.1, "2026-02": 6.6, "2026-03": 6.2, "2026-04": 8.3, "2026-05": 7.0, "2026-06": 7.0 }),
-  C("c57", "Zest", "Zest", "Amanda", "Package", 24, { "2026-01": 1.3, "2026-02": 36.6, "2026-03": 18.8, "2026-04": 42.7, "2026-05": 22.9, "2026-06": 1.3 }),
+  C("c51", "Blueforce", "Blueforce", "Amanda", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 6.4, "2026-04": 27.2, "2026-05": 47.2, "2026-06": 51.4 }, { status: "active" }),
+  C("c52", "CLT Website", "CLT Website", "Amanda", "Package", null, null, { status: "active" }),
+  C("c53", "Filter Supplies (WA)", "Filter Supplies", "Amanda", "Package", 16, { "2026-01": 6.4, "2026-02": 9.8, "2026-03": 14.0, "2026-04": 17.8, "2026-05": 8.1, "2026-06": 15.0 }, { status: "active" }),
+  C("c54", "Green Shoots", "Green Shoots", "Amanda", "Package", 16, { "2026-01": 19.2, "2026-02": 6.6, "2026-03": 13.9, "2026-04": 7.5, "2026-05": 19.3, "2026-06": 24.8 }, { status: "active" }),
+  C("c55", "Majestic Plumbing", "Majestic Plumbing", "Amanda", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 4.6, "2026-04": 11.7, "2026-05": 15.9, "2026-06": 32.2 }, { status: "active" }),
+  C("c56", "Rent Busters WA", "Rent Busters WA", "Amanda", "Package", 8, { "2026-01": 6.1, "2026-02": 6.6, "2026-03": 6.2, "2026-04": 8.3, "2026-05": 7.0, "2026-06": 7.0 }, { status: "active" }),
+  C("c57", "Zest", "Zest", "Amanda", "Package", 24, { "2026-01": 1.3, "2026-02": 36.6, "2026-03": 18.8, "2026-04": 42.7, "2026-05": 22.9, "2026-06": 1.3 }, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Appointed an in-house manager (source: Inactive Clients list, End Jun 2026)" }),
 ];
 
 const SEED_SUPPORT = [
@@ -606,9 +624,11 @@ function CapacityDashboardInner() {
   function demandFor(c, m, avgOverride) {
     const avg = avgOverride !== undefined ? avgOverride : trailingAverage(c.actuals, m);
     const isFixed = FIXED_BASES.includes(c.basis);
+    const agreed = agreedAt(c, m);
     let demand;
-    if (isFixed) { demand = (c.agreed !== null && c.agreed !== undefined) ? c.agreed : (avg !== null ? avg : 0); }
-    else { demand = avg !== null ? avg : (c.agreed !== null ? c.agreed : 0); }
+    if (c.offboardedFrom && m >= c.offboardedFrom) { demand = 0; }
+    else if (isFixed) { demand = (agreed !== null && agreed !== undefined) ? agreed : (avg !== null ? avg : 0); }
+    else { demand = avg !== null ? avg : (agreed !== null ? agreed : 0); }
     const overrideKey = `${c.id}_${m}`;
     const overridden = overrides[overrideKey];
     if (overridden !== undefined && overridden !== null && overridden !== "") { demand = Number(overridden); }
@@ -809,7 +829,7 @@ function CapacityDashboardInner() {
     const demandRows = [demandHeader];
     clients.forEach((c) => {
       const { demand, avg, isOverridden } = demandFor(c, month);
-      demandRows.push([c.lead, c.client, c.group, c.basis, c.agreed ?? "", avg !== null ? Number(avg.toFixed(1)) : "", Number(demand.toFixed(1)), isOverridden ? "Yes" : "No"]);
+      demandRows.push([c.lead, c.client, c.group, c.basis, agreedAt(c, month) ?? "", avg !== null ? Number(avg.toFixed(1)) : "", Number(demand.toFixed(1)), isOverridden ? "Yes" : "No"]);
     });
     const wsDemand = XLSX.utils.aoa_to_sheet(demandRows);
     setCols(wsDemand, demandHeader.length, demandHeader.map((h) => ({ wch: Math.max(15, h.length + 2) })));
@@ -919,9 +939,9 @@ function CapacityDashboardInner() {
                             const { demand, avg, isOverridden, isDynamic, dyn } = demandForGroup(g.group, g.rows, month);
                             return (
                               <tr key={g.group}>
-                                <td>{r.client}</td>
+                                <td>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}</td>
                                 <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
-                                <td className="right num">{fmt(r.agreed)}</td>
+                                <td className="right num">{fmt(agreedAt(r, month))}</td>
                                 <td className="right num">
                                   {fmt(avg)}
                                   {isDynamic && (
@@ -969,9 +989,9 @@ function CapacityDashboardInner() {
                                 const { demand, avg, isOverridden } = demandFor(r, month);
                                 return (
                                   <tr key={r.id}>
-                                    <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}</td>
+                                    <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}</td>
                                     <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
-                                    <td className="right num">{fmt(r.agreed)}</td>
+                                    <td className="right num">{fmt(agreedAt(r, month))}</td>
                                     <td className="right num">{fmt(avg)}</td>
                                     <td className="right num">
                                       {editingDemand === owner ? (

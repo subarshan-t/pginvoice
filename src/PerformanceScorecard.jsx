@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, findPersonMatch, isInternalFolder, basisToClientType, dominantClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
-import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey } from "./CapacityDashboard.jsx";
+import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey, agreedAt } from "./CapacityDashboard.jsx";
 
 const CLICKUP_DB_KEY = "clickup";
 const NOTES_KEY = "perf_notes_v1";
@@ -298,9 +298,12 @@ function PerformanceInner() {
     });
     return [...map.values()];
   }, [clients]);
-  function groupMeta(g) {
+  // `m`, when given, pulls each row's agreed hours as of that month from its `history`
+  // (e.g. Baintech's package dropped 38 -> 32 hrs/month in June 2026) instead of always
+  // using today's value, so past months in the trend chart show what was actually agreed then.
+  function groupMeta(g, m) {
     const isFixed = g.rows.some((r) => FIXED_BASES.includes(r.basis));
-    const agreedTotal = g.rows.reduce((s, r) => s + (r.agreed || 0), 0);
+    const agreedTotal = g.rows.reduce((s, r) => s + ((m ? agreedAt(r, m) : r.agreed) || 0), 0);
     const basisLabel = g.rows.length > 1 ? "Combined" : CLIENT_TYPE_LABELS[basisToClientType(g.rows[0].basis)];
     return { isFixed, agreedTotal, basisLabel };
   }
@@ -349,7 +352,7 @@ function PerformanceInner() {
   ), [groups, qClient, qBasis]);
 
   const clientTableRows = useMemo(() => filteredGroups.map((g) => {
-    const meta = groupMeta(g);
+    const meta = groupMeta(g, latestMonth);
     const cm = clientMonthly.get(g.group);
     const monthHours = cm ? cm.monthHours : new Map();
     const last = latestMonth ? (monthHours.get(latestMonth) || 0) : null;
@@ -361,7 +364,7 @@ function PerformanceInner() {
   }).sort((a, b) => {
     const av = a.variance === null ? -999 : Math.abs(a.variance), bv = b.variance === null ? -999 : Math.abs(b.variance);
     return bv - av;
-  }), [filteredGroups, clientMonthly, latestMonth, activeMonths]);
+  }), [filteredGroups, clientMonthly, latestMonth, activeMonths, clients]);
 
   // A fixed-agreement client only counts toward Agreed for months it was actually
   // an active engagement — approximated by whether they logged any ClickUp hours
@@ -380,11 +383,11 @@ function PerformanceInner() {
     if (selectedClient) {
       const g = groups.find((x) => x.group === selectedClient);
       if (!g) return { series: [], isFixed: null, ytd: [], current: [] };
-      const meta = groupMeta(g);
+      const meta = groupMeta(g, latestMonth);
       const cm = clientMonthly.get(g.group);
       const monthHours = cm ? cm.monthHours : new Map();
       const actualsPts = activeMonths.map((m) => monthHours.get(m) ?? 0);
-      const agreedPts = meta.isFixed ? activeMonths.map((m) => (activeInMonth(g, m) ? meta.agreedTotal : 0)) : activeMonths.map(() => null);
+      const agreedPts = meta.isFixed ? activeMonths.map((m) => (activeInMonth(g, m) ? groupMeta(g, m).agreedTotal : 0)) : activeMonths.map(() => null);
       const hourlyPts = meta.isFixed ? activeMonths.map(() => null) : activeMonths.map((m) => expandingAvgAt(monthHours, m));
       const series = [
         { label: "Agreed", color: "var(--fg-tertiary)", points: agreedPts },
@@ -420,7 +423,7 @@ function PerformanceInner() {
     const hoursByType = {}, agreedByType = {};
     TYPE_ORDER.forEach((t) => {
       hoursByType[t] = activeMonths.map((m) => groupsByType[t].reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0));
-      agreedByType[t] = t === "hourly" ? null : activeMonths.map((m) => groupsByType[t].reduce((s, g) => s + (activeInMonth(g, m) ? groupMeta(g).agreedTotal : 0), 0));
+      agreedByType[t] = t === "hourly" ? null : activeMonths.map((m) => groupsByType[t].reduce((s, g) => s + (activeInMonth(g, m) ? groupMeta(g, m).agreedTotal : 0), 0));
     });
     const sumArrays = (arrs) => activeMonths.map((_, i) => arrs.reduce((s, a) => s + (a ? a[i] : 0), 0));
     const totalAgreedByMonth = sumArrays(["package", "quoted", "map"].map((t) => agreedByType[t]));
