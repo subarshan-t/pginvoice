@@ -120,6 +120,13 @@ function resolveTaskName(entry: any): string {
 function resolveUserName(entry: any): string {
   return entry.user?.username || entry.user?.email || "";
 }
+// Real task id (e.g. "86d3gjhzy") when this entry is linked to an actual task -- lets the
+// frontend deep-link straight to the task in ClickUp (https://app.clickup.com/t/{id}, same
+// shape as the API's own `task_url`). null for a task-less entry (task === "0", see above);
+// there's nothing in ClickUp to link to for those.
+function resolveTaskId(entry: any): string | null {
+  return (entry.task && typeof entry.task === "object" && entry.task.id) ? String(entry.task.id) : null;
+}
 
 Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -176,6 +183,7 @@ Deno.serve(async (req: Request) => {
         entry_id: String(entry.id),
         folder,
         task: resolveTaskName(entry),
+        task_id: resolveTaskId(entry),
         minutes,
         billable: !!entry.billable,
         has_billable_col: true,

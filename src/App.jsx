@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import {
   Upload, Copy, Check, ChevronDown, ChevronUp, Download, Search,
   AlertTriangle, Link2, FileSpreadsheet, FileText, Printer, Users, ArrowUpDown,
-  RefreshCw, Wifi, WifiOff,
+  RefreshCw, Wifi, WifiOff, ExternalLink,
 } from "lucide-react";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
@@ -66,6 +66,36 @@ function formatTaskUsers(userMinutesMap) {
   const entries = [...userMinutesMap.entries()].sort((a, b) => b[1] - a[1]);
   if (entries.length === 1) return entries[0][0] || "—";
   return entries.map(([u, min]) => `${u || "—"} (${fmt(min / 60)}h)`).join(", ");
+}
+// Only ever a real link when every row logged under this task name shares the exact same
+// ClickUp task id -- an ambiguous name (two different real tasks, or two task-less rows,
+// that happen to share text) deliberately gets no link rather than a guess.
+function clickupTaskUrl(taskIdSet) {
+  if (!taskIdSet || taskIdSet.size !== 1) return null;
+  return `https://app.clickup.com/t/${[...taskIdSet][0]}`;
+}
+// Same link as the task itself (see clickupTaskUrl's note above) -- ClickUp doesn't expose
+// a way to deep-link to one specific person's time entry within a task, only the task page
+// itself (where the Time Tracked panel shows everyone who logged against it).
+function TaskUsersCell({ userMinutesMap, taskUrl }) {
+  if (!userMinutesMap || userMinutesMap.size === 0) return "—";
+  const entries = [...userMinutesMap.entries()].sort((a, b) => b[1] - a[1]);
+  const single = entries.length === 1;
+  return (
+    <>
+      {entries.map(([u, min], i) => (
+        <React.Fragment key={u || i}>
+          {i > 0 && ", "}
+          {taskUrl ? (
+            <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" style={{ color: "var(--accent)" }}>
+              {u || "—"}
+            </a>
+          ) : (u || "—")}
+          {!single && ` (${fmt(min / 60)}h)`}
+        </React.Fragment>
+      ))}
+    </>
+  );
 }
 
 // ------------------------------ name matching --------------------------------
@@ -224,6 +254,9 @@ function parseClickupCsv(file, onDone, onErr) {
       const hBillable = findHeader(headers, "Billable");
       const hUser = findHeader(headers, "Username");
       const hStart = findHeader(headers, "Start Text");
+      // Optional — only some ClickUp export presets include it. When present, lets task
+      // rows link straight to the task in ClickUp, same as the live Supabase sync does.
+      const hTaskId = findHeader(headers, "Task ID");
       if (!hFolder) { onErr("Couldn't find a \"Folder Name\" column. This should be a ClickUp time-tracking export."); return; }
       let zeroCount = 0;
       const rows = [];
@@ -243,6 +276,7 @@ function parseClickupCsv(file, onDone, onErr) {
         rows.push({
           folder,
           task: hTask ? String(r[hTask] || "").trim() || "Untitled" : "Untitled",
+          taskId: hTaskId ? (String(r[hTaskId] || "").trim() || null) : null,
           minutes, billable, hasBillableCol: !!hBillable,
           user: hUser ? String(r[hUser] || "").trim() : "",
           isInternal: isInternalFolder(folder),
@@ -736,7 +770,7 @@ export default function PGReconciliation() {
       if (r.isInternal) continue;
       if (dataMonthKey && r.monthKey && r.monthKey !== dataMonthKey) continue;
       if (!map.has(r.folder))
-        map.set(r.folder, { name: r.folder, totalMin: 0, tasksAll: new Map(), userMinutes: new Map(), tasksByUser: new Map(), taskUsers: new Map() });
+        map.set(r.folder, { name: r.folder, totalMin: 0, tasksAll: new Map(), userMinutes: new Map(), tasksByUser: new Map(), taskUsers: new Map(), taskIds: new Map() });
       const c = map.get(r.folder);
       c.totalMin += r.minutes;
       c.tasksAll.set(r.task, (c.tasksAll.get(r.task) || 0) + r.minutes);
@@ -749,6 +783,15 @@ export default function PGReconciliation() {
       if (!c.taskUsers.has(r.task)) c.taskUsers.set(r.task, new Map());
       const tu = c.taskUsers.get(r.task);
       tu.set(u, (tu.get(u) || 0) + r.minutes);
+      // Every row sharing a task NAME should also share the same real ClickUp task id --
+      // but names aren't actually unique (e.g. two different "Untitled"/task-less rows,
+      // or two genuinely different tasks that happen to be named the same). Track every
+      // distinct id seen per name; a link is only shown when there's exactly one, so an
+      // ambiguous name never links to the wrong task.
+      if (r.taskId) {
+        if (!c.taskIds.has(r.task)) c.taskIds.set(r.task, new Set());
+        c.taskIds.get(r.task).add(r.taskId);
+      }
     }
 
     const out = [];
@@ -1481,13 +1524,22 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
               </tr>
             </thead>
             <tbody>
-              {[...c.tasksFiltered.entries()].sort((a, b) => b[1] - a[1]).map(([task, min]) => (
-                <tr key={task}>
-                  <td>{task}</td>
-                  {hasUser && <td>{formatTaskUsers(c.taskUsersFiltered?.get(task))}</td>}
-                  <td className="right num">{fmt(min / 60)}</td>
-                </tr>
-              ))}
+              {[...c.tasksFiltered.entries()].sort((a, b) => b[1] - a[1]).map(([task, min]) => {
+                const taskUrl = clickupTaskUrl(c.taskIds?.get(task));
+                return (
+                  <tr key={task}>
+                    <td>
+                      {taskUrl ? (
+                        <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" style={{ color: "var(--accent)", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          {task} <ExternalLink size={11} />
+                        </a>
+                      ) : task}
+                    </td>
+                    {hasUser && <td><TaskUsersCell userMinutesMap={c.taskUsersFiltered?.get(task)} taskUrl={taskUrl} /></td>}
+                    <td className="right num">{fmt(min / 60)}</td>
+                  </tr>
+                );
+              })}
               {c.tasksFiltered.size === 0 && (
                 <tr><td colSpan={hasUser ? 3 : 2} className="empty">No tasks in this filter.</td></tr>
               )}

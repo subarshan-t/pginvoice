@@ -13,7 +13,7 @@ export async function fetchClickupFromSupabase() {
   while (true) {
     const { data, error } = await supabase
       .from("pginvoice_clickup_entries")
-      .select("folder, task, minutes, billable, has_billable_col, user_name, is_internal, month_key, month_label, date_key")
+      .select("folder, task, task_id, minutes, billable, has_billable_col, user_name, is_internal, month_key, month_label, date_key")
       .order("entry_start", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
@@ -27,6 +27,10 @@ export async function fetchClickupFromSupabase() {
   const rows = all.map((r) => ({
     folder: r.folder,
     task: r.task,
+    // Real ClickUp task id, when this entry was linked to an actual task -- lets the UI
+    // deep-link straight to https://app.clickup.com/t/{taskId}. Absent for entries tracked
+    // with no task selected in ClickUp (see clickup-sync's resolveTaskId for details).
+    taskId: r.task_id || null,
     minutes: Number(r.minutes) || 0,
     billable: !!r.billable,
     hasBillableCol: !!r.has_billable_col,
