@@ -1380,6 +1380,23 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
   const isPackage = c.type === "package";
   const isQld = c.type === "queensland";
 
+  // Clicking a name in "Consultants involved" opens (if not already open) this card's
+  // own task table, scoped to just that person's tasks -- purely local to this card, so
+  // it doesn't touch the page-wide consultant filter/dropdown or affect any other client.
+  // Clicking the same person again clears back to the card's normal (unfiltered) task list.
+  const [drillConsultant, setDrillConsultant] = useState(null);
+  const selectConsultant = (u) => {
+    if (drillConsultant === u) { setDrillConsultant(null); return; }
+    setDrillConsultant(u);
+    if (!open) onToggle();
+  };
+  const drillTasks = drillConsultant ? (c.tasksByUser.get(drillConsultant) || new Map()) : null;
+  const tasksShown = drillTasks ?? c.tasksFiltered;
+  const taskUsersShown = drillConsultant
+    ? new Map([...tasksShown.keys()].map((task) => [task, new Map([[drillConsultant, tasksShown.get(task)]])]))
+    : c.taskUsersFiltered;
+  const workedShown = drillConsultant ? ((c.userMinutes.get(drillConsultant) || 0) / 60) : c.workedFiltered;
+
   const statusChip = () => {
     if (!isPackage) return null;
     if (c.pkg == null) return <span className="pg-tag pg-tag--muted">[no package on file]</span>;
@@ -1498,11 +1515,18 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
           <div className="pg-consultants__label"><Users size={11} /> Consultants involved</div>
           <div className="pg-consultants__list">
             {consultantEntries.map(([u, min]) => {
-              const active = consultantFilter && u === consultantFilter;
+              const active = drillConsultant ? u === drillConsultant : (consultantFilter && u === consultantFilter);
               return (
-                <span key={u || "unknown"} className={"pg-consultants__item" + (active ? " pg-consultants__item--active" : "")}>
+                <button
+                  key={u || "unknown"}
+                  type="button"
+                  onClick={() => selectConsultant(u)}
+                  title={drillConsultant === u ? "Clear — show all tasks again" : `See the tasks behind ${u || "this consultant"}'s hours`}
+                  className={"pg-consultants__item" + (active ? " pg-consultants__item--active" : "")}
+                  style={{ background: "none", border: 0, padding: 0, font: "inherit" }}
+                >
                   {u || "—"} <span>({fmt(min / 60)} h)</span>
-                </span>
+                </button>
               );
             })}
           </div>
@@ -1513,7 +1537,7 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
       {open && (
         <div className="pg-table-wrap">
           <div className="pg-table-head">
-            Tasks {consultantFilter ? `worked by ${consultantFilter}` : "worked this month"}
+            Tasks {drillConsultant ? `worked by ${drillConsultant}` : consultantFilter ? `worked by ${consultantFilter}` : "worked this month"}
           </div>
           <table className="pg-table">
             <thead>
@@ -1524,7 +1548,7 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
               </tr>
             </thead>
             <tbody>
-              {[...c.tasksFiltered.entries()].sort((a, b) => b[1] - a[1]).map(([task, min]) => {
+              {[...tasksShown.entries()].sort((a, b) => b[1] - a[1]).map(([task, min]) => {
                 const taskUrl = clickupTaskUrl(c.taskIds?.get(task));
                 return (
                   <tr key={task}>
@@ -1535,18 +1559,18 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
                         </a>
                       ) : task}
                     </td>
-                    {hasUser && <td><TaskUsersCell userMinutesMap={c.taskUsersFiltered?.get(task)} taskUrl={taskUrl} /></td>}
+                    {hasUser && <td><TaskUsersCell userMinutesMap={taskUsersShown?.get(task)} taskUrl={taskUrl} /></td>}
                     <td className="right num">{fmt(min / 60)}</td>
                   </tr>
                 );
               })}
-              {c.tasksFiltered.size === 0 && (
+              {tasksShown.size === 0 && (
                 <tr><td colSpan={hasUser ? 3 : 2} className="empty">No tasks in this filter.</td></tr>
               )}
               <tr className="total">
                 <td>Total</td>
                 {hasUser && <td></td>}
-                <td className="right num">{fmt(c.workedFiltered)}</td>
+                <td className="right num">{fmt(workedShown)}</td>
               </tr>
             </tbody>
           </table>

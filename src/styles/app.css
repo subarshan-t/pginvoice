@@ -297,7 +297,8 @@ button { font: inherit; }
 .pg-consultants { margin-top: 16px; padding: 12px 14px; background: var(--bg-base); border: 1px solid var(--border-subtle); border-radius: var(--app-radius-sm); }
 .pg-consultants__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-tertiary); display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .pg-consultants__list { display: flex; flex-wrap: wrap; gap: 4px 18px; }
-.pg-consultants__item { font-family: var(--font-mono); font-size: 12px; color: var(--fg-secondary); }
+.pg-consultants__item { font-family: var(--font-mono); font-size: 12px; color: var(--fg-secondary); transition: color var(--dur) var(--ease); }
+.pg-consultants__item:hover { color: var(--accent); cursor: pointer; }
 .pg-consultants__item--active { color: var(--accent); font-weight: 500; }
 .pg-consultants__item span { color: var(--fg-tertiary); }
 
