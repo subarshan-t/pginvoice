@@ -6,10 +6,12 @@ import PerformanceScorecard from "./PerformanceScorecard.jsx";
 import TimesheetSummary from "./TimesheetSummary.jsx";
 import ClientAccruals from "./ClientAccruals.jsx";
 import Clients from "./Clients.jsx";
+import TeamDashboard from "./TeamDashboard.jsx";
 
 const MODULES = [
   { key: "invoicing", label: "Client Invoicing", icon: FileText },
   { key: "capacity", label: "Capacity planning", icon: BarChart3 },
+  { key: "team", label: "Team", icon: Users },
   { key: "performance", label: "Performance", icon: TrendingUp },
   { key: "timesheet", label: "Timesheet summary", icon: CalendarDays },
   { key: "accruals", label: "Client Accruals", icon: Clock },
@@ -134,6 +136,7 @@ export default function Shell() {
             alive across tab switches. */}
         <div style={{ display: active === "invoicing" ? "block" : "none" }}><PGReconciliation /></div>
         <div style={{ display: active === "capacity" ? "block" : "none" }}><CapacityDashboard /></div>
+        <div style={{ display: active === "team" ? "block" : "none" }}><TeamDashboard /></div>
         <div style={{ display: active === "performance" ? "block" : "none" }}><PerformanceScorecard /></div>
         <div style={{ display: active === "timesheet" ? "block" : "none" }}><TimesheetSummary /></div>
         <div style={{ display: active === "accruals" ? "block" : "none" }}><ClientAccruals /></div>

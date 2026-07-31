@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import {
-  ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap, MoreVertical,
+  ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, multiFolderMatchesFor, isInternalFolder, normalizeName, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
+import { findMatch, multiFolderMatchesFor, isInternalFolder, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
 import { loadState, saveState } from "./capacityStore.js";
 import { fetchClients as fetchPgClients, createClient as createPgClient, createClientEvent, applyDueClientEvents } from "./clientsSync.js";
 
@@ -333,133 +332,6 @@ function Picker({ value, label, options, onChange }) {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-/* ============================================================
-   ROSTER MENU — per-person "⋮" popover for resignation date + ClickUp alias,
-   only rendered in roster edit mode.
-============================================================ */
-// Rendered via a portal into document.body with fixed positioning (computed from
-// the trigger button's own bounding rect) rather than an absolutely-positioned
-// child of the row — the roster table lives inside .pg-cap-pane, which scrolls
-// (overflow-y: auto), and any scrolling ancestor clips an absolutely-positioned
-// descendant regardless of its z-index. That clipping made the popover invisible
-// on rows near the bottom of the pane (worst on the last row); a portal + fixed
-// position escapes that ancestor entirely.
-function RosterMenu({ person, onUpdate, aliasConflict }) {
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const btnRef = useRef(null);
-  const menuRef = useRef(null);
-
-  const openMenu = () => {
-    const r = btnRef.current.getBoundingClientRect();
-    const menuWidth = 260;
-    let left = r.right - menuWidth;
-    if (left < 8) left = 8;
-    let top = r.bottom + 4;
-    const estMenuHeight = 260;
-    if (top + estMenuHeight > window.innerHeight - 8) top = Math.max(8, r.top - estMenuHeight - 4);
-    setPos({ top, left });
-    setOpen(true);
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e) {
-      if (menuRef.current && menuRef.current.contains(e.target)) return;
-      if (btnRef.current && btnRef.current.contains(e.target)) return;
-      setOpen(false);
-    }
-    function onScrollOrResize() { setOpen(false); }
-    document.addEventListener("mousedown", onDoc);
-    window.addEventListener("scroll", onScrollOrResize, true);
-    window.addEventListener("resize", onScrollOrResize);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      window.removeEventListener("scroll", onScrollOrResize, true);
-      window.removeEventListener("resize", onScrollOrResize);
-    };
-  }, [open]);
-
-  return (
-    <>
-      <button ref={btnRef} type="button" className="pg-btn-ghost" style={{ padding: "4px 7px" }} onClick={() => (open ? setOpen(false) : openMenu())}>
-        <MoreVertical size={13} />
-      </button>
-      {open && createPortal(
-        <div ref={menuRef} className="pg-menu" style={{ position: "fixed", top: pos.top, left: pos.left, right: "auto", margin: 0, minWidth: 260, padding: 12, zIndex: 1000 }}>
-          <div className="pg-field__label">Resignation date</div>
-          <input
-            className="pg-input" type="date" style={{ marginTop: 4, width: "100%" }}
-            value={person.resignationDate || ""}
-            onChange={(e) => onUpdate("resignationDate", e.target.value || null)}
-          />
-          {person.resignationDate && (
-            <button className="pg-btn-ghost" style={{ marginTop: 6 }} onClick={() => onUpdate("resignationDate", null)}>
-              <X size={11} /> Clear resignation date
-            </button>
-          )}
-
-          <div className="pg-field__label" style={{ marginTop: 12 }}>ClickUp alias</div>
-          <p className="pg-footnote" style={{ marginTop: 2, marginBottom: 4 }}>
-            Only needed if their ClickUp username doesn't match "{person.name}", e.g. a full name ClickUp shows that this roster's short name can't fuzzy-match.
-          </p>
-          <input
-            className="pg-input" type="text" style={{ width: "100%" }}
-            placeholder="e.g. Kelly Wagner"
-            value={person.alias || ""}
-            onChange={(e) => onUpdate("alias", e.target.value)}
-          />
-          {aliasConflict && (
-            <div className="pg-banner-warn" style={{ marginTop: 8, padding: "8px 10px", fontSize: 11 }}>
-              <AlertTriangle size={11} style={{ verticalAlign: -1, marginRight: 4 }} />
-              Also matched to {aliasConflict.join(", ")} — hours for this alias will be double-counted until only one person uses it.
-            </div>
-          )}
-
-          <button className="pg-btn" style={{ marginTop: 10, width: "100%", justifyContent: "center" }} onClick={() => setOpen(false)}>Done</button>
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
-
-/* ============================================================
-   ADD PERSON — small inline form shown under the roster table in edit mode
-============================================================ */
-function AddPersonForm({ onAdd }) {
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", role: "Consultant", state: "SA", contracted: 38, rate: 0.7 });
-  const set = (field) => (v) => setForm((f) => ({ ...f, [field]: v }));
-
-  if (!open) {
-    return (
-      <button className="pg-btn-ghost" style={{ marginTop: 10 }} onClick={() => setOpen(true)}>
-        <Plus size={12} /> Add person
-      </button>
-    );
-  }
-  return (
-    <div className="pg-cap-addform" style={{ marginTop: 10 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <input className="pg-input" style={{ width: 140 }} placeholder="Name" value={form.name} onChange={(e) => set("name")(e.target.value)} />
-        <div style={{ width: 140 }}>
-          <Picker value={form.role} options={[{ value: "Consultant", label: "Consultant" }, { value: "Coordinator", label: "Coordinator" }]} onChange={set("role")} />
-        </div>
-        <div style={{ width: 90 }}>
-          <Picker value={form.state} options={[{ value: "SA", label: "SA" }, { value: "WA", label: "WA" }, { value: "QLD", label: "QLD" }]} onChange={set("state")} />
-        </div>
-        <input className="pg-input" type="number" step="any" style={{ width: 110 }} placeholder="Hrs/wk" value={form.contracted} onChange={(e) => set("contracted")(e.target.value)} />
-        <input className="pg-input" type="number" min="0" max="100" step="1" style={{ width: 110 }} placeholder="Billable %" value={Math.round(form.rate * 100)} onChange={(e) => set("rate")((Number(e.target.value) || 0) / 100)} />
-        <button className="pg-btn" onClick={() => { onAdd(form); setForm({ name: "", role: "Consultant", state: "SA", contracted: 38, rate: 0.7 }); setOpen(false); }} disabled={!form.name.trim()}>
-          <Plus size={13} /> Add
-        </button>
-        <button className="pg-btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
-      </div>
     </div>
   );
 }
@@ -884,43 +756,6 @@ function CapacityDashboardInner() {
 
   const removeSupport = (id) => setSupport((ss) => ss.filter((s) => s.id !== id));
   const updateSupportValue = (id, newValue) => setSupport((ss) => ss.map((s) => s.id === id ? { ...s, value: newValue } : s));
-  const updatePerson = (id, field, value) => setPeople((ps) => ps.map((p) => p.id === id ? { ...p, [field]: value } : p));
-
-  // A person's alias identifies who owns a ClickUp username for downstream matching
-  // (see findPersonMatch) — if two people end up sharing an alias, or someone's alias
-  // collides with another person's own name, that ClickUp user's hours would silently
-  // get attributed to (and thus double-counted for) more than one person. Detect that
-  // here so it can be surfaced both in the per-row menu and as a roster-wide banner.
-  const aliasConflicts = useMemo(() => {
-    const owners = new Map(); // normalized identity -> [{name}]
-    people.forEach((p) => {
-      const keys = new Set([normalizeName(p.name)]);
-      if (p.alias && p.alias.trim()) keys.add(normalizeName(p.alias));
-      keys.forEach((k) => {
-        if (!k) return;
-        if (!owners.has(k)) owners.set(k, []);
-        owners.get(k).push(p);
-      });
-    });
-    const conflicts = new Map(); // person id -> [other person names]
-    owners.forEach((owningPeople) => {
-      if (owningPeople.length < 2) return;
-      owningPeople.forEach((p) => {
-        const others = owningPeople.filter((o) => o.id !== p.id).map((o) => o.name);
-        if (others.length) conflicts.set(p.id, [...(conflicts.get(p.id) || []), ...others]);
-      });
-    });
-    return conflicts;
-  }, [people]);
-  const addPerson = (form) => {
-    const name = (form.name || "").trim();
-    if (!name) return;
-    setPeople((ps) => [...ps, {
-      id: uid("p"), name, role: form.role || "Consultant", state: form.state || "SA",
-      contracted: Number(form.contracted) || 0, rate: Number(form.rate) || 0,
-      note: "", resignationDate: null, alias: "",
-    }]);
-  };
   function proposedHours(from, type, value) {
     if (type === "pct") { const base = peopleMap[from] ? peopleMap[from].monthly : 0; return base * Number(value || 0); }
     return Number(value || 0);
@@ -1284,19 +1119,9 @@ function CapacityDashboardInner() {
             <div className="pg-cap-stat"><div className="pg-stat__value" style={{ color: difference < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{difference > 0 ? "+" : ""}{difference.toFixed(0)}</div><div className="pg-stat__label">Difference</div></div>
           </div>
 
-          {aliasConflicts.size > 0 && (
-            <div className="pg-banner-warn" style={{ marginTop: 14 }}>
-              {[...aliasConflicts.entries()].map(([id, others]) => {
-                const p = people.find((pp) => pp.id === id);
-                if (!p) return null;
-                return <div key={id}>{p.name}'s name/alias is shared with {others.join(", ")} — their ClickUp hours will be double-counted until this is fixed.</div>;
-              })}
-            </div>
-          )}
-
           <div className="pg-table-wrap" style={{ marginTop: 14 }}>
             <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <span>Team roster</span>
+              <span>Capacity utilization</span>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ position: "relative" }}>
                   <Search size={11} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--fg-tertiary)" }} />
@@ -1308,52 +1133,54 @@ function CapacityDashboardInner() {
                     onChange={(e) => setQRoster(e.target.value)}
                   />
                 </div>
-                <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
+                <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit leaves</>}</button>
               </div>
             </div>
-            <div style={{ overflowX: "auto" }}>
-            <table className="pg-table" style={{ minWidth: 640 }}>
-              <thead><tr><th>Consultant</th><th className="right num">Resource Hrs</th><th className="right num">Leaves</th><th className="right num">Public Hols</th><th className="right num">Monthly Hrs</th><th className="right num">Billable %</th><th className="right num">Billable Capacity</th><th className="right num">Allocated</th><th className="right num">Availability</th>{editRoster && <th></th>}</tr></thead>
-              <tbody>
-                {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
-                  const pc = personCalc[p.name];
-                  const pm = peopleMap[p.name];
-                  return (
-                    <tr key={p.id}>
-                      <td>
-                        {p.name} <span className="pg-tag" style={{ color: p.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 5 }}>[{p.role[0]}]</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 10 }}>
+              {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
+                const pc = personCalc[p.name];
+                const pm = peopleMap[p.name];
+                const capacity = pc.pool;               // billable capacity available to her, incl. help received
+                const allocated = pc.demand;              // client demand assigned to her
+                const overflow = Math.max(0, allocated - capacity);
+                const unbillableCapacity = Math.max(0, pm.totalMonthlyHours - pm.monthly);
+                const billablePct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : (allocated > 0 ? 100 : 0);
+                const unbillablePct = unbillableCapacity > 0 ? Math.min(100, (overflow / unbillableCapacity) * 100) : (overflow > 0 ? 100 : 0);
+                const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "ok";
+                const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-warn)" : "var(--status-ok)";
+                return (
+                  <div key={p.id}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                      <span style={{ fontFamily: "var(--font-body)", fontSize: 12.5 }}>
+                        {p.name} <span className="pg-tag" style={{ color: p.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 4 }}>[{p.role[0]}]</span>
                         {pm.resigningThisMonth && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[resigns {p.resignationDate}]</span>}
-                        {p.alias && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[alias: {p.alias}]</span>}
-                      </td>
-                      <td className="right num">{pm.resourceHours.toFixed(1)}</td>
-                      <td className="right num">
-                        {editRoster
-                          ? <input className="pg-input" type="number" min="0" step="any" style={{ width: 60, padding: "4px 6px" }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
-                          : (leaveFor(p.id) > 0 ? leaveFor(p.id).toFixed(1) : "—")}
-                      </td>
-                      <td className="right num">{pm.publicHolidayHrs.toFixed(1)} <span style={{ color: "var(--fg-tertiary)", fontSize: 10 }}>({pm.holidayDays}d)</span></td>
-                      <td className="right num">{pm.totalMonthlyHours.toFixed(1)}</td>
-                      <td className="right num">
-                        {editRoster
-                          ? <input className="pg-input" type="number" min="0" max="100" step="1" style={{ width: 52, padding: "4px 6px" }} value={Math.round(p.rate * 100)} onChange={(e) => updatePerson(p.id, "rate", (e.target.value === "" ? 0 : Number(e.target.value)) / 100)} />
-                          : `${(p.rate * 100).toFixed(0)}%`}
-                      </td>
-                      <td className="right num"><b>{pc.base.toFixed(1)}</b></td>
-                      <td className="right num">{pc.allocatedTotal > 0 ? pc.allocatedTotal.toFixed(1) : "—"}</td>
-                      <td className="right num" style={{ color: pc.spare < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{pc.spare > 0 ? "+" : ""}{pc.spare.toFixed(1)}</td>
-                      {editRoster && <td><RosterMenu person={p} onUpdate={(field, value) => updatePerson(p.id, field, value)} aliasConflict={aliasConflicts.get(p.id)} /></td>}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </span>
+                      {editRoster ? (
+                        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <span className="pg-footnote" style={{ margin: 0 }}>Leaves</span>
+                          <input className="pg-input" type="number" min="0" step="any" style={{ width: 56, padding: "3px 6px" }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
+                        </span>
+                      ) : (
+                        <span className="pg-footnote" style={{ margin: 0 }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</span>
+                      )}
+                    </div>
+                    <div className="pg-bar-track">
+                      <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
+                    </div>
+                    <div className="pg-bar-track" style={{ marginTop: 4, height: 4, opacity: unbillableCapacity > 0 || overflow > 0 ? 1 : 0.35 }}>
+                      <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
+                    </div>
+                    {overflow > 0 && (
+                      <p className="pg-footnote" style={{ margin: "4px 0 0", color: "var(--status-over)" }}>
+                        {overflow.toFixed(1)} hrs over billable capacity — spilling into unbillable time ({unbillableCapacity.toFixed(1)} hrs available).
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
-          <p className="pg-footnote">Total Resource Hours and Public Holidays are calculated from {MONTH_LABELS[month]}'s actual weekdays and each person's state. Leaves and Billable Allocation are only editable in Edit mode; everything else recalculates automatically. A resignation date set via the ⋮ menu prorates that month's capacity to their last working day, and drops them from the roster entirely in later months.</p>
-
-          {editRoster && (
-            <AddPersonForm onAdd={addPerson} />
-          )}
+          <p className="pg-footnote">Green = within billable capacity, yellow = fully allocated, red = overallocated (excess falls into the unbillable bar below). Billable capacity includes hours received as support from others. Roster details (role, state, billable %, resignation dates, ClickUp aliases) now live in the Team module; leaves stay here since they're month-specific.</p>
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
