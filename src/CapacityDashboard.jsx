@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap, MoreVertical,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, isInternalFolder, normalizeName, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
+import { findMatch, multiFolderMatchesFor, isInternalFolder, normalizeName, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
 import { loadState, saveState } from "./capacityStore.js";
 
 /* ============================================================
@@ -206,16 +206,16 @@ export const SEED_CLIENTS = [
   C("c21", "Magain Real Estate", "Magain Real Estate", "Shreya", "Hourly", null, { "2026-01": 13.1, "2026-02": 8.8, "2026-03": 42.9, "2026-04": 24.0, "2026-05": 10.3, "2026-06": 7.6 }, { status: "active" }),
   C("c22", "Media Magnetix", "Media Magnetix", "Shreya", "Strategy", 0, null, { status: "archived", note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified, same standard applied to the Clients module." }),
 
-  C("c23", "Baintech", "Baintech", "Lucy", "Package", 38, null, { status: "active", history: [{ from: "2026-06", agreed: 32.0 }] }),
+  C("c23", "Baintech", "Baintech", "Lucy", "Package", 38, null, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Zero ClickUp folder activity found across the entire 13-month synced window (Jul 2025-Jul 2026), corroborating the PG Four Lists workbook note \"Offboarding planned for end Jun 2026 -- recommend confirming this went ahead as scheduled\"; mirrors the same status set on this client in the Supabase Clients module.", history: [{ from: "2026-06", agreed: 32.0 }] }),
   C("c24", "BAMSS / Childcare Sec Services", "BAMSS Childcare Security Services (Qld)", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 5.8, "2026-06": 13.9 }, { status: "active" }),
   C("c25", "Barclay Recruitment (Verity Cons)", "Barclay Recruitment", "Lucy", "Package", 27, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 14.9, "2026-06": 48.5 }, { status: "active" }),
-  C("c26", "Bridge to Best", "Bridge to Best", "Lucy", "Package", 10, null, { status: "active" }),
+  C("c26", "Bridge to Best", "Bridge to Best", "Lucy", "Package", 10, null, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Zero ClickUp folder activity found across the entire 13-month synced window (Jul 2025-Jul 2026), corroborating the PG Four Lists workbook note \"Offboarding planned for end Jun 2026 -- recommend confirming this went ahead as scheduled\"; mirrors the same status set on this client in the Supabase Clients module." }),
   C("c27", "By the Rules", "By the Rules", "Lucy", "Package", 5, null, { status: "active" }),
   C("c28", "Connection Central", "Connection Central", "Lucy", "Project", 25, null, { status: "inactive", offboardedFrom: "2026-05", offboardNote: "Project ended (source: Inactive Clients list, ~1 May 2026)" }),
   C("c29", "Cowie Environmental", "Cowie Environmental", "Lucy", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 31.7, "2026-05": 16.2, "2026-06": 33.5 }, { status: "active" }),
   C("c30", "CRA Construction", "CRA Construction", "Lucy", "Package", 24, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 7.8, "2026-05": 25.7, "2026-06": 23.5 }, { status: "active" }),
   C("c31", "Mary Di Marco – Ray White", "Mary Di Marco - Ray White (Qld)", "Lucy", "Package", 11, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 6.4, "2026-06": 11.5 }, { status: "active", history: [{ from: "2026-06", agreed: 6 }] }),
-  C("c32", "Plumbaround", "Plumbaround", "Lucy", "Package", 16, null, { status: "active" }),
+  C("c32", "Plumbaround", "Plumbaround", "Lucy", "Package", 16, null, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Zero ClickUp folder activity found across the entire 13-month synced window (Jul 2025-Jul 2026), corroborating the PG Four Lists workbook note \"Offboarding planned for end Jun 2026 -- recommend confirming this went ahead as scheduled\"; mirrors the same status set on this client in the Supabase Clients module." }),
   C("c33", "Sunfresh Linen", "Sunfresh Linen", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0.3, "2026-04": 22.6, "2026-05": 21.7, "2026-06": 32.9 }, { status: "active" }),
 
   C("c34", "Bee Squared Consulting", "Bee Squared", "Holly", "Package", 24, { "2026-01": 29.1, "2026-02": 25.7, "2026-03": 24.4, "2026-04": 13.4, "2026-05": 30.1, "2026-06": 29.4 }, { status: "active", history: [{ from: "2025-07", agreed: 24.0 }] }),
@@ -634,6 +634,23 @@ function CapacityDashboardInner() {
     const folderList = [...folders];
     const groups = [...new Set(clients.map((c) => c.group))];
     for (const group of groups) {
+      // Some clients run their real work across several sibling ClickUp folders (Aus3C's
+      // training programs, Magain's ~20 individual-agent folders, etc.) rather than one
+      // umbrella folder -- sum minutes across all of them per month instead of picking a
+      // single best-match folder, which was silently undercounting these clients' actuals.
+      const multi = multiFolderMatchesFor(group, folderList);
+      if (multi && multi.length) {
+        const byMonth = new Map();
+        for (const f of multi) {
+          const fm = perFolderMonth.get(f);
+          if (!fm) continue;
+          for (const [mk, min] of fm) byMonth.set(mk, (byMonth.get(mk) || 0) + min);
+        }
+        if (byMonth.size === 0) continue;
+        const totalMin = [...byMonth.values()].reduce((a, b) => a + b, 0);
+        result.set(group, { avgHours: (totalMin / 60) / byMonth.size, matchedFolder: `${multi.length} folders`, monthsCounted: byMonth.size, confidence: 1 });
+        continue;
+      }
       const match = findMatch(group, folderList);
       if (!match) continue;
       const byMonth = perFolderMonth.get(match.name);
@@ -968,7 +985,7 @@ function CapacityDashboardInner() {
                             const { demand, avg, isOverridden, isDynamic, dyn } = demandForGroup(g.group, g.rows, month);
                             return (
                               <tr key={g.group}>
-                                <td>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}</td>
+                                <td>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !multiFolderMatchesFor(r.group, [...realFolderSet])?.length && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}</td>
                                 <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
                                 <td className="right num">{fmt(agreedAt(r, month))}</td>
                                 <td className="right num">
@@ -1018,7 +1035,7 @@ function CapacityDashboardInner() {
                                 const { demand, avg, isOverridden } = demandFor(r, month);
                                 return (
                                   <tr key={r.id}>
-                                    <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}</td>
+                                    <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !multiFolderMatchesFor(r.group, [...realFolderSet])?.length && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}</td>
                                     <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
                                     <td className="right num">{fmt(agreedAt(r, month))}</td>
                                     <td className="right num">{fmt(avg)}</td>

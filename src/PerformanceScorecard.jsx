@@ -4,7 +4,7 @@ import {
   Search, Download, ChevronDown, Plus, X, Users,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, findPersonMatch, isInternalFolder, basisToClientType, dominantClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
+import { findMatch, multiFolderMatchesFor, findPersonMatch, isInternalFolder, basisToClientType, dominantClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
 import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey, agreedAt } from "./CapacityDashboard.jsx";
 
 const CLICKUP_DB_KEY = "clickup";
@@ -327,6 +327,23 @@ function PerformanceInner() {
     }
     const folderList = [...folders];
     groups.forEach((g) => {
+      // Some clients (Aus3C, Clarke Energy, Magain, etc.) run real work across several
+      // sibling ClickUp folders instead of one umbrella folder -- sum all of them per
+      // month rather than picking a single best-match folder, which silently undercounted
+      // these clients everywhere actuals get computed from ClickUp data.
+      const multi = multiFolderMatchesFor(g.group, folderList);
+      if (multi && multi.length) {
+        const byMonth = new Map();
+        for (const f of multi) {
+          const fm = folderMonth.get(f);
+          if (!fm) continue;
+          for (const [mk, min] of fm) byMonth.set(mk, (byMonth.get(mk) || 0) + min);
+        }
+        const monthHours = new Map();
+        activeMonths.forEach((m) => monthHours.set(m, (byMonth.get(m) || 0) / 60));
+        result.set(g.group, { matchedFolder: `${multi.length} folders`, confidence: 1, monthHours });
+        return;
+      }
       const match = findMatch(g.group, folderList);
       if (!match) return;
       const byMonth = folderMonth.get(match.name) || new Map();

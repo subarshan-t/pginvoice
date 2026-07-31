@@ -4,7 +4,7 @@
 import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient.js";
 import { fetchClickupFromSupabase } from "./clickupSync.js";
-import { findMatch, isInternalFolder } from "./nameMatch.js";
+import { findMatch, multiFolderMatchesFor, isInternalFolder } from "./nameMatch.js";
 import { fetchClients, fetchClientEvents, typeForMonth } from "./clientsSync.js";
 
 const PAGE_SIZE = 1000;
@@ -132,8 +132,23 @@ export async function recomputeAccruals(clients) {
   for (const c of nextClients) {
     const profile = profileByClient.get(c.client);
     if (!profile) continue; // no client profile on file — nothing to compute against
-    const match = findMatch(c.client, folderNames);
-    const folderMinutes = match ? workedByFolderMonth.get(match.name) : null;
+    // Some clients (Aus3C, Clarke Energy, Magain, etc.) log real work across several
+    // sibling ClickUp folders instead of one umbrella folder -- sum minutes across all of
+    // them per month rather than picking a single best-match folder, which was silently
+    // undercounting these clients' accruals.
+    const multi = multiFolderMatchesFor(c.client, folderNames);
+    let folderMinutes = null;
+    if (multi && multi.length) {
+      folderMinutes = new Map();
+      for (const f of multi) {
+        const fm = workedByFolderMonth.get(f);
+        if (!fm) continue;
+        for (const [mk, min] of fm) folderMinutes.set(mk, (folderMinutes.get(mk) || 0) + min);
+      }
+    } else {
+      const match = findMatch(c.client, folderNames);
+      folderMinutes = match ? workedByFolderMonth.get(match.name) : null;
+    }
 
     const existingMonths = Object.keys(c.months).sort();
     const startMonth = existingMonths.length ? existingMonths[0] : (profile.startDate ? profile.startDate.slice(0, 7) : cur);

@@ -105,6 +105,39 @@ export function dominantClientType(rows) {
   return basisToClientType(dominant.basis);
 }
 
+// A handful of clients run their ClickUp work across several sibling project folders
+// instead of one umbrella folder per client (e.g. Aus3C's cyber-training programs each
+// get their own folder: "Aus3C Cyber Battle", "Aus3C IRAP", ...). The single-best-match
+// findMatch() above only ever picks ONE folder for a client, so these clients' real hours
+// were being silently undercounted everywhere actuals are computed from ClickUp data —
+// Capacity Planning, Performance, and Client Accruals alike. Prefix rules (rather than a
+// fixed, manually-maintained folder list) so a brand-new sub-project folder is picked up
+// automatically the next time it's synced, without another code change.
+// Keyed by a normalized substring that identifies the client regardless of which system's
+// exact display name is passed in (SEED_CLIENTS vs pginvoice_clients spell some of these
+// differently).
+const MULTI_FOLDER_CLIENTS = [
+  { key: "apex comm", prefixes: ["apex comms "] },
+  { key: "aus3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
+  { key: "aus 3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
+  { key: "clarke energy", prefixes: ["cea "], exact: ["clarke energy"] },
+  { key: "magain", prefixes: ["magain "] },
+  { key: "majestic plumbing", prefixes: ["majestic plumbing", "mp "] },
+];
+
+// Returns every real ClickUp folder belonging to a multi-folder client, or null if `name`
+// isn't one of them (meaning the caller should fall back to plain findMatch instead).
+export function multiFolderMatchesFor(name, allFolders) {
+  const norm = normalizeName(name);
+  const rule = MULTI_FOLDER_CLIENTS.find((r) => norm.includes(r.key));
+  if (!rule) return null;
+  return allFolders.filter((f) => {
+    const nf = normalizeName(f);
+    if (rule.exact && rule.exact.includes(nf)) return true;
+    return rule.prefixes.some((p) => nf.startsWith(p));
+  });
+}
+
 // Internal / non-revenue folders (per the billable-hours guide, §3.1): onboarding/
 // offboarding/handover/WIP trackers. "Purple Giraffe" is NOT internal — it's the
 // ClickUp account DMA (Digital Marketing Adelaide) logs time under, and its hours
