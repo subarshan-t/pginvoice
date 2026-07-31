@@ -368,7 +368,12 @@ function PerformanceInner() {
   // range — an offboarded client with zero matched activity in the period is just noise.
   function groupIsActiveOrLogged(g) {
     if (!latestMonth) return true;
-    const stillActive = g.rows.some((r) => !r.offboardedFrom || r.offboardedFrom > latestMonth);
+    // "archived" (unverified -- no documentation support, not a confirmed offboard) never
+    // counts as unconditionally active on its own -- it only earns a place if it actually
+    // logged real hours somewhere in the range, same as an offboarded client past its date.
+    // A confirmed-inactive client with an offboardedFrom date still counts as active for
+    // months before that date, since it genuinely was.
+    const stillActive = g.rows.some((r) => r.status !== "archived" && (!r.offboardedFrom || r.offboardedFrom > latestMonth));
     if (stillActive) return true;
     const cm = clientMonthly.get(g.group);
     return !!cm && activeMonths.some((m) => (cm.monthHours.get(m) || 0) > 0);
