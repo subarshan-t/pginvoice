@@ -94,13 +94,13 @@ async function resolveTeamId(token: string, explicitTeamId: string | undefined) 
   return String(team.id);
 }
 
-// Folder name resolution is the one field we couldn't verify live against a
-// real workspace while building this (this session's ClickUp connector points
-// at an unrelated test workspace) — check the several plausible shapes
-// `include_location_names=true` might use, and fall back rather than crash.
-// If real folder names come through wrong on the first live sync, check
-// `raw_sample` in this function's response / the edge function logs and
-// adjust the field path here.
+// Confirmed live (2026-07-31) against a raw sample from the real workspace: normal
+// entries carry `task_location.folder_name` when `include_location_names=true` — that
+// path is correct. But ClickUp also allows tracking time with no task selected at all
+// (a bare "start timer" / manually-added entry not linked to anything) — those come
+// back with `task` as the literal string "0" and no `task_location` object whatsoever,
+// not just a missing folder name. There is no folder to resolve for those; "(No folder)"
+// is the honest answer, not a fallback masking a wrong field path.
 function resolveFolderName(entry: any): string {
   return (
     entry.task_location?.folder_name ??
@@ -109,8 +109,13 @@ function resolveFolderName(entry: any): string {
     "(No folder)"
   );
 }
+// A task-less entry (see resolveFolderName's comment) has no `task.name` either, but it
+// does carry the user's own free-text `description` ("Email (Hayley) & Export", etc) --
+// showing that instead of a generic "Untitled" is the difference between being able to
+// tell these apart and having hundreds of hours of genuinely different work collapse
+// into one indistinguishable bucket.
 function resolveTaskName(entry: any): string {
-  return entry.task?.name || "Untitled";
+  return entry.task?.name || (typeof entry.description === "string" && entry.description.trim()) || "Untitled (no task selected)";
 }
 function resolveUserName(entry: any): string {
   return entry.user?.username || entry.user?.email || "";
