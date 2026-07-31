@@ -484,6 +484,20 @@ export default function PGReconciliation() {
     byGroup.forEach((rows, group) => result.set(group, dominantClientType(rows)));
     return result;
   }, [capClients]);
+  // A group is offboarded once every sub-project/row under it is inactive — as long as
+  // even one row is still active, the group as a whole is still live. offboardedFrom is
+  // the latest of its rows' dates, since that's when the last bit of work actually stopped.
+  const capOffboardedByGroup = useMemo(() => {
+    const byGroup = new Map();
+    capClients.forEach((c) => { if (!byGroup.has(c.group)) byGroup.set(c.group, []); byGroup.get(c.group).push(c); });
+    const result = new Map();
+    byGroup.forEach((rows, group) => {
+      if (!rows.every((r) => r.status === "inactive")) return;
+      const dates = rows.map((r) => r.offboardedFrom).filter(Boolean).sort();
+      result.set(group, { offboardedFrom: dates.length ? dates[dates.length - 1] : null, note: rows.find((r) => r.offboardNote)?.offboardNote || "" });
+    });
+    return result;
+  }, [capClients]);
   const capGroupNames = useMemo(() => [...capTypeByGroup.keys()], [capTypeByGroup]);
 
   // Restore the uploaded data and filters from a previous session. The parsed CSV can run
@@ -760,10 +774,13 @@ export default function PGReconciliation() {
       // is reflected here automatically next time this recomputes.
       const capMatch = findMatch(c.name, capGroupNames);
       clientObj.isMap = capMatch ? capTypeByGroup.get(capMatch.name) === "map" : false;
+      const offboarded = capMatch ? capOffboardedByGroup.get(capMatch.name) : null;
+      clientObj.isOffboarded = !!offboarded && (!dataMonthKey || !offboarded.offboardedFrom || dataMonthKey >= offboarded.offboardedFrom);
+      clientObj.offboardNote = offboarded?.note || "";
       out.push(clientObj);
     }
     return out;
-  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked, capGroupNames, capTypeByGroup]);
+  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked, capGroupNames, capTypeByGroup, capOffboardedByGroup]);
 
   // counts by type — "map" counts c.isMap (an overlay tag), not c.type, since a MAP
   // client keeps whatever c.type its own package/hourly classification landed on.
@@ -1289,6 +1306,7 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
         <button onClick={onToggle} className="pg-client__name" aria-expanded={open}>
           {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           {c.displayName}
+          {c.isOffboarded && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 6 }} title={c.offboardNote}>[Offboarded]</span>}
         </button>
         {c.matched && c.accruedClient.name !== c.name && (
           <span className="pg-client__linked">
