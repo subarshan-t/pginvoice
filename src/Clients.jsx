@@ -161,6 +161,7 @@ export default function Clients() {
           <select className="pg-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="active">Active</option>
             <option value="offboarded">Offboarded</option>
+            <option value="archived">Archived (unverified)</option>
             <option value="all">All</option>
           </select>
         </label>
@@ -189,7 +190,10 @@ export default function Clients() {
                   <td>{c.consultant || "—"}</td>
                   <td>{c.startDate || "—"}</td>
                   <td>{c.endDate || "—"}</td>
-                  <td>{c.status === "offboarded" ? <span className="pg-tag pg-tag--muted">Offboarded</span> : ""}</td>
+                  <td>
+                    {c.status === "offboarded" && <span className="pg-tag pg-tag--muted">Offboarded</span>}
+                    {c.status === "archived" && <span className="pg-tag pg-tag--muted" title="Not found in any of the PG Four Lists (Active/Inactive/Hours Changed/Type Changed) as of the 31 Jul 2026 refresh -- status unverified, needs manual confirmation.">Archived (unverified)</span>}
+                  </td>
                   <td><button className="pg-btn" onClick={() => setOpenModify(openModify === c.client ? null : c.client)}>Modify</button></td>
                 </tr>
                 {openModify === c.client && (
