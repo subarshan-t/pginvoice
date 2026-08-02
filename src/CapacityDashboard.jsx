@@ -366,7 +366,7 @@ class ErrorBoundary extends React.Component {
 /* ============================================================
    MAIN COMPONENT
 ============================================================ */
-function CapacityDashboardInner() {
+function CapacityDashboardInner({ onNavigateTeam }) {
   const [loaded, setLoaded] = useState(false);
   const [people, setPeople] = useState(SEED_PEOPLE);
   const [clients, setClients] = useState(SEED_CLIENTS);
@@ -1122,21 +1122,27 @@ function CapacityDashboardInner() {
           <div className="pg-table-wrap" style={{ marginTop: 14 }}>
             <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
               <span>Capacity utilization</span>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ position: "relative" }}>
-                  <Search size={11} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--fg-tertiary)" }} />
-                  <input
-                    className="pg-input"
-                    style={{ width: 160, padding: "5px 8px 5px 24px", fontSize: 12 }}
-                    placeholder="Search consultant…"
-                    value={qRoster}
-                    onChange={(e) => setQRoster(e.target.value)}
-                  />
-                </div>
-                <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit leaves</>}</button>
-              </div>
+              {onNavigateTeam && <button className="pg-btn-ghost" onClick={onNavigateTeam}>Go to team</button>}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+              <div style={{ position: "relative", flex: 1 }}>
+                <Search size={11} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--fg-tertiary)" }} />
+                <input
+                  className="pg-input"
+                  style={{ width: "100%", padding: "5px 8px 5px 24px", fontSize: 12 }}
+                  placeholder="Search consultant…"
+                  value={qRoster}
+                  onChange={(e) => setQRoster(e.target.value)}
+                />
+              </div>
+              <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit leaves</>}</button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "88px 1fr 110px", columnGap: 16, marginTop: 16 }}>
+              <div />
+              <div className="pg-footnote" style={{ margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>Billable</div>
+              <div className="pg-footnote" style={{ margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>Non-billable</div>
+
               {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
                 const pc = personCalc[p.name];
                 const pm = peopleMap[p.name];
@@ -1149,38 +1155,38 @@ function CapacityDashboardInner() {
                 const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "ok";
                 const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-warn)" : "var(--status-ok)";
                 return (
-                  <div key={p.id}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                      <span style={{ fontFamily: "var(--font-body)", fontSize: 12.5 }}>
-                        {p.name} <span className="pg-tag" style={{ color: p.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 4 }}>[{p.role[0]}]</span>
-                        {pm.resigningThisMonth && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[resigns {p.resignationDate}]</span>}
-                      </span>
+                  <React.Fragment key={p.id}>
+                    <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", fontFamily: "var(--font-body)", fontSize: 12.5, paddingTop: 10 }}>
+                      {p.name}
+                      {pm.resigningThisMonth && <span className="pg-tag pg-tag--muted" style={{ marginTop: 2 }}>[resigns {p.resignationDate}]</span>}
+                    </div>
+                    <div style={{ paddingTop: 10 }}>
+                      <div className="pg-bar-track">
+                        <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
+                      </div>
                       {editRoster ? (
-                        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
                           <span className="pg-footnote" style={{ margin: 0 }}>Leaves</span>
                           <input className="pg-input" type="number" min="0" step="any" style={{ width: 56, padding: "3px 6px" }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
                         </span>
                       ) : (
-                        <span className="pg-footnote" style={{ margin: 0 }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</span>
+                        <p className="pg-footnote" style={{ margin: "4px 0 0" }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</p>
                       )}
                     </div>
-                    <div className="pg-bar-track">
-                      <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
+                    <div style={{ paddingTop: 10 }}>
+                      <div className="pg-bar-track">
+                        <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
+                      </div>
+                      {overflow > 0 && (
+                        <p className="pg-footnote" style={{ margin: "4px 0 0", color: "var(--status-over)" }}>{overflow.toFixed(1)} hrs over</p>
+                      )}
                     </div>
-                    <div className="pg-bar-track" style={{ marginTop: 4, height: 4, opacity: unbillableCapacity > 0 || overflow > 0 ? 1 : 0.35 }}>
-                      <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
-                    </div>
-                    {overflow > 0 && (
-                      <p className="pg-footnote" style={{ margin: "4px 0 0", color: "var(--status-over)" }}>
-                        {overflow.toFixed(1)} hrs over billable capacity — spilling into unbillable time ({unbillableCapacity.toFixed(1)} hrs available).
-                      </p>
-                    )}
-                  </div>
+                  </React.Fragment>
                 );
               })}
             </div>
           </div>
-          <p className="pg-footnote">Green = within billable capacity, yellow = fully allocated, red = overallocated (excess falls into the unbillable bar below). Billable capacity includes hours received as support from others. Roster details (role, state, billable %, resignation dates, ClickUp aliases) now live in the Team module; leaves stay here since they're month-specific.</p>
+          <p className="pg-footnote">Green = within billable capacity, yellow = fully allocated, red = overallocated (excess falls into the non-billable bar). Billable capacity includes hours received as support from others. Roster details (role, state, billable %, resignation dates, ClickUp aliases) now live in the Team module; leaves stay here since they're month-specific.</p>
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1233,10 +1239,10 @@ function CapacityDashboardInner() {
   );
 }
 
-export default function CapacityDashboard() {
+export default function CapacityDashboard({ onNavigateTeam }) {
   return (
     <ErrorBoundary>
-      <CapacityDashboardInner />
+      <CapacityDashboardInner onNavigateTeam={onNavigateTeam} />
     </ErrorBoundary>
   );
 }
