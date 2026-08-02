@@ -11,9 +11,9 @@ import { fetchClients as fetchPgClients, createClient as createPgClient, createC
 /* ============================================================
    MONTHS / CONSTANTS
 ============================================================ */
-const MONTHS = ["2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"];
-const CURRENT_MONTH = "2026-07";
-const MONTH_LABELS = { "2025-12": "Dec 25", "2026-01": "Jan 26", "2026-02": "Feb 26", "2026-03": "Mar 26", "2026-04": "Apr 26", "2026-05": "May 26", "2026-06": "Jun 26", "2026-07": "Jul 26", "2026-08": "Aug 26", "2026-09": "Sep 26", "2026-10": "Oct 26", "2026-11": "Nov 26", "2026-12": "Dec 26" };
+export const MONTHS = ["2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"];
+export const CURRENT_MONTH = "2026-07";
+export const MONTH_LABELS = { "2025-12": "Dec 25", "2026-01": "Jan 26", "2026-02": "Feb 26", "2026-03": "Mar 26", "2026-04": "Apr 26", "2026-05": "May 26", "2026-06": "Jun 26", "2026-07": "Jul 26", "2026-08": "Aug 26", "2026-09": "Sep 26", "2026-10": "Oct 26", "2026-11": "Nov 26", "2026-12": "Dec 26" };
 
 // Real, named public holidays for SA/WA/QLD, weekdays only (weekend-falling holidays
 // with no substitute don't affect working-day capacity, so they're excluded here — e.g.
@@ -98,12 +98,33 @@ function publicHolidayDaysUpToDay(state, monthStr, throughDay) {
 // resignationDate ("YYYY-MM-DD"): fully active if unset or the resignation falls
 // in a later month; excluded entirely if it's an earlier month; active but capped
 // to their last working day if the resignation falls within this exact month.
-function resignationStatus(person, monthStr) {
+export function resignationStatus(person, monthStr) {
   if (!person.resignationDate) return { active: true, throughDay: null };
   const resignMonthKey = person.resignationDate.slice(0, 7);
   if (resignMonthKey > monthStr) return { active: true, throughDay: null };
   if (resignMonthKey < monthStr) return { active: false, throughDay: null };
   return { active: true, throughDay: Number(person.resignationDate.slice(8, 10)) };
+}
+
+// The single source of truth for a person's monthly capacity — used by both Capacity
+// Planning's peopleMap and the Team module's Availability list, so the two can never
+// silently drift onto different formulas for the same person/month.
+export function computeMonthlyAvailability(person, monthStr, leaveHrs) {
+  const status = resignationStatus(person, monthStr);
+  if (!status.active) return null; // resigned in an earlier month — not staff this month at all
+  const dailyHrs = person.contracted / 5;
+  const wd = weekdaysInMonth(monthStr);
+  const effectiveWeekdays = status.throughDay !== null ? weekdaysInMonthUpToDay(monthStr, status.throughDay) : wd;
+  const resourceHours = dailyHrs * effectiveWeekdays;         // Total Resource Hours (monthly, weekday-exact, prorated if resigning this month)
+  const holidayDays = status.throughDay !== null ? publicHolidayDaysUpToDay(person.state, monthStr, status.throughDay) : publicHolidayDays(person.state, monthStr);
+  const publicHolidayHrs = dailyHrs * holidayDays;            // Public Holidays (hrs lost, state-specific)
+  const totalMonthlyHours = Math.max(0, resourceHours - publicHolidayHrs - (leaveHrs || 0));
+  const billableHours = totalMonthlyHours * person.rate;      // Total Monthly Billable Capacity
+  const nonBillableHours = Math.max(0, totalMonthlyHours - billableHours);
+  return {
+    resourceHours, publicHolidayHrs, holidayDays, leaveHrs: leaveHrs || 0, totalMonthlyHours,
+    billableHours, nonBillableHours, resigningThisMonth: status.throughDay !== null,
+  };
 }
 // The 6 real calendar months ending with the current one, regardless of which month is
 // selected in the ledger — "average of the last 6 months" is a fixed, always-moving window,
@@ -475,22 +496,16 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   const leaveFor = (personId) => Number(leaves[`${personId}_${month}`] || 0);
   const setLeaveFor = (personId, hrs) => setLeaves((prev) => ({ ...prev, [`${personId}_${month}`]: hrs === "" ? 0 : Number(hrs) }));
 
-  /* ---------- capacity math ---------- */
+  /* ---------- capacity math ----------
+     Delegates the actual per-person formula to computeMonthlyAvailability, the same
+     function the Team module's Availability list calls — so this view and Team's can
+     never quietly compute different numbers for the same person/month. */
   const peopleMap = useMemo(() => {
     const m = {};
-    const wd = weekdaysInMonth(month);
     people.forEach((p) => {
-      const status = resignationStatus(p, month);
-      if (!status.active) return; // resigned in an earlier month — not staff this month at all
-      const dailyHrs = p.contracted / 5;
-      const effectiveWeekdays = status.throughDay !== null ? weekdaysInMonthUpToDay(month, status.throughDay) : wd;
-      const resourceHours = dailyHrs * effectiveWeekdays;         // Total Resource Hours (monthly, weekday-exact, prorated if resigning this month)
-      const holidayDays = status.throughDay !== null ? publicHolidayDaysUpToDay(p.state, month, status.throughDay) : publicHolidayDays(p.state, month);
-      const publicHolidayHrs = dailyHrs * holidayDays;            // Public Holidays (hrs lost, state-specific)
-      const leaveHrs = leaveFor(p.id);                            // Leaves (editable, hrs lost)
-      const totalMonthlyHours = Math.max(0, resourceHours - publicHolidayHrs - leaveHrs);
-      const monthly = totalMonthlyHours * p.rate;                 // Total Monthly Billable Capacity
-      m[p.name] = { ...p, resourceHours, publicHolidayHrs, holidayDays, leaveHrs, totalMonthlyHours, monthly, resigningThisMonth: status.throughDay !== null };
+      const avail = computeMonthlyAvailability(p, month, leaveFor(p.id));
+      if (!avail) return; // resigned in an earlier month — not staff this month at all
+      m[p.name] = { ...p, ...avail, monthly: avail.billableHours };
     });
     return m;
   }, [people, month, leaves]);
@@ -1149,7 +1164,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                 const capacity = pc.pool;               // billable capacity available to her, incl. help received
                 const allocated = pc.demand;              // client demand assigned to her
                 const overflow = Math.max(0, allocated - capacity);
-                const unbillableCapacity = Math.max(0, pm.totalMonthlyHours - pm.monthly);
+                const unbillableCapacity = pm.nonBillableHours;
                 const billablePct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : (allocated > 0 ? 100 : 0);
                 const unbillablePct = unbillableCapacity > 0 ? Math.min(100, (overflow / unbillableCapacity) * 100) : (overflow > 0 ? 100 : 0);
                 const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "ok";

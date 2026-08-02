@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Check, Pencil, Plus, X, MoreVertical, AlertTriangle, Search } from "lucide-react";
-import { SEED_PEOPLE, loadKey } from "./CapacityDashboard.jsx";
+import { Check, Pencil, Plus, X, MoreVertical, AlertTriangle, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { SEED_PEOPLE, loadKey, MONTHS, CURRENT_MONTH, MONTH_LABELS, computeMonthlyAvailability } from "./CapacityDashboard.jsx";
 import { normalizeName } from "./nameMatch.js";
 import { saveState } from "./capacityStore.js";
 import { PG_DATA_EVENT } from "./idbStore.js";
@@ -179,7 +179,21 @@ function TeamDashboardInner() {
   const [people, setPeople] = useState(SEED_PEOPLE);
   const [editing, setEditing] = useState(false);
   const [qRoster, setQRoster] = useState("");
+  const [month, setMonth] = useState(CURRENT_MONTH);
+  const [leaves, setLeaves] = useState({}); // key: `${personId}_${month}` -> hours, read-only mirror of Capacity Planning's
   const ownWrite = useRef(false); // suppress reloading our own save's echoed PG_DATA_EVENT
+
+  // Leaves are edited in Capacity Planning (they're tied to its month picker), but the
+  // Availability list below needs the same numbers Capacity Planning uses, so it mirrors
+  // that key here read-only, refreshing whenever Capacity Planning saves an edit.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => loadKey("cap_leaves", {}).then((v) => { if (!cancelled) setLeaves(v); });
+    load();
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === "cap_leaves") load(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
+  }, []);
 
   // Reads/writes the same "cap_people" key Capacity Planning uses (Supabase-backed via
   // capacityStore.js), so a person added, removed, or edited here is immediately reflected
@@ -241,6 +255,23 @@ function TeamDashboardInner() {
   }, [people]);
 
   const visiblePeople = people.filter((p) => !qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()));
+
+  // Active team members for the selected month, with their billable/non-billable
+  // availability — computed via computeMonthlyAvailability, the exact same function
+  // Capacity Planning's peopleMap calls, so the numbers here and there never drift.
+  const availability = useMemo(() => {
+    return people
+      .map((p) => {
+        const leaveHrs = Number(leaves[`${p.id}_${month}`] || 0);
+        const avail = computeMonthlyAvailability(p, month, leaveHrs);
+        return avail ? { person: p, ...avail } : null;
+      })
+      .filter(Boolean)
+      .filter((row) => !qRoster || row.person.name.toLowerCase().includes(qRoster.toLowerCase()));
+  }, [people, leaves, month, qRoster]);
+
+  const monthIdx = MONTHS.indexOf(month);
+  const shiftMonth = (d) => setMonth(MONTHS[Math.max(0, Math.min(MONTHS.length - 1, monthIdx + d))]);
 
   if (!loaded) {
     return <div className="pg-cap-container"><div className="pg-empty">Loading…</div></div>;
@@ -346,6 +377,44 @@ function TeamDashboardInner() {
       </div>
       {editing && <AddPersonForm onAdd={addPerson} />}
       <p className="pg-footnote">This roster is the shared source of truth for Capacity Planning and Performance — changes here take effect immediately in both. A resignation date set via the ⋮ menu prorates that month's capacity to their last working day, and drops them from later months. Leaves are month-specific and stay editable in Capacity Planning.</p>
+
+      <div className="pg-table-wrap" style={{ marginTop: 20 }}>
+        <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <span>Availability</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button className="pg-btn-ghost" style={{ padding: "5px 8px" }} onClick={() => shiftMonth(-1)} disabled={monthIdx === 0}><ChevronLeft size={12} /></button>
+            <span style={{ fontFamily: "var(--font-display)", fontSize: 14, minWidth: 60, textAlign: "center" }}>{MONTH_LABELS[month]}</span>
+            <button className="pg-btn-ghost" style={{ padding: "5px 8px" }} onClick={() => shiftMonth(1)} disabled={monthIdx === MONTHS.length - 1}><ChevronRight size={12} /></button>
+          </div>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+        <table className="pg-table" style={{ minWidth: 640 }}>
+          <thead>
+            <tr>
+              <th>Active team member</th>
+              <th className="right num">Monthly Hrs</th>
+              <th className="right num">Billable Hrs</th>
+              <th className="right num">Non-billable Hrs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {availability.length === 0 && <tr><td colSpan={4} className="empty">No active team members match this search for {MONTH_LABELS[month]}.</td></tr>}
+            {availability.map(({ person, totalMonthlyHours, billableHours, nonBillableHours, resigningThisMonth }) => (
+              <tr key={person.id}>
+                <td>
+                  {person.name} <span className="pg-tag" style={{ color: person.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 5 }}>[{person.role[0]}]</span>
+                  {resigningThisMonth && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[resigns {person.resignationDate}]</span>}
+                </td>
+                <td className="right num">{totalMonthlyHours.toFixed(1)}</td>
+                <td className="right num"><b>{billableHours.toFixed(1)}</b></td>
+                <td className="right num">{nonBillableHours.toFixed(1)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+      <p className="pg-footnote">Lists only team members active in {MONTH_LABELS[month]} (excludes anyone who resigned in an earlier month). Billable/Non-billable Hrs are this person's monthly capacity split by their billable %, before any client demand or support given/received is applied — Capacity Planning's Capacity Utilization view starts from these same numbers.</p>
     </div>
   );
 }
