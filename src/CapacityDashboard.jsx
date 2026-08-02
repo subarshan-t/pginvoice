@@ -1139,7 +1139,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
               <span>Capacity utilization</span>
               {onNavigateTeam && <button className="pg-btn-ghost" onClick={onNavigateTeam}>Go to team</button>}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, maxWidth: 480 }}>
               <div style={{ position: "relative", flex: 1 }}>
                 <Search size={11} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--fg-tertiary)" }} />
                 <input
@@ -1150,58 +1150,58 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                   onChange={(e) => setQRoster(e.target.value)}
                 />
               </div>
-              <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit leaves</>}</button>
+              <button className="pg-btn-ghost" style={{ padding: "5px 8px", fontSize: 11 }} onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "88px 1fr 110px", columnGap: 16, marginTop: 16 }}>
-              <div />
-              <div className="pg-footnote" style={{ margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>Billable</div>
-              <div className="pg-footnote" style={{ margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>Non-billable</div>
-
-              {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
-                const pc = personCalc[p.name];
-                const pm = peopleMap[p.name];
-                const capacity = pc.pool;               // billable capacity available to her, incl. help received
-                const allocated = pc.demand;              // client demand assigned to her
-                const overflow = Math.max(0, allocated - capacity);
-                const unbillableCapacity = pm.nonBillableHours;
-                const billablePct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : (allocated > 0 ? 100 : 0);
-                const unbillablePct = unbillableCapacity > 0 ? Math.min(100, (overflow / unbillableCapacity) * 100) : (overflow > 0 ? 100 : 0);
-                const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "ok";
-                const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-warn)" : "var(--status-ok)";
-                return (
-                  <React.Fragment key={p.id}>
-                    <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", fontFamily: "var(--font-body)", fontSize: 12.5, paddingTop: 10 }}>
-                      {p.name}
-                      {pm.resigningThisMonth && <span className="pg-tag pg-tag--muted" style={{ marginTop: 2 }}>[resigns {p.resignationDate}]</span>}
-                    </div>
-                    <div style={{ paddingTop: 10 }}>
-                      <div className="pg-bar-track">
+            <div style={{ maxWidth: 480 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "76px 120px 78px 60px", columnGap: 10, marginTop: 14 }}>
+                <div />
+                <div className="pg-footnote" style={{ margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>Billable</div>
+                <div />
+                <div className="pg-footnote" style={{ margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>Non-bill.</div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p, i) => {
+                  const pc = personCalc[p.name];
+                  const pm = peopleMap[p.name];
+                  const capacity = pc.pool;               // billable capacity available to her, incl. help received
+                  const allocated = pc.demand;              // client demand assigned to her
+                  const overflow = Math.max(0, allocated - capacity);
+                  const unbillableCapacity = pm.nonBillableHours;
+                  const billablePct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : (allocated > 0 ? 100 : 0);
+                  const unbillablePct = unbillableCapacity > 0 ? Math.min(100, (overflow / unbillableCapacity) * 100) : (overflow > 0 ? 100 : 0);
+                  const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "ok";
+                  const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-warn)" : "var(--status-ok)";
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        display: "grid", gridTemplateColumns: "76px 120px 78px 60px", columnGap: 10, alignItems: "center",
+                        padding: "5px 0", borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)",
+                      }}
+                    >
+                      <div style={{ fontFamily: "var(--font-body)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.name}>
+                        {p.name}
+                        {pm.resigningThisMonth && <AlertTriangle size={10} style={{ marginLeft: 4, verticalAlign: -1, color: "var(--status-warn)" }} />}
+                      </div>
+                      <div className="pg-bar-track" style={{ height: 5, margin: 0 }}>
                         <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
                       </div>
                       {editRoster ? (
-                        <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
-                          <span className="pg-footnote" style={{ margin: 0 }}>Leaves</span>
-                          <input className="pg-input" type="number" min="0" step="any" style={{ width: 56, padding: "3px 6px" }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
-                        </span>
+                        <input className="pg-input" type="number" min="0" step="any" style={{ width: "100%", padding: "2px 5px", fontSize: 11 }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} title="Leave hrs" />
                       ) : (
-                        <p className="pg-footnote" style={{ margin: "4px 0 0" }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</p>
+                        <span className="pg-footnote" style={{ margin: 0, whiteSpace: "nowrap" }}>{allocated.toFixed(0)}/{capacity.toFixed(0)}h</span>
                       )}
-                    </div>
-                    <div style={{ paddingTop: 10 }}>
-                      <div className="pg-bar-track">
+                      <div className="pg-bar-track" style={{ height: 5, margin: 0 }} title={overflow > 0 ? `${overflow.toFixed(1)} hrs over` : undefined}>
                         <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
                       </div>
-                      {overflow > 0 && (
-                        <p className="pg-footnote" style={{ margin: "4px 0 0", color: "var(--status-over)" }}>{overflow.toFixed(1)} hrs over</p>
-                      )}
                     </div>
-                  </React.Fragment>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
-          <p className="pg-footnote">Green = within billable capacity, yellow = fully allocated, red = overallocated (excess falls into the non-billable bar). Billable capacity includes hours received as support from others. Roster details (role, state, billable %, resignation dates, ClickUp aliases) now live in the Team module; leaves stay here since they're month-specific.</p>
+          <p className="pg-footnote">Green = within billable capacity, yellow = fully allocated, red = overallocated (excess falls into the non-billable bar — hover it for the exact overrun). "x/yh" = allocated vs. billable capacity hours; in edit mode that column becomes a leave-hours input. Roster details (role, state, billable %, resignation dates, ClickUp aliases) now live in the Team module.</p>
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
