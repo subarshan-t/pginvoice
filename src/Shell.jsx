@@ -168,7 +168,7 @@ export default function Shell() {
             etc). Hiding with CSS instead of conditional rendering keeps that
             state alive across tab switches. */}
         <div style={{ display: active === "overview" ? "block" : "none" }}><Overview /></div>
-        <div style={{ display: active === "invoicing" ? "block" : "none" }}><PGReconciliation /></div>
+        <div style={{ display: active === "invoicing" ? "block" : "none" }}><PGReconciliation onNavigateClients={() => setActive("clients")} /></div>
         <div style={{ display: active === "capacity" ? "block" : "none" }}><CapacityDashboard onNavigateTeam={() => setActive("team")} /></div>
         <div style={{ display: active === "team" ? "block" : "none" }}><TeamDashboard /></div>
         <div style={{ display: active === "performance" ? "block" : "none" }}><PerformanceScorecard /></div>

@@ -3,8 +3,8 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import {
   Upload, Copy, Check, ChevronDown, ChevronRight, Download, Search,
-  AlertTriangle, Link2, FileSpreadsheet, FileText, Printer, Users, ArrowUpDown, BarChart3,
-  RefreshCw, Wifi, WifiOff, X,
+  AlertTriangle, Link2, FileSpreadsheet, FileText, Printer, Users, ArrowUpDown, BarChart3, Clock,
+  RefreshCw, Wifi, WifiOff, X, ArrowLeft, MoreVertical, TrendingUp, TrendingDown,
 } from "lucide-react";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
@@ -460,7 +460,7 @@ const VIEWSTATE_KEY = "pg-view-state-v1";
 const MISMATCH_TOLERANCE_H = 0.2;
 
 // ================================ COMPONENT =================================
-export default function PGReconciliation() {
+export default function PGReconciliation({ onNavigateClients }) {
   const [clickup, setClickup] = useState(null);
   const [accrued, setAccrued] = useState(null);
   const [invoiceMonth, setInvoiceMonth] = useState("");
@@ -754,32 +754,38 @@ export default function PGReconciliation() {
 
   const accruedNames = useMemo(() => (accrued ? accrued.clients.map((c) => c.name) : []), [accrued]);
 
-  // billable, non-internal minutes per folder for the PRIOR month specifically (not the
-  // selected reporting month) — only populated when the export actually covers that period,
-  // so this can independently re-derive what the prior month's ending balance would be from
-  // current ClickUp data, to cross-check against what the accrued sheet already has recorded
-  // for it. Returns null when the export doesn't cover that month at all (nothing to check).
-  const priorMonthWorked = useMemo(() => {
-    if (!clickup || !priorMonthKey) return null;
+  // billable, non-internal minutes per folder for a given month — used to independently
+  // re-derive what that month's ending balance would be from current ClickUp data, to
+  // cross-check against what the accrued sheet already has recorded for it. Parametrized
+  // (rather than reading priorMonthKey directly) so the KPI trend comparison below can
+  // run this same check for the month before priorMonthKey too. Returns null when the
+  // export doesn't cover that month at all (nothing to check).
+  const computeMonthWorked = useCallback((monthKey) => {
+    if (!clickup || !monthKey) return null;
     const byFolder = new Map();
     let covered = false;
     for (const r of clickup.rows) {
-      if (r.monthKey === priorMonthKey) covered = true; else continue;
+      if (r.monthKey === monthKey) covered = true; else continue;
       if (clickup.hasBillable && billableOnly && !r.billable) continue;
       if (r.isInternal) continue;
       byFolder.set(r.folder, (byFolder.get(r.folder) || 0) + r.minutes);
     }
     return covered ? byFolder : null;
-  }, [clickup, priorMonthKey, billableOnly]);
+  }, [clickup, billableOnly]);
+  const priorMonthWorked = useMemo(() => computeMonthWorked(priorMonthKey), [computeMonthWorked, priorMonthKey]);
 
-  // per-client aggregation, WITHOUT consultant filter (this is the base data)
-  const clients = useMemo(() => {
+  // Full per-client reconciliation, parametrized by (monthKey, priorKey) instead of
+  // reading dataMonthKey/priorMonthKey directly — so the KPI trend row below can call
+  // this exact same logic for the previous month too, instead of a separate, drift-prone
+  // copy of the classification/matching pipeline. WITHOUT consultant filter (base data).
+  const buildClientsForMonth = useCallback((monthKey, priorKey) => {
     if (!clickup) return [];
+    const monthWorked = computeMonthWorked(priorKey);
     const map = new Map();
     for (const r of clickup.rows) {
       if (clickup.hasBillable && billableOnly && !r.billable) continue;
       if (r.isInternal) continue;
-      if (dataMonthKey && r.monthKey && r.monthKey !== dataMonthKey) continue;
+      if (monthKey && r.monthKey && r.monthKey !== monthKey) continue;
       if (!map.has(r.folder))
         map.set(r.folder, { name: r.folder, totalMin: 0, tasksAll: new Map(), userMinutes: new Map(), tasksByUser: new Map(), taskUsers: new Map(), taskIds: new Map() });
       const c = map.get(r.folder);
@@ -820,7 +826,7 @@ export default function PGReconciliation() {
         }
       }
       const pkg = accruedClient?.package ?? null;
-      const priorBalance = accruedClient && priorMonthKey ? (accruedClient.balances[priorMonthKey] ?? null) : null;
+      const priorBalance = accruedClient && priorKey ? (accruedClient.balances[priorKey] ?? null) : null;
       let newBalance = null, remaining = null, kpiPct = null, status = "no-pkg";
       if (pkg !== null && pkg > 0) {
         const prior = priorBalance ?? 0;
@@ -836,9 +842,9 @@ export default function PGReconciliation() {
       // ClickUp data we have for that month right now. A mismatch usually means ClickUp
       // entries were edited after the accrued sheet was last updated for that period.
       let priorMismatch = null;
-      if (pkg !== null && pkg > 0 && priorBalance !== null && priorMonthWorked) {
-        const priorWorkedH = (priorMonthWorked.get(c.name) || 0) / 60;
-        const priorPriorBalance = accruedClient.balances[prevMonthKeyStr(priorMonthKey)] ?? 0;
+      if (pkg !== null && pkg > 0 && priorBalance !== null && monthWorked) {
+        const priorWorkedH = (monthWorked.get(c.name) || 0) / 60;
+        const priorPriorBalance = accruedClient.balances[prevMonthKeyStr(priorKey)] ?? 0;
         const recomputed = priorWorkedH - pkg + priorPriorBalance;
         if (Math.abs(recomputed - priorBalance) > MISMATCH_TOLERANCE_H) {
           priorMismatch = { sheetValue: priorBalance, recomputed };
@@ -862,8 +868,8 @@ export default function PGReconciliation() {
         const m = findMatch(c.name, pgClientNames);
         return m ? pgClientByName.get(m.name) : null;
       })();
-      if (pgProfile && dataMonthKey) {
-        const seg = typeForMonth(pgProfile, pgClientEvents, dataMonthKey);
+      if (pgProfile && monthKey) {
+        const seg = typeForMonth(pgProfile, pgClientEvents, monthKey);
         if (seg?.type) {
           clientObj.type = seg.type;
           // Only worth flagging as a transition when it actually changed something from
@@ -904,13 +910,25 @@ export default function PGReconciliation() {
       const capMatch = findMatch(c.name, capGroupNames);
       clientObj.isMap = capMatch ? capTypeByGroup.get(capMatch.name) === "map" : false;
       const offboarded = capMatch ? capOffboardedByGroup.get(capMatch.name) : null;
-      clientObj.isOffboarded = !!offboarded && (!dataMonthKey || !offboarded.offboardedFrom || dataMonthKey >= offboarded.offboardedFrom);
+      clientObj.isOffboarded = !!offboarded && (!monthKey || !offboarded.offboardedFrom || monthKey >= offboarded.offboardedFrom);
       clientObj.offboardNote = offboarded?.note || "";
       if (!clientObj.capGroup && capMatch) clientObj.capGroup = capMatch.name;
       out.push(clientObj);
     }
     return out;
-  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked, capGroupNames, capTypeByGroup, capOffboardedByGroup, capRowByClientName, pgProfileByFolder, pgClientNames, pgClientByName, pgClientEvents]);
+  }, [clickup, accrued, accruedNames, nameMap, billableOnly, computeMonthWorked, capGroupNames, capTypeByGroup, capOffboardedByGroup, capRowByClientName, pgProfileByFolder, pgClientNames, pgClientByName, pgClientEvents]);
+
+  const clients = useMemo(() => buildClientsForMonth(dataMonthKey, priorMonthKey), [buildClientsForMonth, dataMonthKey, priorMonthKey]);
+
+  // Same reconciliation, one month earlier — real, fully-computed numbers (not a
+  // fabricated estimate), used only to power the "vs last month" KPI comparisons.
+  // Shifts both the reporting month and the balance-lookup month back by one, mirroring
+  // what the "prior balance from" auto-chain effect does when you step the month picker.
+  const prevMonthDataKey = dataMonthKey ? prevMonthKeyStr(dataMonthKey) : "";
+  const prevClients = useMemo(
+    () => (dataMonthKey ? buildClientsForMonth(prevMonthDataKey, prevMonthKeyStr(priorMonthKey || prevMonthDataKey)) : []),
+    [buildClientsForMonth, dataMonthKey, prevMonthDataKey, priorMonthKey]
+  );
 
   // counts by type — "map" counts c.isMap (an overlay tag), not c.type, since a MAP
   // client keeps whatever c.type its own package/hourly classification landed on.
@@ -1046,6 +1064,69 @@ export default function PGReconciliation() {
     const carry = visible.reduce((a, c) => a + (c.priorBalance != null ? Math.abs(c.priorBalance) : 0), 0);
     return { hrs, count: visible.length, over, under, carry };
   }, [visible]);
+
+  // Same filter pipeline as `visible`/`stats` above, applied to prevClients — real,
+  // fully-computed prior-month numbers (not an estimate) so the KPI cards can show a
+  // genuine "vs last month" comparison on an apples-to-apples basis with what's on
+  // screen right now (same type/consultant/search filters).
+  const prevPrimaryNameByGroup = useMemo(() => {
+    const byGroup = new Map();
+    prevClients.forEach((c) => { if (!c.capGroup) return; if (!byGroup.has(c.capGroup)) byGroup.set(c.capGroup, []); byGroup.get(c.capGroup).push(c); });
+    const result = new Map();
+    byGroup.forEach((members, group) => {
+      if (members.length < 2) return;
+      const primary = members.find((m) => m.type === "package") || [...members].sort((a, b) => b.worked - a.worked)[0];
+      result.set(group, primary.name);
+    });
+    return result;
+  }, [prevClients]);
+  const prevStats = useMemo(() => {
+    let list = clientTypeFilter === "all" ? prevClients.slice()
+      : clientTypeFilter === "map" ? prevClients.filter((c) => c.isMap)
+      : prevClients.filter((c) => c.type === clientTypeFilter);
+    if (consultantFilter) list = list.filter((c) => c.userMinutes.has(consultantFilter));
+    list = list.filter((c) => {
+      if (!c.capGroup) return true;
+      const primaryName = prevPrimaryNameByGroup.get(c.capGroup);
+      return !primaryName || c.name === primaryName;
+    });
+    list = list.map((c) => withConsultantFilter(c, consultantFilter));
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter((c) => c.name.toLowerCase().includes(q) || (c.displayName || "").toLowerCase().includes(q));
+    }
+    const hrs = list.reduce((a, c) => a + (c.workedFiltered ?? c.worked), 0);
+    const over = list.filter((c) => c.status === "over").length;
+    const carry = list.reduce((a, c) => a + (c.priorBalance != null ? Math.abs(c.priorBalance) : 0), 0);
+    // Only meaningful once the export actually has rows for that month — otherwise
+    // "0 vs last month" would misleadingly read as a 100% drop rather than "no data".
+    const available = !!(clickup && prevMonthDataKey && clickup.rows.some((r) => r.monthKey === prevMonthDataKey));
+    return { hrs, count: list.length, over, carry, available };
+  }, [prevClients, clientTypeFilter, consultantFilter, search, prevPrimaryNameByGroup, clickup, prevMonthDataKey]);
+
+  const prevMonthShortLabel = useMemo(() => {
+    if (!prevMonthDataKey) return "";
+    const [y, m] = prevMonthDataKey.split("-").map(Number);
+    return new Date(y, m - 1, 1).toLocaleString(undefined, { month: "short", year: "numeric" });
+  }, [prevMonthDataKey]);
+
+  // Trailing up-to-6-month hours trend for the "Total billable hours" sparkline — row-level
+  // only (billable/non-internal/consultant-filtered), not tied to the client-type dropdown,
+  // since it's meant to read as "hours logged over time" rather than duplicate the KPI figure.
+  const hoursTrend = useMemo(() => {
+    if (!clickup) return [];
+    const byMonth = new Map();
+    for (const r of clickup.rows) {
+      if (clickup.hasBillable && billableOnly && !r.billable) continue;
+      if (r.isInternal) continue;
+      if (consultantFilter && r.user !== consultantFilter) continue;
+      if (!r.monthKey) continue;
+      byMonth.set(r.monthKey, (byMonth.get(r.monthKey) || 0) + r.minutes);
+    }
+    const keys = [...byMonth.keys()].sort();
+    const upto = dataMonthKey ? keys.filter((k) => k <= dataMonthKey) : keys;
+    return upto.slice(-6).map((k) => byMonth.get(k) / 60);
+  }, [clickup, billableOnly, consultantFilter, dataMonthKey]);
 
   // Flat lookup (visible clients + their nested sub-project siblings) so the drawer
   // can resolve whichever client name was clicked, regardless of nesting.
@@ -1190,12 +1271,15 @@ export default function PGReconciliation() {
       <div className="pg-container">
         {/* header + primary actions */}
         <div className="pg-app-header" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-          <div>
-            <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-            <h1 className="pg-app-header__title">Client Invoicing</h1>
-            <p className="pg-app-header__sub">
-              Reconcile monthly hours, review client servicing and generate invoice-ready summaries.
-            </p>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+            <div className="pg-app-header__icon"><FileText size={18} /></div>
+            <div>
+              <span className="pg-eyebrow">Purple Giraffe · Internal</span>
+              <h1 className="pg-app-header__title">Client Invoicing</h1>
+              <p className="pg-app-header__sub">
+                Reconcile monthly hours, review client servicing and generate invoice-ready summaries.
+              </p>
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="pg-btn-ghost" onClick={handleManualSync} disabled={syncing}>
@@ -1223,13 +1307,29 @@ export default function PGReconciliation() {
           </div>
         </div>
 
-        {/* KPI summary — the page's headline numbers, before any raw data */}
+        {/* KPI summary — the page's headline numbers, before any raw data. Deltas are
+            real prior-month figures (see prevStats above), not estimates — they're
+            simply hidden when the export doesn't cover the prior month at all. */}
         {ready && (
           <div className="pg-kpi-row">
-            <KpiCard label="Total billable hours" value={`${fmt(stats.hrs)} h`} />
-            <KpiCard label="Clients in view" value={stats.count} icon={<Users size={15} />} />
-            <KpiCard label="Over-serviced clients" value={stats.over} tone={stats.over > 0 ? "var(--status-over)" : undefined} icon={<AlertTriangle size={15} />} />
-            <KpiCard label="Carry-over / Accrued" value={`${fmt(stats.carry)} h`} sub="from prior months" />
+            <KpiCard
+              label="Total billable hours" value={`${fmt(stats.hrs)} h`}
+              delta={prevStats.available && prevStats.hrs > 0 ? { pct: ((stats.hrs - prevStats.hrs) / prevStats.hrs) * 100, label: prevMonthShortLabel } : null}
+              spark={hoursTrend.length > 1 ? <Sparkline values={hoursTrend} /> : null}
+            />
+            <KpiCard
+              label="Clients in view" value={stats.count} icon={<Users size={15} />}
+              delta={prevStats.available ? { count: stats.count - prevStats.count, label: prevMonthShortLabel } : null}
+            />
+            <KpiCard
+              label="Over-serviced clients" value={stats.over} tone={stats.over > 0 ? "var(--status-over)" : undefined} icon={<AlertTriangle size={15} />}
+              delta={prevStats.available ? { count: stats.over - prevStats.over, label: prevMonthShortLabel, invert: true } : null}
+            />
+            <KpiCard
+              label="Carry-over / Accrued" value={`${fmt(stats.carry)} h`} icon={<Clock size={15} />}
+              sub={prevStats.available ? undefined : "from prior months"}
+              delta={prevStats.available ? { hours: stats.carry - prevStats.carry, label: prevMonthShortLabel } : null}
+            />
           </div>
         )}
 
@@ -1265,23 +1365,13 @@ export default function PGReconciliation() {
               <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Live sync hasn't run yet.</span>
             </>
           )}
-          {ready && (
-            <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-tertiary)" }}>
-              {clickup.fileName} · {accrued.fileName}
-            </span>
+          {clickupSource !== "manual" && syncMeta?.last_synced_at && syncMeta?.last_sync_status !== "error" && (
+            <span className="pg-status-pill" style={{ marginLeft: "auto", color: "var(--status-ok)", background: "var(--status-ok-soft)" }}>Synced</span>
           )}
         </div>
 
-        {clickup?.warnings?.length > 0 && (
-          <div className="pg-banner-warn">
-            {clickup.warnings.map((w, i) => <div key={i}>{w}</div>)}
-          </div>
-        )}
-        {accrued?.warnings?.length > 0 && (
-          <div className="pg-banner-warn">
-            {accrued.warnings.map((w, i) => <div key={i}>{w}</div>)}
-          </div>
-        )}
+        <WarningBanner title="ClickUp export" warnings={clickup?.warnings} />
+        <WarningBanner title="Accrued sheet" warnings={accrued?.warnings} />
 
         {/* config row */}
         {ready && (
@@ -1439,6 +1529,7 @@ export default function PGReconciliation() {
           onSetMatch={(v) => setManualMatch(drawerClient.name, v)}
           onCopy={() => copySummary(drawerClient)}
           onPdf={() => downloadPdf(drawerClient)}
+          onViewProfile={onNavigateClients}
           copied={copied === drawerClient.name}
         />
       )}
@@ -1460,15 +1551,67 @@ function FileCard({ title, hint, file, err, onClick }) {
     </button>
   );
 }
-function KpiCard({ label, value, sub, tone, icon }) {
+// delta shapes: { pct, label } | { count, label, invert? } | { hours, label }
+// invert=true means a smaller number is the improvement (e.g. over-serviced clients).
+function DeltaChip({ delta }) {
+  if (!delta) return null;
+  let raw, text;
+  if (delta.pct !== undefined) { raw = delta.pct; text = `${raw >= 0 ? "↑" : "↓"}${fmt(Math.abs(raw), 0)}% vs ${delta.label}`; }
+  else if (delta.count !== undefined) { raw = delta.count; text = raw === 0 ? `No change vs ${delta.label}` : `${raw > 0 ? "↑" : "↓"}${Math.abs(raw)} vs ${delta.label}`; }
+  else { raw = delta.hours; text = raw === 0 ? `No change vs ${delta.label}` : `${raw > 0 ? "↑" : "↓"}${fmt(Math.abs(raw))} h vs ${delta.label}`; }
+  const improving = delta.invert ? raw <= 0 : raw >= 0;
+  const tone = raw === 0 ? "var(--fg-tertiary)" : improving ? "var(--status-ok)" : "var(--status-over)";
+  return <div className="pg-kpi-card__delta" style={{ color: tone }}>{text}</div>;
+}
+
+function Sparkline({ values }) {
+  const w = 64, h = 24, pad = 2;
+  const max = Math.max(...values, 0.0001);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (w - pad * 2);
+    const y = h - pad - ((v - min) / range) * (h - pad * 2);
+    return `${x},${y}`;
+  }).join(" ");
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="pg-kpi-card__spark">
+      <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function KpiCard({ label, value, sub, tone, icon, delta, spark }) {
   return (
     <div className="pg-kpi-card">
       <div className="pg-kpi-card__top">
         <span className="pg-kpi-card__label">{label}</span>
-        {icon && <span className="pg-kpi-card__icon" style={tone ? { color: tone, background: "transparent" } : undefined}>{icon}</span>}
+        {spark || (icon && <span className="pg-kpi-card__icon" style={tone ? { color: tone, background: "transparent" } : undefined}>{icon}</span>)}
       </div>
       <div className="pg-kpi-card__value" style={tone ? { color: tone } : undefined}>{value}</div>
       {sub && <div className="pg-kpi-card__sub">{sub}</div>}
+      <DeltaChip delta={delta} />
+    </div>
+  );
+}
+// Collapsed to a single summary line by default (matching the approved mockup) — the
+// full warning text is still there behind "View details", not silently dropped.
+function WarningBanner({ title, warnings }) {
+  const [open, setOpen] = useState(false);
+  if (!warnings || warnings.length === 0) return null;
+  return (
+    <div className="pg-banner-warn" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <span>{warnings.length === 1 ? warnings[0] : `${title}: ${warnings.length} warnings found.`}</span>
+        <button className="pg-btn-ghost" style={{ flex: "none" }} onClick={() => setOpen((o) => !o)}>
+          {open ? "Hide details" : "View details"}
+        </button>
+      </div>
+      {open && warnings.length > 1 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {warnings.map((w, i) => <div key={i}>{w}</div>)}
+        </div>
+      )}
     </div>
   );
 }
@@ -1484,6 +1627,9 @@ function ExportItem({ icon, label, onClick }) {
 // Compact numbered row — the list's default state. Clicking anywhere on it opens
 // the full client detail in the right-side drawer (see ClientDrawer below).
 function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
+  const [inlineOpen, setInlineOpen] = useState(false);
+  const [tasksAllShown, setTasksAllShown] = useState(false);
+  const [consultantsAllShown, setConsultantsAllShown] = useState(false);
   const isPackage = c.type === "package";
   const statusTone = isPackage
     ? (c.status === "over" ? "var(--status-over)" : c.status === "under" ? "var(--status-warn)" : "var(--status-ok)")
@@ -1492,45 +1638,129 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
     ? (c.status === "over" ? `${fmt(Math.abs(c.newBalance))} h over-served` : c.status === "under" ? `${fmt(Math.abs(c.newBalance))} h under-served` : "on track")
     : null;
 
+  const worked = c.workedFiltered ?? c.worked;
+  const pkg = c.pkg ?? 0;
+  const carry = Math.abs(c.priorBalance ?? 0);
+  const effective = pkg - (c.priorBalance ?? 0);
+  const barMax = Math.max(worked, effective, pkg, 1) * 1.15;
+  const workedPct = Math.max(0, Math.min(100, (worked / barMax) * 100));
+  const pkgPct = (pkg / barMax) * 100;
+
+  const consultantEntries = [...c.userMinutes.entries()].sort((a, b) => b[1] - a[1]);
+  const consultantTotal = consultantEntries.reduce((a, [, min]) => a + min, 0);
+  const shownConsultants = consultantsAllShown ? consultantEntries : consultantEntries.slice(0, 3);
+  const taskEntries = [...c.tasksFiltered.entries()].sort((a, b) => b[1] - a[1]);
+  const shownTasks = tasksAllShown ? taskEntries : taskEntries.slice(0, 3);
+
   return (
-    <button type="button" className={"pg-row" + (active ? " pg-row--active" : "") + (nested ? " pg-row--nested" : "")} onClick={onOpen}>
-      {!nested && <span className="pg-row__index">{index}</span>}
-      <span className="pg-row__name">
-        <span className="pg-row__name-main">
-          {c.displayName}
-          {c.isOffboarded && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 6 }} title={c.offboardNote}>[Offboarded]</span>}
+    <div className={"pg-row-wrap" + (nested ? " pg-row--nested" : "")}>
+      <button type="button" className={"pg-row" + (active ? " pg-row--active" : "")} onClick={onOpen}>
+        {!nested && <span className="pg-row__index">{index}</span>}
+        <span className="pg-row__name">
+          <span className="pg-row__name-main">
+            {c.displayName}
+            {c.isOffboarded && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 6 }} title={c.offboardNote}>[Offboarded]</span>}
+          </span>
+          <span className="pg-row__name-sub">
+            {nested ? <><Link2 size={10} /> Related sub-project of {parentName}</> : (c.capGroup && c.capGroup !== c.displayName ? c.capGroup : null)}
+          </span>
         </span>
-        <span className="pg-row__name-sub">
-          {nested ? <><Link2 size={10} /> Related sub-project of {parentName}</> : (c.capGroup && c.capGroup !== c.displayName ? c.capGroup : null)}
+        <span className="pg-tag" style={{ color: TYPE_TONES[c.type] }}>[{TYPE_LABELS_SHORT[c.type]}]</span>
+        <span className="pg-row__num">
+          <span className="pg-row__num-label">Worked</span>{fmt(worked)} h
         </span>
-      </span>
-      <span className="pg-tag" style={{ color: TYPE_TONES[c.type] }}>[{TYPE_LABELS_SHORT[c.type]}]</span>
-      <span className="pg-row__num">
-        <span className="pg-row__num-label">Worked</span>{fmt(c.workedFiltered ?? c.worked)} h
-      </span>
-      <span className="pg-row__num">
-        <span className="pg-row__num-label">Package</span>{c.pkg != null ? `${fmt(c.pkg)} h` : "—"}
-      </span>
-      <span className="pg-row__num">
-        <span className="pg-row__num-label">Carry-over</span>{c.priorBalance != null ? `${fmt(Math.abs(c.priorBalance))} h` : "—"}
-      </span>
-      <span className="pg-row__status" style={statusTone ? { color: statusTone } : undefined}>
-        {statusText || (isPackage ? "no package on file" : "—")}
-      </span>
-      <ChevronRight size={16} style={{ color: "var(--fg-tertiary)", flex: "none" }} />
-    </button>
+        <span className="pg-row__num">
+          <span className="pg-row__num-label">Package</span>{c.pkg != null ? `${fmt(c.pkg)} h` : "—"}
+        </span>
+        <span className="pg-row__num">
+          <span className="pg-row__num-label">Carry-over</span>{c.priorBalance != null ? `${fmt(carry)} h` : "—"}
+        </span>
+        <span className="pg-row__status" style={statusTone ? { color: statusTone } : undefined}>
+          {statusText || (isPackage ? "no package on file" : "—")}
+        </span>
+        <span
+          role="button" tabIndex={0} aria-label={inlineOpen ? "Collapse" : "Expand"}
+          className="pg-row__chevron"
+          onClick={(e) => { e.stopPropagation(); setInlineOpen((o) => !o); }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); setInlineOpen((o) => !o); } }}
+        >
+          <ChevronDown size={16} style={{ transform: inlineOpen ? "rotate(180deg)" : undefined, transition: "transform 0.15s var(--ease)" }} />
+        </span>
+      </button>
+
+      {inlineOpen && (
+        <div className="pg-row-inline">
+          <div className="pg-row-inline__col">
+            <div className="pg-row-inline__title">Reconciliation overview</div>
+            {isPackage && c.pkg != null ? (
+              <>
+                <div className="pg-row-inline__barhead">
+                  <span>worked {fmt(worked)} h</span>
+                  {c.remaining != null && (
+                    <span style={{ color: statusTone }}>{c.remaining < 0 ? "over" : "under"} {fmt(Math.abs(c.remaining))} h</span>
+                  )}
+                </div>
+                <div className="pg-bar-track" style={{ marginTop: 6 }}>
+                  <div className="pg-bar-fill" style={{ width: `${workedPct}%`, background: statusTone || "var(--status-ok)" }} />
+                  <div className="pg-bar-mark" style={{ left: `${pkgPct}%` }} />
+                </div>
+                <div className="pg-bar-caption" style={{ marginTop: 6 }}>
+                  <span>package {fmt(pkg)} h</span>
+                  <span>carry-over {fmt(carry)} h</span>
+                </div>
+              </>
+            ) : (
+              <div className="pg-row-inline__empty">No package on file for this client.</div>
+            )}
+          </div>
+
+          <div className="pg-row-inline__col">
+            <div className="pg-row-inline__title">Consultants involved</div>
+            {consultantEntries.length === 0 && <div className="pg-row-inline__empty">No consultants logged.</div>}
+            {shownConsultants.map(([u, min]) => (
+              <div key={u || "unknown"} className="pg-row-inline__line">
+                <span>{u || "—"}</span>
+                <span className="pg-row-inline__line-num">{fmt(min / 60)} h · {consultantTotal > 0 ? Math.round((min / consultantTotal) * 100) : 0}%</span>
+              </div>
+            ))}
+            {consultantEntries.length > 3 && (
+              <button className="pg-row-inline__more" onClick={() => setConsultantsAllShown((o) => !o)}>
+                {consultantsAllShown ? "Show fewer" : `View all ${consultantEntries.length} consultants`}
+              </button>
+            )}
+          </div>
+
+          <div className="pg-row-inline__col">
+            <div className="pg-row-inline__title">Tasks worked {tasksAllShown ? "" : "(top 3)"}</div>
+            {taskEntries.length === 0 && <div className="pg-row-inline__empty">No tasks in this filter.</div>}
+            {shownTasks.map(([task, min]) => (
+              <div key={task} className="pg-row-inline__line">
+                <span className="pg-row-inline__task">{task}</span>
+                <span className="pg-row-inline__line-num">{fmt(min / 60)} h</span>
+              </div>
+            ))}
+            {taskEntries.length > 3 && (
+              <button className="pg-row-inline__more" onClick={() => setTasksAllShown((o) => !o)}>
+                {tasksAllShown ? "Show fewer" : `View all ${taskEntries.length} tasks`}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
 // Full client detail — right-side drawer, opened by clicking a row. Reuses exactly
 // the same computed fields the row above reads from (client.*), just laid out for
 // a deeper single-client view: reconciliation bar, consultant contributions, tasks.
-function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress, hasUser, consultantFilter, accruedNames, usedAccruedNames, syncMeta, onClose, onSetMatch, onCopy, onPdf, copied }) {
+function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress, hasUser, consultantFilter, accruedNames, usedAccruedNames, syncMeta, onClose, onSetMatch, onCopy, onPdf, onViewProfile, copied }) {
   const isPackage = c.type === "package";
   const isQld = c.type === "queensland";
   const [drillConsultant, setDrillConsultant] = useState(null);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [consultantsOpen, setConsultantsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Reset local drill/expand state whenever a different client is opened, so the
   // drawer never opens already scrolled into a previous client's drill-down.
@@ -1566,9 +1796,23 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
       <div className="pg-drawer-backdrop" onClick={onClose} />
       <aside className="pg-drawer" role="dialog" aria-label={`${c.displayName} detail`}>
         <div className="pg-drawer__header">
-          <button className="pg-drawer__icon-btn" onClick={onClose} aria-label="Close" title="Close">
-            <X size={16} />
+          <button className="pg-drawer__icon-btn" onClick={onClose} aria-label="Back" title="Back">
+            <ArrowLeft size={16} />
           </button>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, position: "relative" }}>
+            <button className="pg-drawer__icon-btn" onClick={() => setMenuOpen((o) => !o)} aria-label="More actions" title="More actions">
+              <MoreVertical size={16} />
+            </button>
+            {menuOpen && (
+              <div className="pg-menu" style={{ top: "calc(100% + 4px)" }}>
+                <ExportItem icon={<Copy size={14} />} label="Copy summary" onClick={() => { setMenuOpen(false); onCopy(); }} />
+                <ExportItem icon={<Printer size={14} />} label="Generate PDF" onClick={() => { setMenuOpen(false); onPdf(); }} />
+              </div>
+            )}
+            <button className="pg-drawer__icon-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="pg-drawer__title-row">
@@ -1587,7 +1831,9 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
             </div>
           </div>
           {statusLabel && (
-            <span className="pg-status-pill" style={{ color: statusTone, background: "var(--bg-elevated)" }}>{statusLabel}</span>
+            <span className="pg-status-pill pg-status-pill--computed" style={{ color: statusTone, background: "var(--bg-elevated)" }} title="Computed automatically from worked hours vs. package — not manually settable">
+              {statusLabel} <ChevronDown size={11} />
+            </span>
           )}
         </div>
 
@@ -1629,6 +1875,12 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
               <span className="pg-field__label">Invoice month</span>
               <span className="pg-drawer__field-value">{invoiceMonth || "—"}</span>
             </div>
+            {statusLabel && (
+              <div className="pg-drawer__field">
+                <span className="pg-field__label">Status</span>
+                <span className="pg-drawer__field-value" style={{ color: statusTone, fontSize: 14 }}>{statusLabel}</span>
+              </div>
+            )}
           </div>
 
           {isPackage ? (
@@ -1666,6 +1918,14 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
         {isPackage && c.pkg != null && c.pkg > 0 && (
           <div className="pg-drawer__section">
             <div className="pg-drawer__section-title">Reconciliation</div>
+            <div className="pg-drawer__recon-row">
+              <span>Adjustments (non-billable)</span>
+              <span title="Not tracked per-client in this tool yet — always empty">—</span>
+            </div>
+            <div className="pg-drawer__recon-row">
+              <span>Billable total</span>
+              <span>{fmt(c.workedFiltered)} h</span>
+            </div>
             <PackageBar pkg={c.pkg} worked={c.worked} prior={c.priorBalance ?? 0} status={c.status} monthProgress={monthProgress} />
           </div>
         )}
@@ -1746,6 +2006,11 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
         </div>
 
         <div className="pg-drawer__footer">
+          {onViewProfile && (
+            <button onClick={onViewProfile} className="pg-btn-ghost" title="Open this client in the Clients module">
+              <Users size={12} /> View full profile
+            </button>
+          )}
           <button onClick={onCopy} className="pg-btn-ghost">
             {copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "copied" : "Copy summary"}
           </button>

@@ -452,20 +452,29 @@ button { font: inherit; }
 .pg-kpi-card__icon { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: var(--app-radius-pill); background: var(--accent-soft); color: var(--accent); flex: none; }
 .pg-kpi-card__value { font-family: var(--font-display); font-weight: 400; font-size: 28px; color: var(--fg-primary); margin-top: 8px; }
 .pg-kpi-card__sub { font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); margin-top: 2px; }
+.pg-kpi-card__delta { font-family: var(--font-body); font-size: 12px; margin-top: 6px; }
+.pg-kpi-card__spark { flex: none; opacity: 0.9; }
+
+.pg-app-header__icon {
+  flex: none; width: 40px; height: 40px; margin-top: 2px; border-radius: var(--app-radius-sm);
+  background: var(--accent-soft); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+}
 
 /* ---- client invoicing: row list --------------------------------------------
    Purple Giraffe Design OS §11.5 — comparison rows, minimal separators, no
    per-row edit buttons; a row opens the full-detail drawer instead. */
 .pg-rowlist { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.pg-row-wrap.pg-row--nested { margin-left: 28px; }
 .pg-row {
   width: 100%; display: flex; align-items: center; gap: 16px; text-align: left;
   background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius);
   box-shadow: var(--shadow-sm); padding: 14px 18px; cursor: pointer; color: inherit;
   transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
+.pg-row-wrap.pg-row--nested .pg-row { background: var(--bg-base); }
 .pg-row:hover { box-shadow: var(--shadow-md); }
 .pg-row--active { border-color: var(--accent); }
-.pg-row--nested { margin-left: 28px; width: calc(100% - 28px); background: var(--bg-base); }
 .pg-row__index { font-family: var(--font-mono); font-size: 12px; color: var(--fg-tertiary); width: 18px; flex: none; }
 .pg-row__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1.4; }
 .pg-row__name-main { font-family: var(--font-display); font-weight: 400; font-size: 16px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -473,10 +482,34 @@ button { font: inherit; }
 .pg-row__num { flex: none; width: 90px; font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary); font-variant-numeric: tabular-nums; }
 .pg-row__num-label { display: block; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-tertiary); margin-bottom: 2px; }
 .pg-row__status { flex: none; width: 130px; text-align: right; font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--fg-secondary); }
+.pg-row__chevron {
+  flex: none; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border-radius: var(--app-radius-pill); color: var(--fg-tertiary); cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.pg-row__chevron:hover { background: var(--bg-elevated); color: var(--fg-primary); }
 @media (max-width: 900px) {
   .pg-row { flex-wrap: wrap; }
   .pg-row__num, .pg-row__status { width: auto; }
 }
+
+/* ---- client invoicing: inline row expand (chevron), separate from the drawer ----- */
+.pg-row-inline {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+  background: var(--bg-card); border: 1px solid var(--border-subtle); border-top: 0;
+  border-radius: 0 0 var(--app-radius) var(--app-radius); box-shadow: var(--shadow-sm);
+  margin-top: -8px; padding: 16px 18px 18px;
+}
+@media (max-width: 900px) { .pg-row-inline { grid-template-columns: 1fr; } }
+.pg-row-inline__title { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); margin-bottom: 10px; }
+.pg-row-inline__barhead { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; color: var(--fg-secondary); }
+.pg-row-inline__empty { font-family: var(--font-body); font-size: 12px; color: var(--fg-tertiary); }
+.pg-row-inline__line { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; font-family: var(--font-body); font-size: 12px; color: var(--fg-secondary); border-bottom: 1px dashed var(--border-subtle); }
+.pg-row-inline__line:last-of-type { border-bottom: 0; }
+.pg-row-inline__task { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-row-inline__line-num { flex: none; font-family: var(--font-mono); color: var(--fg-tertiary); font-variant-numeric: tabular-nums; }
+.pg-row-inline__more { background: none; border: 0; padding: 8px 0 0; cursor: pointer; color: var(--accent); font-family: var(--font-body); font-size: 12px; text-align: left; }
+.pg-row-inline__more:hover { text-decoration: underline; }
 
 /* ---- client invoicing: right-side drawer -----------------------------------
    Purple Giraffe Design OS §11.7 — client detail, slides from the right,
@@ -508,6 +541,8 @@ button { font: inherit; }
 .pg-drawer__linked { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); }
 .pg-status-pill { flex: none; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 5px 10px; border-radius: var(--app-radius-pill); }
 .pg-status-pill--dot { margin-left: 8px; }
+.pg-status-pill--computed { display: inline-flex; align-items: center; gap: 4px; cursor: help; }
+.pg-drawer__recon-row { display: flex; justify-content: space-between; padding: 6px 0; font-family: var(--font-body); font-size: 12px; color: var(--fg-secondary); border-bottom: 1px dashed var(--border-subtle); }
 .pg-drawer__section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
 .pg-drawer__section:first-of-type { border-top: 0; }
 .pg-drawer__section-title { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); margin-bottom: 10px; }
