@@ -124,6 +124,15 @@ export default function Shell() {
           <img src="/assets/giraffe-mark.png" alt="" />
           {!collapsed && <span>Purple Giraffe</span>}
           <button
+            className="pg-sidebar__icon-btn pg-sidebar__desktop-only"
+            style={{ marginLeft: "auto" }}
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+          </button>
+          <button
             className="pg-sidebar__mobile-toggle"
             onClick={() => setMobileNavOpen((o) => !o)}
             aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
@@ -171,14 +180,6 @@ export default function Shell() {
           </div>
 
           <div className="pg-sidebar__footer-row">
-            <button
-              className="pg-sidebar__icon-btn pg-sidebar__desktop-only"
-              onClick={() => setCollapsed((c) => !c)}
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-            </button>
             <button
               className="pg-sidebar__icon-btn"
               onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}

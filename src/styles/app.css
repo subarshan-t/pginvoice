@@ -165,7 +165,8 @@ button { font: inherit; }
 /* ---- sidebar: collapsed state, profile card, icon-only footer row -------- */
 .pg-sidebar--collapsed { width: 76px; }
 .pg-sidebar--collapsed .pg-sidebar__link { justify-content: center; padding-left: 10px; }
-.pg-sidebar--collapsed .pg-sidebar__brand { justify-content: center; padding: 0; }
+.pg-sidebar--collapsed .pg-sidebar__brand { flex-direction: column; justify-content: center; gap: 8px; padding: 0; }
+.pg-sidebar--collapsed .pg-sidebar__brand .pg-sidebar__icon-btn { margin-left: 0 !important; }
 
 .pg-sidebar__profile {
   display: flex; align-items: center; gap: 10px; margin-top: auto;
