@@ -1267,37 +1267,8 @@ export default function PGReconciliation({ onNavigateClients }) {
   const ready = clickup && accrued;
 
   return (
-    <div className="pg-app">
-      <div className="pg-container">
-        {/* command row: global client search + primary actions */}
-        <div className="pg-cmdrow">
-          <CommandSearch clients={clients} onSelect={(name) => setDrawerClientName(name)} />
-          <div className="pg-cmdrow__actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button className="pg-btn-ghost" onClick={handleManualSync} disabled={syncing}>
-              <RefreshCw size={12} style={syncing ? { animation: "pg-spin 1s linear infinite" } : undefined} /> {syncing ? "Syncing…" : "Sync now"}
-            </button>
-            {ready && (
-              <div style={{ position: "relative" }}>
-                <button onClick={() => setExportOpen((x) => !x)} className="pg-btn-ghost">
-                  <Download size={12} /> Export <ChevronDown size={12} />
-                </button>
-                {exportOpen && (
-                  <div className="pg-menu">
-                    <ExportItem icon={<FileText size={14} />} label="Pending hours (CSV)" onClick={() => doExport("pending", "csv")} />
-                    <ExportItem icon={<FileSpreadsheet size={14} />} label="Pending hours (Excel)" onClick={() => doExport("pending", "xlsx")} />
-                    <div className="pg-menu-sep" />
-                    <ExportItem icon={<FileText size={14} />} label="Full monthly summary (CSV)" onClick={() => doExport("summary", "csv")} />
-                    <ExportItem icon={<FileSpreadsheet size={14} />} label="Full monthly summary (Excel)" onClick={() => doExport("summary", "xlsx")} />
-                  </div>
-                )}
-              </div>
-            )}
-            <button className="pg-btn" onClick={() => drawerClient && downloadPdf(drawerClient)} disabled={!drawerClient} title={drawerClient ? undefined : "Select a client below first"}>
-              <Printer size={13} /> Generate PDF
-            </button>
-          </div>
-        </div>
-
+    <div className={"pg-app pg-app--invoicing" + (drawerClient ? " pg-app--drawer-open" : "")}>
+      <div className={"pg-container" + (drawerClient ? " pg-container--dimmed" : "")}>
         {/* header */}
         <div className="pg-app-header">
           <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
@@ -1309,6 +1280,44 @@ export default function PGReconciliation({ onNavigateClients }) {
                 Reconcile monthly hours, review client servicing and generate invoice-ready summaries.
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* command row: search sits dead-center of the row, actions pinned right —
+            a 3-column grid keeps the search bar centered regardless of how wide
+            the action-button group ends up. */}
+        <div className="pg-cmdrow">
+          <span />
+          <CommandSearch clients={clients} onSelect={(name) => setDrawerClientName(name)} />
+          <div className="pg-cmdrow__actions" style={{ display: "flex", alignItems: "center", gap: 8, justifySelf: "end" }}>
+            <button className="pg-btn-ghost" onClick={handleManualSync} disabled={syncing}>
+              <RefreshCw size={12} style={syncing ? { animation: "pg-spin 1s linear infinite" } : undefined} /> {syncing ? "Syncing…" : "Sync now"}
+            </button>
+            {ready && (
+              <div style={{ position: "relative" }}>
+                <button onClick={() => setExportOpen((x) => !x)} className="pg-btn-ghost">
+                  <Download size={12} /> Export <ChevronDown size={12} />
+                </button>
+                {exportOpen && (
+                  <div className="pg-menu">
+                    <ExportItem icon={<Printer size={14} />} label="Generate PDF" onClick={() => { setExportOpen(false); drawerClient && downloadPdf(drawerClient); }} disabled={!drawerClient} title={drawerClient ? undefined : "Select a client first"} />
+                    <div className="pg-menu-sep" />
+                    <ExportItem icon={<FileText size={14} />} label="Pending hours (CSV)" onClick={() => doExport("pending", "csv")} />
+                    <ExportItem icon={<FileSpreadsheet size={14} />} label="Pending hours (Excel)" onClick={() => doExport("pending", "xlsx")} />
+                    <div className="pg-menu-sep" />
+                    <ExportItem icon={<FileText size={14} />} label="Full monthly summary (CSV)" onClick={() => doExport("summary", "csv")} />
+                    <ExportItem icon={<FileSpreadsheet size={14} />} label="Full monthly summary (Excel)" onClick={() => doExport("summary", "xlsx")} />
+                  </div>
+                )}
+              </div>
+            )}
+            <ImportButton
+              clickup={clickup} accrued={accrued} clickupErr={clickupErr} accruedErr={accruedErr}
+              onPickClickup={() => clickupInput.current?.click()}
+              onPickAccrued={() => accruedInput.current?.click()}
+            />
+            <input ref={clickupInput} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={(e) => handleClickup(e.target.files?.[0])} />
+            <input ref={accruedInput} type="file" accept=".xlsx,.xlsm,.csv" style={{ display: "none" }} onChange={(e) => handleAccrued(e.target.files?.[0])} />
           </div>
         </div>
 
@@ -1337,14 +1346,6 @@ export default function PGReconciliation({ onNavigateClients }) {
             />
           </div>
         )}
-
-        {/* file inputs */}
-        <div className="pg-grid-2">
-          <FileCard title="ClickUp time export" hint="Full time-tracking export CSV from ClickUp (billable + non-billable rows)." file={clickup?.fileName} err={clickupErr} onClick={() => clickupInput.current?.click()} />
-          <FileCard title="Accrued Hours report" hint="Master accrued/package spreadsheet (.xlsx)." file={accrued?.fileName} err={accruedErr} onClick={() => accruedInput.current?.click()} />
-          <input ref={clickupInput} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={(e) => handleClickup(e.target.files?.[0])} />
-          <input ref={accruedInput} type="file" accept=".xlsx,.xlsm,.csv" style={{ display: "none" }} onChange={(e) => handleAccrued(e.target.files?.[0])} />
-        </div>
 
         {/* live-sync status — the ClickUp side can auto-populate from a Supabase-scheduled
             sync instead of a manual upload; this shows which source is currently in play */}
@@ -1543,19 +1544,6 @@ export default function PGReconciliation({ onNavigateClients }) {
 }
 
 // ================================ subcomponents =============================
-function FileCard({ title, hint, file, err, onClick }) {
-  return (
-    <button onClick={onClick} className={"pg-filecard" + (file ? " pg-filecard--filled" : "")}>
-      <Upload size={16} className="pg-filecard__icon" />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="pg-filecard__title">{title}</div>
-        <div className="pg-filecard__hint">{hint}</div>
-        {file && <div className="pg-filecard__file">{file}</div>}
-        {err && <div className="pg-filecard__err">{err}</div>}
-      </div>
-    </button>
-  );
-}
 // delta shapes: { pct, label } | { count, label, invert? } | { hours, label }
 // invert=true means a smaller number is the improvement (e.g. over-serviced clients).
 function DeltaChip({ delta }) {
@@ -1681,12 +1669,69 @@ function CommandSearch({ clients, onSelect }) {
     </div>
   );
 }
-function ExportItem({ icon, label, onClick }) {
+function ExportItem({ icon, label, onClick, disabled, title }) {
   return (
-    <button onClick={onClick} className="pg-menu-item">
+    <button onClick={onClick} className="pg-menu-item" disabled={disabled} title={title}>
       {icon}
       {label}
     </button>
+  );
+}
+
+// Overall connection status across both required files — three-state, since
+// "one of two connected" is a meaningfully different state from either extreme.
+function importTone(clickup, accrued) {
+  if (clickup && accrued) return "var(--status-ok)";
+  if (clickup || accrued) return "var(--status-warn)";
+  return "var(--status-over)";
+}
+function StatusDot({ tone, size = 8 }) {
+  return <span style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", background: tone, flex: "none" }} />;
+}
+
+// Replaces the old always-visible upload cards — same two file inputs, now
+// triggered from a dropdown so the page opens straight into real content
+// instead of leading with upload prompts once files are already connected.
+function ImportButton({ clickup, accrued, clickupErr, accruedErr, onPickClickup, onPickAccrued }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+  return (
+    <div style={{ position: "relative" }} ref={ref}>
+      <button className="pg-btn-ghost" onClick={() => setOpen((o) => !o)}>
+        <StatusDot tone={importTone(clickup, accrued)} /> Import <ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className="pg-menu" style={{ minWidth: 280 }}>
+          <button className="pg-menu-item" onClick={() => { onPickClickup(); setOpen(false); }} style={{ justifyContent: "space-between" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Upload size={14} />
+              <span>
+                ClickUp time export
+                {clickup?.fileName && <div style={{ fontSize: 11, color: "var(--fg-tertiary)", fontWeight: 400 }}>{clickup.fileName}</div>}
+                {clickupErr && <div style={{ fontSize: 11, color: "var(--status-over)", fontWeight: 400 }}>{clickupErr}</div>}
+              </span>
+            </span>
+            <StatusDot tone={clickup ? "var(--status-ok)" : "var(--status-warn)"} />
+          </button>
+          <button className="pg-menu-item" onClick={() => { onPickAccrued(); setOpen(false); }} style={{ justifyContent: "space-between" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Upload size={14} />
+              <span>
+                Accrued Hours report
+                {accrued?.fileName && <div style={{ fontSize: 11, color: "var(--fg-tertiary)", fontWeight: 400 }}>{accrued.fileName}</div>}
+                {accruedErr && <div style={{ fontSize: 11, color: "var(--status-over)", fontWeight: 400 }}>{accruedErr}</div>}
+              </span>
+            </span>
+            <StatusDot tone={accrued ? "var(--status-ok)" : "var(--status-warn)"} />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1859,8 +1904,7 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
 
   return (
     <>
-      <div className="pg-drawer-backdrop" onClick={onClose} />
-      <aside className="pg-drawer" role="dialog" aria-label={`${c.displayName} detail`}>
+      <aside className="pg-drawer pg-drawer--push" role="dialog" aria-label={`${c.displayName} detail`}>
         <div className="pg-drawer__header">
           <button className="pg-drawer__icon-btn" onClick={onClose} aria-label="Back" title="Back">
             <ArrowLeft size={16} />
