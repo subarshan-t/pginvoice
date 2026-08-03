@@ -17,7 +17,7 @@ const THEME_KEY = "pg-theme";
 export default function Shell() {
   const [active, setActive] = useState("invoicing");
   const [theme, setTheme] = useState(() => {
-    try { return window.localStorage.getItem(THEME_KEY) || "dark"; } catch (e) { return "dark"; }
+    try { return window.localStorage.getItem(THEME_KEY) || "light"; } catch (e) { return "light"; }
   });
 
   // Applied on <html> (not just the shell) so the whole document — including anything

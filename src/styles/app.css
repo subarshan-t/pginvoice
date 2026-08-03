@@ -15,12 +15,13 @@
 @keyframes pg-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 :root {
-  --status-ok:        rgb(146, 189, 148);   /* muted sage — on track            */
-  --status-ok-soft:   rgba(146, 189, 148, 0.12);
-  --status-over:      rgb(196, 107, 92);    /* muted rust — over-serviced       */
-  --status-over-soft: rgba(196, 107, 92, 0.14);
-  --status-warn:      rgb(200, 160, 84);    /* muted gold — accruing / under    */
-  --status-warn-soft: rgba(200, 160, 84, 0.14);
+  /* Purple Giraffe Design OS — functional status colors (emerald/amber/coral) */
+  --status-ok:        rgb(22, 163, 74);     /* emerald 500 — healthy            */
+  --status-ok-soft:   rgb(236, 253, 243);
+  --status-over:      rgb(232, 93, 93);     /* coral 500 — critical             */
+  --status-over-soft: rgb(255, 240, 239);
+  --status-warn:      rgb(245, 158, 11);    /* amber 500 — warning              */
+  --status-warn-soft: rgb(255, 248, 232);
   --status-info:      rgb(129, 162, 184);   /* muted slate — Queensland (prv)   */
   --status-info-soft: rgba(129, 162, 184, 0.14);
 
@@ -29,22 +30,28 @@
   --font-body:    'Quicksand', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono:    'Quicksand', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 
-  /* Softened corners, per client request (system default is 0px everywhere) */
-  --app-radius:      14px;
-  --app-radius-sm:   8px;
+  /* Radii — Purple Giraffe Design OS scale (§8): small control 8, input/control
+     12-14, button 14-16, card 24-28, floating shell/sidebar 32-40, pill 999 */
+  --app-radius:      24px;
+  --app-radius-sm:   12px;
+  --app-radius-btn:  16px;
+  --app-radius-shell: 32px;
   --app-radius-pill: 999px;
+
+  /* Elevation (§9) — subtle everywhere, stronger only for floating/overlay surfaces */
+  --shadow-sm:       0 2px 10px rgba(23, 23, 23, 0.04);
+  --shadow-md:       0 10px 30px rgba(23, 23, 23, 0.06);
+  --shadow-floating: 0 24px 60px rgba(23, 23, 23, 0.09);
 
   /* Text on the lavender accent (buttons, selection) — the accent itself doesn't
      change between themes, so this stays fixed rather than tracking --bg-base,
      which does. Without this a light-mode primary button would render white text
      on a light-purple background. */
-  --fg-on-accent: rgb(31, 27, 36);
+  --fg-on-accent: rgb(255, 255, 255);
 
-  /* Fixed light-lavender fill for solid accent backgrounds (buttons) — kept
-     separate from --accent itself, which the light theme darkens below for
-     text/border contrast; a button's background still needs to stay light so
-     --fg-on-accent reads on top of it in both themes. */
-  --accent-bg: rgb(210, 187, 255);
+  /* Solid accent-fill background (primary buttons, active nav) — Purple Giraffe
+     Design OS Purple 500, used sparingly per the system's restraint rule. */
+  --accent-bg: rgb(111, 74, 246);
 }
 
 /* ============================================================================
@@ -57,27 +64,25 @@
    anchor the base pair; the rest are new values in the same family.
    ============================================================================ */
 :root[data-theme="light"] {
-  --bg-base:     rgb(250, 249, 247);
-  --bg-card:     rgb(255, 255, 255);
-  --bg-elevated: rgb(241, 239, 236);
-  --bg-nav:      rgba(255, 254, 254, 0.85);
+  /* Purple Giraffe Design OS §5.3 warm off-white canvas */
+  --bg-base:     rgb(246, 244, 241);   /* #F6F4F1 */
+  --bg-card:     rgb(255, 255, 255);   /* #FFFFFF */
+  --bg-elevated: rgb(238, 232, 255);   /* Purple 100 — used sparingly for active surfaces */
+  --bg-nav:      rgba(255, 255, 255, 0.85);
 
-  --fg-primary:   rgb(19, 19, 19);
+  --fg-primary:   rgb(23, 23, 23);     /* #171717 */
   --fg-secondary: rgb(90, 87, 86);
-  --fg-tertiary:  rgba(19, 19, 19, 0.5);
+  --fg-tertiary:  rgb(119, 115, 109);  /* #77736D */
 
-  --border-subtle: rgba(19, 19, 19, 0.08);
-  --border-soft:   rgba(19, 19, 19, 0.14);
+  --border-subtle: rgb(236, 234, 230); /* #ECEAE6 */
+  --border-soft:   rgba(23, 23, 23, 0.12);
 
-  --accent-soft: rgba(210, 187, 255, 0.35);
+  --accent-soft: rgb(245, 242, 255);   /* Purple 50 */
 
-  /* The brand lavender (--accent) is a pastel tuned for text/icons on a near-black
-     page — on a light page the same value reads as washed-out. Swap it for the
-     design system's own --accent-deep (already meant for use on light surfaces)
-     everywhere --accent is used as text/border/stroke. Solid-fill button
-     backgrounds use the separate, unchanging --accent-bg instead, so buttons
-     don't flip along with it. */
-  --accent: var(--accent-deep);
+  /* Restrained deep purple (Purple 700) for text/icons/links/active states, per
+     the system's "purple must not carry the whole hierarchy" rule. Solid-fill
+     button backgrounds use the separate --accent-bg (Purple 500) instead. */
+  --accent: rgb(78, 51, 220);
 }
 :root[data-theme="light"] ::selection { color: var(--fg-on-accent); }
 
@@ -98,12 +103,21 @@ button { font: inherit; }
 .pg-app { min-height: 100vh; }
 .pg-container { max-width: 1080px; margin: 0 auto; padding: 56px 32px 96px; }
 
-/* ---- app shell / sidebar nav ---------------------------------------------*/
+/* ---- app shell / sidebar nav -----------------------------------------------
+   Purple Giraffe Design OS §5.1 — the sidebar is a signature floating element:
+   white rounded surface, soft shadow, inset from the viewport, narrow purple
+   active marker over a soft lavender active surface. Dark theme keeps the
+   original flush rail (the floating treatment is a light-canvas idea). ------ */
 .pg-shell { display: flex; min-height: 100vh; background: var(--bg-base); }
 .pg-shell__main { flex: 1; min-width: 0; }
 .pg-sidebar {
   width: 232px; flex: none; border-right: 1px solid var(--border-subtle);
   padding: 22px 14px; display: flex; flex-direction: column; gap: 22px;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+:root[data-theme="light"] .pg-sidebar {
+  margin: 20px 0 20px 20px; border-right: 0; border-radius: var(--app-radius-shell);
+  background: var(--bg-card); box-shadow: var(--shadow-floating);
 }
 .pg-sidebar__brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
 .pg-sidebar__brand img { width: 22px; height: 22px; filter: grayscale(1); flex: none; }
@@ -114,19 +128,24 @@ button { font: inherit; }
 .pg-sidebar__nav { display: flex; flex-direction: column; gap: 2px; }
 .pg-sidebar__theme-toggle { border-top: 1px solid var(--border-subtle); padding-top: 16px; }
 .pg-sidebar__link {
-  display: flex; align-items: center; gap: 10px; text-align: left;
+  display: flex; align-items: center; gap: 10px; text-align: left; position: relative;
   background: transparent; border: 0; border-radius: var(--app-radius-sm);
-  padding: 9px 10px; font-family: var(--font-body); font-size: 13px; font-weight: 500;
+  padding: 9px 10px 9px 14px; font-family: var(--font-body); font-size: 13px; font-weight: 500;
   color: var(--fg-secondary); cursor: pointer;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .pg-sidebar__link svg { flex: none; opacity: 0.8; }
-.pg-sidebar__link:hover { color: var(--fg-primary); background: var(--bg-card); }
+.pg-sidebar__link:hover { color: var(--fg-primary); background: var(--bg-elevated); }
 .pg-sidebar__link--active { background: var(--accent-soft); color: var(--accent); }
 .pg-sidebar__link--active svg { opacity: 1; }
+:root[data-theme="light"] .pg-sidebar__link--active::before {
+  content: ""; position: absolute; left: 2px; top: 6px; bottom: 6px; width: 3px;
+  border-radius: var(--app-radius-pill); background: var(--accent-bg);
+}
 @media (max-width: 760px) {
   .pg-shell { flex-direction: column; }
   .pg-sidebar { width: 100%; border-right: 0; border-bottom: 1px solid var(--border-subtle); flex-direction: row; align-items: center; }
+  :root[data-theme="light"] .pg-sidebar { margin: 12px; border-radius: var(--app-radius); }
   .pg-sidebar__nav { flex-direction: row; }
 }
 
@@ -148,6 +167,7 @@ button { font: inherit; }
 /* ---- generic panel (uploads row, config row, filter row, stat strip) ----- */
 .pg-panel {
   background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius);
+  box-shadow: var(--shadow-sm);
   padding: 20px 24px; margin-top: 16px;
   display: flex; flex-wrap: wrap; align-items: flex-end; gap: 20px;
 }
@@ -188,21 +208,21 @@ button { font: inherit; }
 
 /* ---- buttons ---------------------------------------------------------------*/
 .pg-btn {
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px;
   font-family: var(--font-mono); font-weight: 500; font-size: 11px;
   letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--fg-on-accent); background: var(--accent-bg); border: 0; border-radius: var(--app-radius-sm);
-  padding: 10px 16px; cursor: pointer;
-  transition: background var(--dur) var(--ease), transform 0.12s var(--ease);
+  color: var(--fg-on-accent); background: var(--accent-bg); border: 0; border-radius: var(--app-radius-btn);
+  padding: 10px 18px; cursor: pointer;
+  transition: background var(--dur) var(--ease), transform 0.12s var(--ease), box-shadow var(--dur) var(--ease);
 }
-.pg-btn:hover { background: rgb(227, 210, 255); }
+.pg-btn:hover { background: rgb(91, 61, 245); box-shadow: var(--shadow-sm); }
 .pg-btn:active { transform: scale(0.98); }
 .pg-btn-ghost {
   display: inline-flex; align-items: center; gap: 7px;
   font-family: var(--font-mono); font-weight: 500; font-size: 10px;
   letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--fg-secondary); background: transparent; border: 1px solid var(--border-soft); border-radius: var(--app-radius-sm);
-  padding: 7px 12px; cursor: pointer;
+  color: var(--fg-secondary); background: transparent; border: 1px solid var(--border-soft); border-radius: var(--app-radius-btn);
+  padding: 7px 14px; cursor: pointer;
   transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .pg-btn-ghost:hover { border-color: var(--accent-soft); color: var(--fg-primary); }
@@ -234,10 +254,11 @@ button { font: inherit; }
 /* ---- client card ---------------------------------------------------------*/
 .pg-client {
   background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius);
-  border-left: 3px solid var(--border-soft);
+  border-left: 3px solid var(--border-soft); box-shadow: var(--shadow-sm);
   padding: 18px 22px; margin-top: 12px;
-  transition: border-color var(--dur) var(--ease);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
+.pg-client:hover { box-shadow: var(--shadow-md); }
 .pg-client__row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .pg-client__name {
   display: flex; align-items: center; gap: 8px; background: transparent; border: 0; cursor: pointer;
@@ -323,13 +344,13 @@ button { font: inherit; }
 @media (max-width: 980px) {
   .pg-cap-pane { position: static; max-height: none; overflow-y: visible; padding-right: 0; }
 }
-.pg-cap-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); padding: 18px 22px; margin-top: 12px; }
+.pg-cap-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); box-shadow: var(--shadow-sm); padding: 18px 22px; margin-top: 12px; }
 .pg-cap-card:first-child { margin-top: 0; }
 .pg-cap-addform { background: var(--accent-soft); border-radius: var(--app-radius-sm); padding: 12px 14px; margin-top: 10px; }
 .pg-cap-addform-grid { display: grid; grid-template-columns: 1.3fr 1fr 0.8fr auto; gap: 8px; align-items: end; }
 @media (max-width: 640px) { .pg-cap-addform-grid { grid-template-columns: 1fr; } }
 .pg-cap-statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
-.pg-cap-stat { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); padding: 14px 16px; }
+.pg-cap-stat { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); box-shadow: var(--shadow-sm); padding: 14px 16px; }
 .pg-cap-textarea {
   width: 100%; min-height: 90px; resize: vertical;
   background: transparent; color: var(--fg-primary); border: 1px solid var(--border-soft); border-radius: var(--app-radius-sm);
