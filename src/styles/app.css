@@ -413,7 +413,11 @@ button { font: inherit; }
 .pg-clickup-link:hover { color: var(--accent); cursor: pointer; }
 
 /* ---- task table -------------------------------------------------------------*/
-.pg-table-wrap { margin-top: 16px; border: 1px solid var(--border-soft); border-radius: var(--app-radius); overflow: hidden; }
+/* overflow-x:auto (not hidden) — some tables using this wrapper (e.g. Team's
+   roster) set a minWidth wider than a phone screen; this lets them scroll
+   horizontally on mobile instead of being silently clipped. overflow-y stays
+   hidden so the rounded corners still clip the header/row backgrounds. */
+.pg-table-wrap { margin-top: 16px; border: 1px solid var(--border-soft); border-radius: var(--app-radius); overflow-x: auto; overflow-y: hidden; }
 .pg-table-head { padding: 8px 14px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); background: var(--bg-elevated); }
 .pg-table { width: 100%; border-collapse: collapse; font-family: var(--font-body); font-size: 13px; }
 .pg-table th { text-align: left; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); font-weight: 500; padding: 8px 14px; }
@@ -459,6 +463,7 @@ button { font: inherit; }
 .pg-cap-addform-grid { display: grid; grid-template-columns: 1.3fr 1fr 0.8fr auto; gap: 8px; align-items: end; }
 @media (max-width: 640px) { .pg-cap-addform-grid { grid-template-columns: 1fr; } }
 .pg-cap-statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+@media (max-width: 480px) { .pg-cap-statrow { grid-template-columns: 1fr; } }
 .pg-cap-stat { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); box-shadow: var(--shadow-sm); padding: 14px 16px; }
 .pg-cap-textarea {
   width: 100%; min-height: 90px; resize: vertical;
