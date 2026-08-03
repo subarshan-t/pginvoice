@@ -4,14 +4,16 @@ import {
   ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, isInternalFolder } from "./nameMatch.js";
+import { findMatch, multiFolderMatchesFor, isInternalFolder, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
+import { loadState, saveState } from "./capacityStore.js";
+import { fetchClients as fetchPgClients, createClient as createPgClient, createClientEvent, applyDueClientEvents } from "./clientsSync.js";
 
 /* ============================================================
    MONTHS / CONSTANTS
 ============================================================ */
-const MONTHS = ["2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"];
-const CURRENT_MONTH = "2026-07";
-const MONTH_LABELS = { "2025-12": "Dec 25", "2026-01": "Jan 26", "2026-02": "Feb 26", "2026-03": "Mar 26", "2026-04": "Apr 26", "2026-05": "May 26", "2026-06": "Jun 26", "2026-07": "Jul 26", "2026-08": "Aug 26", "2026-09": "Sep 26", "2026-10": "Oct 26", "2026-11": "Nov 26", "2026-12": "Dec 26" };
+export const MONTHS = ["2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"];
+export const CURRENT_MONTH = "2026-07";
+export const MONTH_LABELS = { "2025-12": "Dec 25", "2026-01": "Jan 26", "2026-02": "Feb 26", "2026-03": "Mar 26", "2026-04": "Apr 26", "2026-05": "May 26", "2026-06": "Jun 26", "2026-07": "Jul 26", "2026-08": "Aug 26", "2026-09": "Sep 26", "2026-10": "Oct 26", "2026-11": "Nov 26", "2026-12": "Dec 26" };
 
 // Real, named public holidays for SA/WA/QLD, weekdays only (weekend-falling holidays
 // with no substitute don't affect working-day capacity, so they're excluded here — e.g.
@@ -77,6 +79,53 @@ function publicHolidayDays(state, monthStr) {
   const list = PUBLIC_HOLIDAYS[state] || PUBLIC_HOLIDAYS.SA;
   return list.filter((h) => h.date.startsWith(monthStr)).length;
 }
+// Same two counts, but capped to day `throughDay` of the month — used to prorate
+// a person's capacity down to their last working day in their resignation month.
+function weekdaysInMonthUpToDay(monthStr, throughDay) {
+  const [y, mo] = monthStr.split("-").map(Number);
+  let count = 0;
+  for (let d = 1; d <= throughDay; d++) {
+    const dow = new Date(y, mo - 1, d).getDay();
+    if (dow >= 1 && dow <= 5) count++;
+  }
+  return count;
+}
+function publicHolidayDaysUpToDay(state, monthStr, throughDay) {
+  const list = PUBLIC_HOLIDAYS[state] || PUBLIC_HOLIDAYS.SA;
+  return list.filter((h) => h.date.startsWith(monthStr) && Number(h.date.slice(8, 10)) <= throughDay).length;
+}
+// Whether a person counts as staff for a given month, given their (optional)
+// resignationDate ("YYYY-MM-DD"): fully active if unset or the resignation falls
+// in a later month; excluded entirely if it's an earlier month; active but capped
+// to their last working day if the resignation falls within this exact month.
+export function resignationStatus(person, monthStr) {
+  if (!person.resignationDate) return { active: true, throughDay: null };
+  const resignMonthKey = person.resignationDate.slice(0, 7);
+  if (resignMonthKey > monthStr) return { active: true, throughDay: null };
+  if (resignMonthKey < monthStr) return { active: false, throughDay: null };
+  return { active: true, throughDay: Number(person.resignationDate.slice(8, 10)) };
+}
+
+// The single source of truth for a person's monthly capacity — used by both Capacity
+// Planning's peopleMap and the Team module's Availability list, so the two can never
+// silently drift onto different formulas for the same person/month.
+export function computeMonthlyAvailability(person, monthStr, leaveHrs) {
+  const status = resignationStatus(person, monthStr);
+  if (!status.active) return null; // resigned in an earlier month — not staff this month at all
+  const dailyHrs = person.contracted / 5;
+  const wd = weekdaysInMonth(monthStr);
+  const effectiveWeekdays = status.throughDay !== null ? weekdaysInMonthUpToDay(monthStr, status.throughDay) : wd;
+  const resourceHours = dailyHrs * effectiveWeekdays;         // Total Resource Hours (monthly, weekday-exact, prorated if resigning this month)
+  const holidayDays = status.throughDay !== null ? publicHolidayDaysUpToDay(person.state, monthStr, status.throughDay) : publicHolidayDays(person.state, monthStr);
+  const publicHolidayHrs = dailyHrs * holidayDays;            // Public Holidays (hrs lost, state-specific)
+  const totalMonthlyHours = Math.max(0, resourceHours - publicHolidayHrs - (leaveHrs || 0));
+  const billableHours = totalMonthlyHours * person.rate;      // Total Monthly Billable Capacity
+  const nonBillableHours = Math.max(0, totalMonthlyHours - billableHours);
+  return {
+    resourceHours, publicHolidayHrs, holidayDays, leaveHrs: leaveHrs || 0, totalMonthlyHours,
+    billableHours, nonBillableHours, resigningThisMonth: status.throughDay !== null,
+  };
+}
 // The 6 real calendar months ending with the current one, regardless of which month is
 // selected in the ledger — "average of the last 6 months" is a fixed, always-moving window,
 // not something that changes as you flip through Jan/Feb/... in the capacity view.
@@ -110,6 +159,19 @@ const uid = (p) => p + Math.random().toString(36).slice(2, 9);
 export const FIXED_BASES = ["Package", "Project", "Quoted", "MAP", "Strategy"];
 const VARIABLE_BASES = ["Hourly", "Ad hoc"];
 
+// A client's agreed hours as of a given month, from its `history` (ascending list of
+// { from: "YYYY-MM", agreed }) — the value from the latest entry whose `from` is <= the
+// given month, or the client's base `agreed` if no history entry applies yet. Lets a
+// package-hours change (e.g. Baintech 38 -> 32 hrs/month from June 2026) show correctly
+// for past months in the ledger instead of always showing today's number.
+export function agreedAt(client, monthKey) {
+  if (client.offboardedFrom && monthKey >= client.offboardedFrom) return 0;
+  if (!client.history || !client.history.length) return client.agreed;
+  let value = client.agreed;
+  for (const h of client.history) { if (h.from <= monthKey) value = h.agreed; }
+  return value;
+}
+
 /* ============================================================
    SEED DATA (unchanged from the real Resourcing sheet + ClickUp actuals)
    Exported — Performance reuses this exact roster/client master instead of
@@ -120,7 +182,7 @@ export const SEED_PEOPLE = [
   { id: "p2", name: "Shreya", role: "Consultant", state: "SA", contracted: 38, rate: 0.60, note: "Probation" },
   { id: "p3", name: "Chloe", role: "Consultant", state: "SA", contracted: 30, rate: 0.70, note: "Standard" },
   { id: "p4", name: "Alice", role: "Consultant", state: "SA", contracted: 22.5, rate: 0.70, note: "Standard" },
-  { id: "p5", name: "Amanda", role: "Consultant", state: "WA", contracted: 38, rate: 0.20, note: "Support-heavy role — worth reviewing" },
+  { id: "p5", name: "Amanda", role: "Consultant", state: "WA", contracted: 38, rate: 0.20, note: "Support-heavy role, worth reviewing" },
   { id: "p6", name: "Lucy", role: "Consultant", state: "QLD", contracted: 38, rate: 0.50, note: "Probation + BDM discount" },
   { id: "p7", name: "Vinavie", role: "Consultant", state: "SA", contracted: 38, rate: 0.70, note: "Standard" },
   { id: "p8", name: "Alex", role: "Coordinator", state: "SA", contracted: 38, rate: 0.70, note: "Supports others + Purple Giraffe internal work" },
@@ -129,75 +191,104 @@ export const SEED_PEOPLE = [
   { id: "p11", name: "Vino", role: "Coordinator", state: "SA", contracted: 38, rate: 0.60, note: "Probation" },
   { id: "p12", name: "Julia", role: "Coordinator", state: "QLD", contracted: 38, rate: 0.60, note: "Probation" },
   { id: "p13", name: "Tanya", role: "Coordinator", state: "SA", contracted: 15, rate: 0.70, note: "Part-time, currently unallocated" },
+  { id: "p17", name: "Sarah", role: "Consultant", state: "SA", contracted: 38, rate: 0.70, note: "Owns several active package clients in the Clients module (Amorim Cork, Magain Real Estate, etc.) -- added as an owner here to keep the two systems in sync; please confirm role/state/rate." },
 ];
 
-function C(id, client, group, lead, basis, agreed, actuals, note) {
-  return { id, client, group, lead, basis, agreed, actuals: actuals || null, note: note || "" };
+function C(id, client, group, lead, basis, agreed, actuals, extra) {
+  const e = extra || {};
+  return {
+    id, client, group, lead, basis, agreed, actuals: actuals || null, note: e.note || "",
+    status: e.status || "active", offboardedFrom: e.offboardedFrom || null, offboardNote: e.offboardNote || "",
+    history: e.history || null,
+  };
 }
 export const SEED_CLIENTS = [
-  C("c1", "Amorim Cork", "Amorim Cork", "Chloe", "Package", 16, { "2026-01": 4.5, "2026-02": 5.3, "2026-03": 5.0, "2026-04": 9.5, "2026-05": 0.5, "2026-06": 0.8 }),
-  C("c2", "Apex Energy", "Apex Energy", "Chloe", "Package", 16, { "2026-01": 11.7, "2026-02": 7.8, "2026-03": 22.8, "2026-04": 15.8, "2026-05": 18.3, "2026-06": 36.7 }),
-  C("c3", "Apex Communications", "Apex Communications", "Chloe", "Package", 30.5, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 28.6, "2026-06": 19.5 }),
-  C("c4", "ARAS", "ARAS", "Chloe", "Hourly", null, { "2026-01": 0, "2026-02": 0, "2026-03": 3.1, "2026-04": 5.6, "2026-05": 3.7, "2026-06": 2.7 }),
-  C("c5", "Equippers", "Equippers", "Chloe", "Quoted", null, { "2026-01": 0, "2026-02": 11.2, "2026-03": 5.0, "2026-04": 3.3, "2026-05": 10.0, "2026-06": 0.4 }),
-  C("c6", "Spectrum Consultants", "Spectrum Consultants", "Chloe", "Package", 24, { "2026-01": 21.8, "2026-02": 36.9, "2026-03": 35.9, "2026-04": 22.7, "2026-05": 22.8, "2026-06": 21.1 }),
-  C("c7", "Treasure Boxes", "Treasure Boxes", "Chloe", "Package", 10, { "2026-01": 21.8, "2026-02": 20.2, "2026-03": 3.4, "2026-04": 0, "2026-05": 0, "2026-06": 11.5 }),
-  C("c8", "Warrina Homes — Package", "Warrina Homes", "Chloe", "Package", 24, { "2026-01": 28.5, "2026-02": 27.8, "2026-03": 7.2, "2026-04": 46.8, "2026-05": 50.0, "2026-06": 44.1 }),
-  C("c9", "Warrina Homes — Employee Handbook", "Warrina Homes", "Chloe", "Project", null, null),
+  C("c1", "Amorim Cork", "Amorim Cork", "Chloe", "Package", 16, { "2026-01": 4.5, "2026-02": 5.3, "2026-03": 5.0, "2026-04": 9.5, "2026-05": 0.5, "2026-06": 0.8 }, { status: "active", history: [{ from: "2024-11", agreed: 0.0 }, { from: "2025-07", agreed: 16.0 }] }),
+  C("c2", "Apex Energy", "Apex Energy", "Chloe", "Package", 16, { "2026-01": 11.7, "2026-02": 7.8, "2026-03": 22.8, "2026-04": 15.8, "2026-05": 18.3, "2026-06": 36.7 }, { status: "active", history: [{ from: "2025-06", agreed: 24.0 }, { from: "2026-01", agreed: 16.0 }] }),
+  C("c3", "Apex Communications", "Apex Communications", "Chloe", "Package", 30.5, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 28.6, "2026-06": 19.5 }, { status: "active" }),
+  C("c4", "ARAS (Aged Rights Advocacy Services)", "Aged Rights Advocacy Services", "Chloe", "Hourly", null, { "2026-01": 0, "2026-02": 0, "2026-03": 3.1, "2026-04": 5.6, "2026-05": 3.7, "2026-06": 2.7 }, { status: "inactive", offboardedFrom: "2026-07", offboardNote: "ClickUp activity stopped after 1 Jul 2026, lining up with an earlier Lost Client Register note about funding expiring (source: PG Four Lists workbook, \"recommend treating as offboarded pending confirmation\"); confirmed same client as the Supabase Clients module's ARAS record, also offboarded there 1 Jul 2026." }),
+  C("c5", "Equippers", "Equippers", "Chloe", "Quoted", null, { "2026-01": 0, "2026-02": 11.2, "2026-03": 5.0, "2026-04": 3.3, "2026-05": 10.0, "2026-06": 0.4 }, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Not recorded — recurring invoicing and ClickUp activity simply stop (source: Inactive Clients list, ~1 Jun 2026)" }),
+  C("c6", "Spectrum Consultants", "Spectrum Consultants", "Chloe", "Package", 24, { "2026-01": 21.8, "2026-02": 36.9, "2026-03": 35.9, "2026-04": 22.7, "2026-05": 22.8, "2026-06": 21.1 }, { status: "active", history: [{ from: "2026-01", agreed: 24.0 }] }),
+  C("c7", "Treasure Boxes", "Treasure Boxes", "Chloe", "Package", 10, { "2026-01": 21.8, "2026-02": 20.2, "2026-03": 3.4, "2026-04": 0, "2026-05": 0, "2026-06": 11.5 }, { status: "active", history: [{ from: "2025-07", agreed: 10.0 }] }),
+  C("c8", "Warrina Homes: Package", "Warrina Homes", "Chloe", "Package", 24, { "2026-01": 28.5, "2026-02": 27.8, "2026-03": 7.2, "2026-04": 46.8, "2026-05": 50.0, "2026-06": 44.1 }, { status: "active" }),
+  C("c9", "Warrina Homes: Employee Handbook", "Warrina Homes", "Chloe", "Project", null, null, { status: "active" }),
 
-  C("c10", "Australian GW", "Australian GW", "Vinavie", "Hourly", 0, null),
-  C("c11", "Clare Valley Wine & Grape", "Clare Valley Wine & Grape", "Vinavie", "Package", 8, { "2026-01": 17.9, "2026-02": 5.2, "2026-03": 9.0, "2026-04": 7.8, "2026-05": 2.3, "2026-06": 0.8 }),
-  C("c12", "Coonawarra", "Coonawarra", "Vinavie", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 25.5, "2026-04": 17.7, "2026-05": 21.8, "2026-06": 13.6 }),
-  C("c13", "Riverland Wine — Package", "Riverland Wine", "Vinavie", "Package", 8, { "2026-01": 9.8, "2026-02": 14.8, "2026-03": 14.2, "2026-04": 11.9, "2026-05": 23.1, "2026-06": 3.2 }),
-  C("c14", "Riverland Wine — Melbourne Showcase", "Riverland Wine", "Vinavie", "Quoted", 25, null),
-  C("c15", "Sevenhill", "Sevenhill", "Vinavie", "Project", 6, null),
-  C("c16", "Vegetation Solutions — MVS", "Vegetation Solutions — MVS", "Vinavie", "Hourly", null, { "2026-01": 3.8, "2026-02": 3.6, "2026-03": 3.5, "2026-04": 1.3, "2026-05": 1.2, "2026-06": 0.4 }),
-  C("c17", "Vegetation Solutions — Firewood", "Vegetation Solutions — Firewood", "Vinavie", "Hourly", null, { "2026-01": 1.3, "2026-02": 2.5, "2026-03": 22.4, "2026-04": 21.1, "2026-05": 19.3, "2026-06": 13.0 }),
+  C("c10", "Australian GW", "Australian GW", "Vinavie", "Hourly", 0, null, { status: "archived", history: [{ from: "2025-07", agreed: 0.0 }], note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified, same standard applied to the Clients module." }),
+  C("c11", "Clare Valley Wine & Grape", "Clare Valley Wine & Grape", "Vinavie", "Package", 8, { "2026-01": 17.9, "2026-02": 5.2, "2026-03": 9.0, "2026-04": 7.8, "2026-05": 2.3, "2026-06": 0.8 }, { status: "active", history: [{ from: "2026-01", agreed: 8.0 }] }),
+  C("c12", "Coonawarra", "Coonawarra", "Vinavie", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 25.5, "2026-04": 17.7, "2026-05": 21.8, "2026-06": 13.6 }, { status: "active" }),
+  C("c13", "Riverland Wine: Package", "Riverland Wine", "Vinavie", "Package", 8, { "2026-01": 9.8, "2026-02": 14.8, "2026-03": 14.2, "2026-04": 11.9, "2026-05": 23.1, "2026-06": 3.2 }, { status: "active", history: [{ from: "2026-04", agreed: 8.0 }] }),
+  C("c14", "Riverland Wine: Melbourne Showcase", "Riverland Wine", "Vinavie", "Quoted", 25, null, { status: "active" }),
+  C("c15", "Sevenhill", "Sevenhill", "Vinavie", "Project", 6, null, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Reduced to 'Media Release only' then dropped (source: Inactive Clients list, ~Feb-Jun 2026)" }),
+  C("c16", "Vegetation Solutions: MVS", "Vegetation Solutions: MVS", "Vinavie", "Hourly", null, { "2026-01": 3.8, "2026-02": 3.6, "2026-03": 3.5, "2026-04": 1.3, "2026-05": 1.2, "2026-06": 0.4 }, { status: "active" }),
+  C("c17", "Vegetation Solutions: Firewood", "Vegetation Solutions: Firewood", "Vinavie", "Hourly", null, { "2026-01": 1.3, "2026-02": 2.5, "2026-03": 22.4, "2026-04": 21.1, "2026-05": 19.3, "2026-06": 13.0 }, { status: "active" }),
 
-  C("c18", "Aus3C", "Aus3C", "Shreya", "Package", 40, { "2026-01": 35.0, "2026-02": 58.9, "2026-03": 56.0, "2026-04": 27.4, "2026-05": 67.6, "2026-06": 18.6 }),
-  C("c19", "GPEX", "GPEX", "Shreya", "Package", 70, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 38.6, "2026-05": 105.3, "2026-06": 140.4 }),
-  C("c20", "BusSA", "BusSA", "Shreya", "Project", 25, { "2026-01": 0, "2026-02": 1.5, "2026-03": 9.0, "2026-04": 18.8, "2026-05": 46.5, "2026-06": 19.0 }),
-  C("c21", "Magain Real Estate", "Magain Real Estate", "Shreya", "Hourly", null, { "2026-01": 13.1, "2026-02": 8.8, "2026-03": 42.9, "2026-04": 24.0, "2026-05": 10.3, "2026-06": 7.6 }),
-  C("c22", "Media Magnetix", "Media Magnetix", "Shreya", "Strategy", 0, null),
+  C("c18", "Aus3C", "Aus3C", "Shreya", "Package", 40, { "2026-01": 35.0, "2026-02": 58.9, "2026-03": 56.0, "2026-04": 27.4, "2026-05": 67.6, "2026-06": 18.6 }, { status: "active" }),
+  C("c19", "GPEX", "GPEX", "Shreya", "Package", 70, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 38.6, "2026-05": 105.3, "2026-06": 140.4 }, { status: "active" }),
+  C("c20", "BusSA", "BusSA", "Shreya", "Project", 25, { "2026-01": 0, "2026-02": 1.5, "2026-03": 9.0, "2026-04": 18.8, "2026-05": 46.5, "2026-06": 19.0 }, { status: "active", note: "A separate 'BusSA / BusSafe' one-off project ended ~May 2026 per the Inactive Clients list, but this account is the ongoing BusSAFE retainer and remains active." }),
+  C("c21", "Magain Real Estate", "Magain Real Estate", "Shreya", "Hourly", null, { "2026-01": 13.1, "2026-02": 8.8, "2026-03": 42.9, "2026-04": 24.0, "2026-05": 10.3, "2026-06": 7.6 }, { status: "active" }),
+  C("c22", "Media Magnetix", "Media Magnetix", "Shreya", "Strategy", 0, null, { status: "archived", note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified, same standard applied to the Clients module." }),
 
-  C("c23", "Baintech", "Baintech", "Lucy", "Package", 38, null),
-  C("c24", "BAMSS / Childcare Sec Services", "BAMSS", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 5.8, "2026-06": 13.9 }),
-  C("c25", "Barclay Recruitment (Verity Cons)", "Barclay Recruitment", "Lucy", "Package", 27, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 14.9, "2026-06": 48.5 }),
-  C("c26", "Bridge to Best", "Bridge to Best", "Lucy", "Package", 10, null),
-  C("c27", "By the Rules", "By the Rules", "Lucy", "Package", 5, null),
-  C("c28", "Connection Central", "Connection Central", "Lucy", "Project", 25, null),
-  C("c29", "Cowie Environmental", "Cowie Environmental", "Lucy", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 31.7, "2026-05": 16.2, "2026-06": 33.5 }),
-  C("c30", "CRA Construction", "CRA Construction", "Lucy", "Package", 24, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 7.8, "2026-05": 25.7, "2026-06": 23.5 }),
-  C("c31", "May Di Marco – Ray White", "May Di Marco", "Lucy", "Package", 11, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 6.4, "2026-06": 11.5 }),
-  C("c32", "Plumbaround", "Plumbaround", "Lucy", "Package", 16, null),
-  C("c33", "Sunfresh Linen", "Sunfresh Linen", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0.3, "2026-04": 22.6, "2026-05": 21.7, "2026-06": 32.9 }),
+  C("c23", "Baintech", "Baintech", "Lucy", "Package", 38, null, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Zero ClickUp folder activity found across the entire 13-month synced window (Jul 2025-Jul 2026), corroborating the PG Four Lists workbook note \"Offboarding planned for end Jun 2026 -- recommend confirming this went ahead as scheduled\"; mirrors the same status set on this client in the Supabase Clients module.", history: [{ from: "2026-06", agreed: 32.0 }] }),
+  C("c24", "BAMSS / Childcare Sec Services", "BAMSS Childcare Security Services (Qld)", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 5.8, "2026-06": 13.9 }, { status: "active" }),
+  C("c25", "Barclay Recruitment (Verity Cons)", "Barclay Recruitment", "Lucy", "Package", 27, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 14.9, "2026-06": 48.5 }, { status: "active" }),
+  C("c26", "Bridge to Best", "Bridge to Best", "Lucy", "Package", 10, null, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Zero ClickUp folder activity found across the entire 13-month synced window (Jul 2025-Jul 2026), corroborating the PG Four Lists workbook note \"Offboarding planned for end Jun 2026 -- recommend confirming this went ahead as scheduled\"; mirrors the same status set on this client in the Supabase Clients module." }),
+  C("c27", "By the Rules", "By the Rules", "Lucy", "Package", 5, null, { status: "active" }),
+  C("c28", "Connection Central", "Connection Central", "Lucy", "Project", 25, null, { status: "inactive", offboardedFrom: "2026-05", offboardNote: "Project ended (source: Inactive Clients list, ~1 May 2026)" }),
+  C("c29", "Cowie Environmental", "Cowie Environmental", "Lucy", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 31.7, "2026-05": 16.2, "2026-06": 33.5 }, { status: "active" }),
+  C("c30", "CRA Construction", "CRA Construction", "Lucy", "Package", 24, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 7.8, "2026-05": 25.7, "2026-06": 23.5 }, { status: "active" }),
+  C("c31", "Mary Di Marco – Ray White", "Mary Di Marco - Ray White (Qld)", "Lucy", "Package", 11, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 6.4, "2026-06": 11.5 }, { status: "active", history: [{ from: "2026-06", agreed: 6 }] }),
+  C("c32", "Plumbaround", "Plumbaround", "Lucy", "Package", 16, null, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Zero ClickUp folder activity found across the entire 13-month synced window (Jul 2025-Jul 2026), corroborating the PG Four Lists workbook note \"Offboarding planned for end Jun 2026 -- recommend confirming this went ahead as scheduled\"; mirrors the same status set on this client in the Supabase Clients module." }),
+  C("c33", "Sunfresh Linen", "Sunfresh Linen", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0.3, "2026-04": 22.6, "2026-05": 21.7, "2026-06": 32.9 }, { status: "active" }),
 
-  C("c34", "Bee Squared Consulting", "Bee Squared", "Holly", "Package", 24, { "2026-01": 29.1, "2026-02": 25.7, "2026-03": 24.4, "2026-04": 13.4, "2026-05": 30.1, "2026-06": 29.4 }),
-  C("c35", "Comunet", "Comunet", "Holly", "Hourly", 32, { "2026-01": 22.8, "2026-02": 21.8, "2026-03": 20.8, "2026-04": 6.8, "2026-05": 47.4, "2026-06": 32.8 }),
-  C("c36", "Clarke Energy (base)", "Clarke Energy", "Holly", "Hourly", null, { "2026-01": 26.9, "2026-02": 37.2, "2026-03": 48.1, "2026-04": 26.0, "2026-05": 67.2, "2026-06": 112.3 }),
-  C("c37", "Clarke Energy — AEP", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c38", "Clarke Energy — ACES", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c39", "Clarke Energy — AIMEX", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c40", "Clarke Energy — WA", "Clarke Energy", "Holly", "Hourly", null, null),
-  C("c41", "History Trust of SA", "History Trust of SA", "Holly", "MAP", 80, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 28.1, "2026-06": 82.6 }),
-  C("c42", "PRG Consulting", "PRG Consulting", "Holly", "Package", 8, { "2026-01": 13.5, "2026-02": 15.4, "2026-03": 13.1, "2026-04": 1.0, "2026-05": 5.0, "2026-06": 5.4 }),
-  C("c43", "Utter Gutters", "Utter Gutters", "Holly", "Package", 32, { "2026-01": 8.2, "2026-02": 6.5, "2026-03": 6.2, "2026-04": 6.0, "2026-05": 7.1, "2026-06": 9.0 }),
-  C("c44", "Villani Jewellers", "Villani Jewellers", "Holly", "Package", 16, { "2026-01": 12.8, "2026-02": 16.8, "2026-03": 16.5, "2026-04": 20.9, "2026-05": 16.8, "2026-06": 12.9 }),
-  C("c45", "Villani — Website Project", "Villani Jewellers", "Holly", "Project", 8, null),
+  C("c34", "Bee Squared Consulting", "Bee Squared", "Holly", "Package", 24, { "2026-01": 29.1, "2026-02": 25.7, "2026-03": 24.4, "2026-04": 13.4, "2026-05": 30.1, "2026-06": 29.4 }, { status: "active", history: [{ from: "2025-07", agreed: 24.0 }] }),
+  C("c35", "Comunet", "Comunet", "Holly", "Hourly", 32, { "2026-01": 22.8, "2026-02": 21.8, "2026-03": 20.8, "2026-04": 6.8, "2026-05": 47.4, "2026-06": 32.8 }, { status: "active" }),
+  C("c36", "Clarke Energy (base)", "Clarke Energy", "Holly", "Hourly", null, { "2026-01": 26.9, "2026-02": 37.2, "2026-03": 48.1, "2026-04": 26.0, "2026-05": 67.2, "2026-06": 112.3 }, { status: "active" }),
+  C("c37", "Clarke Energy: AEP", "Clarke Energy", "Holly", "Hourly", null, null, { status: "active" }),
+  C("c38", "Clarke Energy: ACES", "Clarke Energy", "Holly", "Hourly", null, null, { status: "active" }),
+  C("c39", "Clarke Energy: AIMEX", "Clarke Energy", "Holly", "Hourly", null, null, { status: "active" }),
+  C("c40", "Clarke Energy: WA", "Clarke Energy", "Holly", "Hourly", null, null, { status: "active" }),
+  C("c41", "History Trust of SA (HTSA)", "HTSA", "Holly", "MAP", 80, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 28.1, "2026-06": 82.6 }, { status: "active" }),
+  C("c42", "PRG Consulting", "PRG Financial Services Outsourced Marketing", "Holly", "Package", 8, { "2026-01": 13.5, "2026-02": 15.4, "2026-03": 13.1, "2026-04": 1.0, "2026-05": 5.0, "2026-06": 5.4 }, { status: "active", history: [{ from: "2026-01", agreed: 8.0 }] }),
+  C("c43", "Utter Gutters", "Utter Gutters", "Holly", "Package", 32, { "2026-01": 8.2, "2026-02": 6.5, "2026-03": 6.2, "2026-04": 6.0, "2026-05": 7.1, "2026-06": 9.0 }, { status: "active" }),
+  C("c44", "Villani Jewellers", "Villani Jewellers", "Holly", "Package", 16, { "2026-01": 12.8, "2026-02": 16.8, "2026-03": 16.5, "2026-04": 20.9, "2026-05": 16.8, "2026-06": 12.9 }, { status: "active", history: [{ from: "2025-09", agreed: 24.0 }, { from: "2026-05", agreed: 16.0 }] }),
+  C("c45", "Villani: Website Project", "Villani Jewellers", "Holly", "Project", 8, null, { status: "active" }),
 
-  C("c46", "Better Medical", "Better Medical", "Alice", "Package", 32, { "2026-01": 48.0, "2026-02": 43.6, "2026-03": 47.6, "2026-04": 32.9, "2026-05": 18.1, "2026-06": 47.7 }),
-  C("c47", "Duco", "Duco", "Alice", "Package", 24, { "2026-01": 16.2, "2026-02": 34.8, "2026-03": 25.6, "2026-04": 27.2, "2026-05": 3.3, "2026-06": 0.0 }),
-  C("c48", "Osteria Polpo", "Osteria Polpo", "Alice", "Package", 16, null),
-  C("c49", "Sidewood", "Sidewood", "Alice", "Hourly", null, { "2026-01": 26.6, "2026-02": 32.4, "2026-03": 37.8, "2026-04": 30.0, "2026-05": 31.8, "2026-06": 30.3 }),
-  C("c50", "Your Success Lab", "Your Success Lab", "Alice", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 33.8, "2026-04": 61.6, "2026-05": 33.2, "2026-06": 35.1 }),
+  C("c46", "Hills Medical (Better Medical)", "Hills Medical", "Alice", "Package", 32, { "2026-01": 48.0, "2026-02": 43.6, "2026-03": 47.6, "2026-04": 32.9, "2026-05": 18.1, "2026-06": 47.7 }, { status: "active" }),
+  C("c47", "Duco", "Duco", "Alice", "Package", 24, { "2026-01": 16.2, "2026-02": 34.8, "2026-03": 25.6, "2026-04": 27.2, "2026-05": 3.3, "2026-06": 0.0 }, { status: "active", history: [{ from: "2026-01", agreed: 24.0 }] }),
+  C("c48", "Osteria Polpo", "Osteria Polpo", "Alice", "Package", 16, null, { status: "archived", note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified. Matches the archived status already set on this client in the Supabase Clients module." }),
+  C("c49", "Sidewood", "Sidewood", "Alice", "Hourly", null, { "2026-01": 26.6, "2026-02": 32.4, "2026-03": 37.8, "2026-04": 30.0, "2026-05": 31.8, "2026-06": 30.3 }, { status: "active" }),
+  C("c50", "Your Success Lab", "Your Success Lab", "Alice", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 33.8, "2026-04": 61.6, "2026-05": 33.2, "2026-06": 35.1 }, { status: "active" }),
 
-  C("c51", "Blueforce", "Blueforce", "Amanda", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 6.4, "2026-04": 27.2, "2026-05": 47.2, "2026-06": 51.4 }),
-  C("c52", "CLT Website", "CLT Website", "Amanda", "Package", null, null),
-  C("c53", "Filter Supplies (WA)", "Filter Supplies", "Amanda", "Package", 16, { "2026-01": 6.4, "2026-02": 9.8, "2026-03": 14.0, "2026-04": 17.8, "2026-05": 8.1, "2026-06": 15.0 }),
-  C("c54", "Green Shoots", "Green Shoots", "Amanda", "Package", 16, { "2026-01": 19.2, "2026-02": 6.6, "2026-03": 13.9, "2026-04": 7.5, "2026-05": 19.3, "2026-06": 24.8 }),
-  C("c55", "Majestic Plumbing", "Majestic Plumbing", "Amanda", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 4.6, "2026-04": 11.7, "2026-05": 15.9, "2026-06": 32.2 }),
-  C("c56", "Rent Busters WA", "Rent Busters WA", "Amanda", "Package", 8, { "2026-01": 6.1, "2026-02": 6.6, "2026-03": 6.2, "2026-04": 8.3, "2026-05": 7.0, "2026-06": 7.0 }),
-  C("c57", "Zest", "Zest", "Amanda", "Package", 24, { "2026-01": 1.3, "2026-02": 36.6, "2026-03": 18.8, "2026-04": 42.7, "2026-05": 22.9, "2026-06": 1.3 }),
+  C("c51", "Blueforce", "Blueforce", "Amanda", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 6.4, "2026-04": 27.2, "2026-05": 47.2, "2026-06": 51.4 }, { status: "active" }),
+  C("c52", "CLT Website", "CLT Website", "Amanda", "Package", null, null, { status: "archived", note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified, same standard applied to the Clients module." }),
+  C("c53", "Filter Supplies (WA)", "Filter Supplies", "Amanda", "Package", 16, { "2026-01": 6.4, "2026-02": 9.8, "2026-03": 14.0, "2026-04": 17.8, "2026-05": 8.1, "2026-06": 15.0 }, { status: "active" }),
+  C("c54", "Green Shoots", "Green Shoots", "Amanda", "Package", 16, { "2026-01": 19.2, "2026-02": 6.6, "2026-03": 13.9, "2026-04": 7.5, "2026-05": 19.3, "2026-06": 24.8 }, { status: "active" }),
+  C("c55", "Majestic Plumbing", "Majestic Plumbing", "Amanda", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 4.6, "2026-04": 11.7, "2026-05": 15.9, "2026-06": 32.2 }, { status: "active" }),
+  C("c56", "Rent Busters WA", "Rent Busters WA", "Amanda", "Package", 8, { "2026-01": 6.1, "2026-02": 6.6, "2026-03": 6.2, "2026-04": 8.3, "2026-05": 7.0, "2026-06": 7.0 }, { status: "active" }),
+  C("c57", "Zest", "Zest", "Amanda", "Package", 24, { "2026-01": 1.3, "2026-02": 36.6, "2026-03": 18.8, "2026-04": 42.7, "2026-05": 22.9, "2026-06": 1.3 }, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Appointed an in-house manager (source: Inactive Clients list, End Jun 2026)" }),
+
+  // Long-churned clients from the PG Four Lists workbook with no lead/basis/agreed-hours
+  // recorded in the source sheet -- kept as unassigned placeholders for history/lookup
+  // only. They carry no lead so they are excluded from every consultant's capacity math.
+  C("c58", "YSL", "YSL", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Appointed an in-house manager (source: Inactive Clients list, offboarded 26 Jun 2026). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c59", "Port Adelaide Enfield Council", "Port Adelaide Enfield Council", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2026-05", offboardNote: "Single invoice — one-off engagement (source: Inactive Clients list, offboarded 31 May 2026). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c60", "Leaker Partners", "Leaker Partners", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2026-03", offboardNote: "Single invoice — one-off engagement (source: Inactive Clients list, offboarded 23 Mar 2026). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c61", "Tyre Evolution", "Tyre Evolution", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2026-03", offboardNote: "Single invoice — one-off engagement (source: Inactive Clients list, offboarded 5 Mar 2026). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c62", "Dulux Flextool", "Dulux Flextool", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-12", offboardNote: "Single invoice — one-off engagement (source: Inactive Clients list, offboarded 31 Dec 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c63", "ONeills", "ONeills", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-12", offboardNote: "Taking work in-house (source: Inactive Clients list, offboarded 25 Dec 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c64", "Barkuma", "Barkuma", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-12", offboardNote: "'Taking work in-house?' — reason marked uncertain in source (source: Inactive Clients list, offboarded Dec 2025 (uncertain)). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c65", "ATR Guitars", "ATR Guitars", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-09", offboardNote: "Single invoice — one-off engagement (source: Inactive Clients list, offboarded 30 Sep 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c66", "Alix Doherty (Advisory/Consulting)", "Alix Doherty (Advisory/Consulting)", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-10", offboardNote: "Change in direction (source: Inactive Clients list, offboarded 25 Sep 2025-Oct 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c67", "Adelaide Direct Stationers", "Adelaide Direct Stationers", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-08", offboardNote: "Employed an in-house marketer (source: Inactive Clients list, offboarded 31 Aug 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c68", "Capital Prudential", "Capital Prudential", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-09", offboardNote: "Business model realignment to geography/direction (source: Inactive Clients list, offboarded 19 Aug 2025-Sep 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c69", "Killikanoon (Kilikanoon Wines)", "Killikanoon (Kilikanoon Wines)", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-08", offboardNote: "In-house resource returned from leave (source: Inactive Clients list, offboarded 15 Aug 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c70", "Orbis Wines", "Orbis Wines", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-08", offboardNote: "Unhappy with WordPress/ecommerce rebuild (source: Inactive Clients list, offboarded 1 Aug 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c71", "Prexus", "Prexus", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-06", offboardNote: "Client-initiated, unhappy with website management (source: Inactive Clients list, offboarded 23 Jun 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c72", "Franz Knoll / Franz Knoll Councillor", "Franz Knoll / Franz Knoll Councillor", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-08", offboardNote: "4-week project — fixed-term, not an ongoing retainer (source: Inactive Clients list, offboarded Jul-Aug 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c73", "Pursuit Allied Health", "Pursuit Allied Health", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-12", offboardNote: "No specific reason given at notice (source: Inactive Clients list, offboarded End Dec 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c74", "TradeiNet / TradieNet", "TradeiNet / TradieNet", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-12", offboardNote: "Strategy realignment for app (source: Inactive Clients list, offboarded From 25 Dec 2025 (paused)). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c75", "HSE Fit Tick", "HSE Fit Tick", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-12", offboardNote: "Moving work to the UK (source: Inactive Clients list, offboarded Sept-Dec 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
+  C("c76", "Gatt Wines", "Gatt Wines", "Unassigned", "Hourly", null, null, { status: "inactive", offboardedFrom: "2025-09", offboardNote: "Reduced to ad hoc, then dropped (source: Inactive Clients list, offboarded ~Sep 2025). Added as an unassigned placeholder — the source sheet has no lead/basis/agreed-hours data for this client." }),
 ];
 
 const SEED_SUPPORT = [
@@ -223,28 +314,16 @@ const SEED_SUPPORT = [
   { id: "s20", from: "Alex", to: "Purple Giraffe (internal)", type: "pct", value: 0.20 },
 ];
 
-export const OWNERS = ["Holly", "Shreya", "Chloe", "Alice", "Amanda", "Lucy", "Vinavie"];
+export const OWNERS = ["Holly", "Shreya", "Chloe", "Alice", "Amanda", "Lucy", "Vinavie", "Sarah"];
 
 /* ============================================================
-   STORAGE — plain localStorage (the source component targeted a
-   sandboxed window.storage API that doesn't exist in a standalone
-   browser; same fix already applied to the reconciliation module).
-   Exported so Performance can read the same roster/client edits live
-   instead of keeping a stale copy of its own.
+   STORAGE — backed by Supabase (pginvoice_app_state), not localStorage, so
+   roster/client edits are visible from any browser, not just the one that
+   made them. Exported under its old name so Performance and Timesheet
+   Summary's existing `loadKey(...)` calls keep working unchanged.
 ============================================================ */
-export function loadKey(key, fallback) {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch (e) { return fallback; }
-}
-function saveKey(key, value) {
-  try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignore */ }
-  // Same signal idbSet fires for the large IndexedDB datasets — reused here so any
-  // mounted module (e.g. Performance reading the roster/client list this saved) can
-  // react live instead of only picking up the change on its own next mount.
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PG_DATA_EVENT, { detail: { key } }));
-}
+export const loadKey = loadState;
+const saveKey = saveState;
 
 /* ============================================================
    PICKER — dropdown trigger + menu, styled like the app's export menu
@@ -308,7 +387,7 @@ class ErrorBoundary extends React.Component {
 /* ============================================================
    MAIN COMPONENT
 ============================================================ */
-function CapacityDashboardInner() {
+function CapacityDashboardInner({ onNavigateTeam }) {
   const [loaded, setLoaded] = useState(false);
   const [people, setPeople] = useState(SEED_PEOPLE);
   const [clients, setClients] = useState(SEED_CLIENTS);
@@ -329,6 +408,7 @@ function CapacityDashboardInner() {
   const [qConsultant, setQConsultant] = useState("");
   const [qClient, setQClient] = useState("");
   const [qSupport, setQSupport] = useState("");
+  const [qRoster, setQRoster] = useState("");
 
   // The same parsed ClickUp export Client Invoicing has already loaded (and persisted to
   // IndexedDB) — read here too so "Average Hrs" can be driven from real billable hours
@@ -344,23 +424,60 @@ function CapacityDashboardInner() {
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);
 
+  // The Clients module (pginvoice_clients, Supabase) is the single source of truth for a
+  // client's status and consultant/owner -- reload it here too so Capacity Planning shows
+  // the same active/inactive state and the same consultant assignment, and stays in sync
+  // when either module edits it (a client/consultant change made in either place can only
+  // land in this same table, via createClient/createClientEvent).
+  const [pgClients, setPgClients] = useState([]);
+  const [pgLoaded, setPgLoaded] = useState(false);
+  const loadPgClients = useCallback(async () => {
+    try {
+      await applyDueClientEvents();
+      const data = await fetchPgClients();
+      setPgClients(data);
+    } catch (e) { /* best-effort -- local SEED/cap_clients data still renders on its own */ }
+    finally { setPgLoaded(true); }
+  }, []);
   useEffect(() => {
-    setPeople(loadKey("cap_people", SEED_PEOPLE));
-    setClients(loadKey("cap_clients", SEED_CLIENTS));
-    setSupport(loadKey("cap_support", SEED_SUPPORT));
+    loadPgClients();
+    // Every module reading pginvoice_clients stays mounted for the session (no remount on
+    // tab switch), so a change made in the Clients module needs this explicit signal to be
+    // picked up here without a full page reload.
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === "pg_clients") loadPgClients(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => window.removeEventListener(PG_DATA_EVENT, onUpdate);
+  }, [loadPgClients]);
 
-    const loadedNotes = loadKey("cap_notes", []);
-    if (Array.isArray(loadedNotes)) {
-      setNotes(loadedNotes.every((n) => n && typeof n.text === "string") ? loadedNotes : []);
-    } else if (typeof loadedNotes === "string" && loadedNotes.trim()) {
-      setNotes([{ id: uid("n"), text: loadedNotes.trim(), ts: Date.now() }]);
-    } else {
-      setNotes([]);
-    }
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [ppl, clis, supp, loadedNotes, lvs, ovr] = await Promise.all([
+        loadKey("cap_people", SEED_PEOPLE),
+        loadKey("cap_clients", SEED_CLIENTS),
+        loadKey("cap_support", SEED_SUPPORT),
+        loadKey("cap_notes", []),
+        loadKey("cap_leaves", {}),
+        loadKey("cap_overrides", {}),
+      ]);
+      if (cancelled) return;
+      setPeople(ppl);
+      setClients(clis);
+      setSupport(supp);
 
-    setLeaves(loadKey("cap_leaves", {}));
-    setOverrides(loadKey("cap_overrides", {}));
-    setLoaded(true);
+      if (Array.isArray(loadedNotes)) {
+        setNotes(loadedNotes.every((n) => n && typeof n.text === "string") ? loadedNotes : []);
+      } else if (typeof loadedNotes === "string" && loadedNotes.trim()) {
+        setNotes([{ id: uid("n"), text: loadedNotes.trim(), ts: Date.now() }]);
+      } else {
+        setNotes([]);
+      }
+
+      setLeaves(lvs);
+      setOverrides(ovr);
+      setLoaded(true);
+    })();
+    return () => { cancelled = true; };
   }, []);
   useEffect(() => { if (loaded) saveKey("cap_people", people); }, [people, loaded]);
   useEffect(() => { if (loaded) saveKey("cap_clients", clients); }, [clients, loaded]);
@@ -379,19 +496,16 @@ function CapacityDashboardInner() {
   const leaveFor = (personId) => Number(leaves[`${personId}_${month}`] || 0);
   const setLeaveFor = (personId, hrs) => setLeaves((prev) => ({ ...prev, [`${personId}_${month}`]: hrs === "" ? 0 : Number(hrs) }));
 
-  /* ---------- capacity math ---------- */
+  /* ---------- capacity math ----------
+     Delegates the actual per-person formula to computeMonthlyAvailability, the same
+     function the Team module's Availability list calls — so this view and Team's can
+     never quietly compute different numbers for the same person/month. */
   const peopleMap = useMemo(() => {
     const m = {};
-    const wd = weekdaysInMonth(month);
     people.forEach((p) => {
-      const dailyHrs = p.contracted / 5;
-      const resourceHours = dailyHrs * wd;                       // Total Resource Hours (monthly, weekday-exact)
-      const holidayDays = publicHolidayDays(p.state, month);
-      const publicHolidayHrs = dailyHrs * holidayDays;            // Public Holidays (hrs lost, state-specific)
-      const leaveHrs = leaveFor(p.id);                            // Leaves (editable, hrs lost)
-      const totalMonthlyHours = Math.max(0, resourceHours - publicHolidayHrs - leaveHrs);
-      const monthly = totalMonthlyHours * p.rate;                 // Total Monthly Billable Capacity
-      m[p.name] = { ...p, resourceHours, publicHolidayHrs, holidayDays, leaveHrs, totalMonthlyHours, monthly };
+      const avail = computeMonthlyAvailability(p, month, leaveFor(p.id));
+      if (!avail) return; // resigned in an earlier month — not staff this month at all
+      m[p.name] = { ...p, ...avail, monthly: avail.billableHours };
     });
     return m;
   }, [people, month, leaves]);
@@ -403,6 +517,12 @@ function CapacityDashboardInner() {
 
   const givenAway = useMemo(() => { const m = {}; support.forEach((s) => { m[s.from] = (m[s.from] || 0) + hoursOf(s); }); return m; }, [support, hoursOf]);
   const receivedBy = useMemo(() => { const m = {}; support.forEach((s) => { if (!m[s.to]) m[s.to] = []; m[s.to].push({ ...s, hours: hoursOf(s) }); }); return m; }, [support, hoursOf]);
+
+  // Every real ClickUp folder name currently synced -- used only to flag a client group
+  // whose `group` text (the field findMatch actually matches folders against) doesn't
+  // correspond to any real folder right now, the same silent-mismatch bug that hid Mary
+  // Di Marco, HTSA, ARAS, Better Medical, and PRG Consulting's real hours until caught by hand.
+  const realFolderSet = useMemo(() => new Set((clickupData?.rows || []).map((r) => r.folder).filter(Boolean)), [clickupData]);
 
   // Real billable-hours average per client GROUP, from whatever ClickUp export Client
   // Invoicing currently has loaded — trailing 6 real calendar months, billable only,
@@ -428,6 +548,23 @@ function CapacityDashboardInner() {
     const folderList = [...folders];
     const groups = [...new Set(clients.map((c) => c.group))];
     for (const group of groups) {
+      // Some clients run their real work across several sibling ClickUp folders (Aus3C's
+      // training programs, Magain's ~20 individual-agent folders, etc.) rather than one
+      // umbrella folder -- sum minutes across all of them per month instead of picking a
+      // single best-match folder, which was silently undercounting these clients' actuals.
+      const multi = multiFolderMatchesFor(group, folderList);
+      if (multi && multi.length) {
+        const byMonth = new Map();
+        for (const f of multi) {
+          const fm = perFolderMonth.get(f);
+          if (!fm) continue;
+          for (const [mk, min] of fm) byMonth.set(mk, (byMonth.get(mk) || 0) + min);
+        }
+        if (byMonth.size === 0) continue;
+        const totalMin = [...byMonth.values()].reduce((a, b) => a + b, 0);
+        result.set(group, { avgHours: (totalMin / 60) / byMonth.size, matchedFolder: `${multi.length} folders`, monthsCounted: byMonth.size, confidence: 1 });
+        continue;
+      }
       const match = findMatch(group, folderList);
       if (!match) continue;
       const byMonth = perFolderMonth.get(match.name);
@@ -447,9 +584,11 @@ function CapacityDashboardInner() {
   function demandFor(c, m, avgOverride) {
     const avg = avgOverride !== undefined ? avgOverride : trailingAverage(c.actuals, m);
     const isFixed = FIXED_BASES.includes(c.basis);
+    const agreed = agreedAt(c, m);
     let demand;
-    if (isFixed) { demand = (c.agreed !== null && c.agreed !== undefined) ? c.agreed : (avg !== null ? avg : 0); }
-    else { demand = avg !== null ? avg : (c.agreed !== null ? c.agreed : 0); }
+    if (c.offboardedFrom && m >= c.offboardedFrom) { demand = 0; }
+    else if (isFixed) { demand = (agreed !== null && agreed !== undefined) ? agreed : (avg !== null ? avg : 0); }
+    else { demand = avg !== null ? avg : (agreed !== null ? agreed : 0); }
     const overrideKey = `${c.id}_${m}`;
     const overridden = overrides[overrideKey];
     if (overridden !== undefined && overridden !== null && overridden !== "") { demand = Number(overridden); }
@@ -476,18 +615,94 @@ function CapacityDashboardInner() {
     return { demand, avg: null, isOverridden: anyOverridden, isDynamic: false, dyn: null };
   }
   const setOverride = (clientId, m, value) => setOverrides((prev) => ({ ...prev, [`${clientId}_${m}`]: value === "" ? null : Number(value) }));
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+
+  // A pginvoice_clients consultant is stored as "Holly L", "Alice FS", etc.; SEED_PEOPLE/OWNERS
+  // use just the first name -- this is the only bit of translation needed to treat the two
+  // systems' consultant field as the same value.
+  const firstName = (s) => (s || "").trim().split(" ")[0];
+  // Best-effort reverse lookup for writing a consultant back to Supabase in its full style,
+  // by finding another client already on record with that same first name. Falls back to the
+  // bare first name if this is the first client ever assigned to that person (matches the
+  // "Added from live ClickUp sync, please confirm" pattern already used elsewhere for that case).
+  const fullConsultantName = useCallback((first) => {
+    const hit = pgClients.find((p) => p.consultant && firstName(p.consultant) === first);
+    return hit ? hit.consultant : first;
+  }, [pgClients]);
+
+  // Reassigning a client's consultant/owner writes through to pginvoice_clients (the same
+  // table the Clients module edits) via the same scheduled-event mechanism its own Modify
+  // panel uses, so the change is visible there too -- not just a local-only edit here.
+  const changeConsultant = useCallback(async (row, newLead) => {
+    if (row._pgClient) {
+      try {
+        await createClientEvent(row._pgClient, "consultant", todayStr(), { new_consultant: fullConsultantName(newLead) });
+        await applyDueClientEvents();
+        await loadPgClients();
+      } catch (e) { alert("Couldn't update the consultant in the Clients module: " + (e.message || e)); return; }
+    }
+    setClients((prev) => prev.map((c) => (c.group === row.group ? { ...c, lead: newLead } : c)));
+  }, [fullConsultantName, loadPgClients]);
+
+  const [showAddClient, setShowAddClient] = useState(false);
+  const [addClientForm, setAddClientForm] = useState({ name: "", lead: OWNERS[0], basis: "Package", agreed: "" });
+  const submitAddClient = useCallback(async () => {
+    const name = addClientForm.name.trim();
+    if (!name) return;
+    const typeMap = { Package: "package", Project: "quoted", Quoted: "quoted", MAP: "quoted", Strategy: "package", Hourly: "hourly", "Ad hoc": "hourly" };
+    const agreedNum = addClientForm.agreed === "" ? null : Number(addClientForm.agreed);
+    try {
+      await createPgClient(name, { type: typeMap[addClientForm.basis] || "hourly", agreedHours: agreedNum, consultant: fullConsultantName(addClientForm.lead) });
+      await loadPgClients();
+    } catch (e) { alert("Couldn't create the client in the Clients module: " + (e.message || e)); return; }
+    setClients((prev) => [...prev, {
+      id: uid("c"), client: name, group: name, lead: addClientForm.lead, basis: addClientForm.basis,
+      agreed: agreedNum, actuals: null, note: "", status: "active", offboardedFrom: null, offboardNote: "", history: null,
+    }]);
+    setShowAddClient(false);
+    setAddClientForm({ name: "", lead: OWNERS[0], basis: "Package", agreed: "" });
+  }, [addClientForm, fullConsultantName, loadPgClients]);
+
+  const pgClientNames = useMemo(() => pgClients.map((p) => p.client), [pgClients]);
+  const matchPgClient = useCallback((c) => {
+    if (!pgClients.length) return null;
+    const byClient = findMatch(c.client, pgClientNames);
+    if (byClient && byClient.confidence >= 0.8) return pgClients.find((p) => p.client === byClient.name) || null;
+    const byGroup = findMatch(c.group, pgClientNames);
+    if (byGroup && byGroup.confidence >= 0.8) return pgClients.find((p) => p.client === byGroup.name) || null;
+    return byClient ? pgClients.find((p) => p.client === byClient.name) || null : null;
+  }, [pgClients, pgClientNames]);
+
+  // The list actually used for the owner-grouped ledger: each row's status and lead come
+  // from the matched pginvoice_clients record when one exists (so a status/consultant change
+  // made in the Clients module is reflected here without any local edit), falling back to the
+  // local SEED/cap_clients value when a client genuinely isn't in that table yet -- e.g. one
+  // just added here, before the Supabase round-trip completes on next load.
+  const syncedClients = useMemo(() => clients.map((c) => {
+    const pg = matchPgClient(c);
+    if (!pg) return { ...c, _pgClient: null, _effectiveStatus: c.status };
+    const mappedLead = pg.consultant ? firstName(pg.consultant) : null;
+    return {
+      ...c,
+      lead: (mappedLead && OWNERS.includes(mappedLead)) ? mappedLead : c.lead,
+      _pgClient: pg.client,
+      _effectiveStatus: pg.status === "active" ? "active" : "inactive",
+    };
+  }), [clients, matchPgClient]);
 
   const groupedByOwner = useMemo(() => {
     const m = {};
     OWNERS.forEach((o) => m[o] = []);
     const seenGroups = {};
-    clients.forEach((c) => {
+    syncedClients.forEach((c) => {
+      if (!pgLoaded) return; // avoid a flash of the un-filtered list before the sync data arrives
+      if (c._effectiveStatus !== "active") return;
       if (!m[c.lead]) return;
       if (!seenGroups[c.group]) { seenGroups[c.group] = { group: c.group, lead: c.lead, rows: [] }; m[c.lead].push(seenGroups[c.group]); }
       seenGroups[c.group].rows.push(c);
     });
     return m;
-  }, [clients]);
+  }, [syncedClients, pgLoaded]);
 
   const demandByOwner = useMemo(() => {
     const m = {};
@@ -500,6 +715,7 @@ function CapacityDashboardInner() {
   const personCalc = useMemo(() => {
     const m = {};
     people.forEach((p) => {
+      if (!peopleMap[p.name]) return; // resigned in an earlier month — excluded from this month's ledger entirely
       const base = peopleMap[p.name].monthly;
       const away = givenAway[p.name] || 0;
       const remainderAfterAway = base - away; // what's left after committing hours to others — can go negative if over-promised
@@ -523,7 +739,7 @@ function CapacityDashboardInner() {
     Object.values(groupedByOwner).forEach((groups) => groups.forEach((g) => { s += demandForGroup(g.group, g.rows, month).demand; }));
     return s;
   }, [groupedByOwner, month, overrides, dynamicAverages]);
-  const totalCapacity = useMemo(() => people.reduce((s, p) => s + peopleMap[p.name].monthly, 0), [people, peopleMap]);
+  const totalCapacity = useMemo(() => people.reduce((s, p) => s + (peopleMap[p.name] ? peopleMap[p.name].monthly : 0), 0), [people, peopleMap]);
   const totalDMA = useMemo(() => support.filter((s) => s.from === "DMA (external)").reduce((s, x) => s + hoursOf(x), 0), [support, hoursOf]);
   const totalBillableAllocation = totalCapacity + totalDMA; // total hours the team+DMA is available to deliver
   const difference = totalBillableAllocation - totalDemand;
@@ -531,6 +747,7 @@ function CapacityDashboardInner() {
   /* ---------- filtering ---------- */
   const supportersOf = (owner) => (personCalc[owner] ? personCalc[owner].received.map((r) => r.from) : []);
   const visibleOwners = OWNERS.filter((owner) => {
+    if (!peopleMap[owner]) return false; // resigned as of this month — hide their card entirely
     const okConsultant = !qConsultant || owner.toLowerCase().includes(qConsultant.toLowerCase());
     const okClient = !qClient || (groupedByOwner[owner] || []).some((g) => g.group.toLowerCase().includes(qClient.toLowerCase()) || g.rows.some((r) => r.client.toLowerCase().includes(qClient.toLowerCase())));
     const okSupport = !qSupport || supportersOf(owner).some((n) => n.toLowerCase().includes(qSupport.toLowerCase()));
@@ -550,11 +767,10 @@ function CapacityDashboardInner() {
   const shiftMonth = (d) => setMonth(MONTHS[Math.max(0, Math.min(MONTHS.length - 1, monthIdx + d))]);
   const monthKind = month < CURRENT_MONTH ? "past" : (month === CURRENT_MONTH ? "now" : "future");
 
-  const allocatableNames = ["DMA (external)", ...people.map((p) => p.name)];
+  const allocatableNames = ["DMA (external)", ...people.filter((p) => peopleMap[p.name]).map((p) => p.name)];
 
   const removeSupport = (id) => setSupport((ss) => ss.filter((s) => s.id !== id));
   const updateSupportValue = (id, newValue) => setSupport((ss) => ss.map((s) => s.id === id ? { ...s, value: newValue } : s));
-  const updatePerson = (id, field, value) => setPeople((ps) => ps.map((p) => p.id === id ? { ...p, [field]: value } : p));
   function proposedHours(from, type, value) {
     if (type === "pct") { const base = peopleMap[from] ? peopleMap[from].monthly : 0; return base * Number(value || 0); }
     return Number(value || 0);
@@ -582,7 +798,7 @@ function CapacityDashboardInner() {
     const setCols = (ws, headerLen, widths) => { ws["!cols"] = widths; ws["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(headerLen - 1)}1` }; };
 
     const summaryRows = [
-      ["Purple Giraffe — Capacity Ledger"],
+      ["Purple Giraffe: Capacity Ledger"],
       [`Month: ${MONTH_LABELS[month]}`],
       [`Generated: ${new Date().toLocaleString()}`],
       [],
@@ -600,6 +816,7 @@ function CapacityDashboardInner() {
     const rosterHeader = ["Consultant", "Role", "State", "Resource Hrs", "Leaves", "Public Holidays (hrs)", "Public Holidays (days)", "Monthly Hrs", "Billable %", "Billable Capacity", "Allocated Hrs", "Availability"];
     const rosterRows = [rosterHeader];
     people.forEach((p) => {
+      if (!peopleMap[p.name]) return; // resigned before this month
       const pc = personCalc[p.name]; const pm = peopleMap[p.name];
       rosterRows.push([p.name, p.role, p.state, Number(pm.resourceHours.toFixed(1)), Number(pm.leaveHrs.toFixed(1)), Number(pm.publicHolidayHrs.toFixed(1)), pm.holidayDays, Number(pm.totalMonthlyHours.toFixed(1)), p.rate, Number(pc.base.toFixed(1)), Number(pc.allocatedTotal.toFixed(1)), Number(pc.spare.toFixed(1))]);
     });
@@ -609,9 +826,9 @@ function CapacityDashboardInner() {
 
     const demandHeader = ["Consultant", "Client", "Client Group", "Basis", "Agreed Hrs", "Average Hrs (trailing)", "Projected Hrs", "Manually Overridden?"];
     const demandRows = [demandHeader];
-    clients.forEach((c) => {
+    syncedClients.filter((c) => c._effectiveStatus === "active").forEach((c) => {
       const { demand, avg, isOverridden } = demandFor(c, month);
-      demandRows.push([c.lead, c.client, c.group, c.basis, c.agreed ?? "", avg !== null ? Number(avg.toFixed(1)) : "", Number(demand.toFixed(1)), isOverridden ? "Yes" : "No"]);
+      demandRows.push([c.lead, c.client, c.group, c.basis, agreedAt(c, month) ?? "", avg !== null ? Number(avg.toFixed(1)) : "", Number(demand.toFixed(1)), isOverridden ? "Yes" : "No"]);
     });
     const wsDemand = XLSX.utils.aoa_to_sheet(demandRows);
     setCols(wsDemand, demandHeader.length, demandHeader.map((h) => ({ wch: Math.max(15, h.length + 2) })));
@@ -649,7 +866,7 @@ function CapacityDashboardInner() {
       <div className="pg-app-header">
         <div>
           <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-          <h1 className="pg-app-header__title">Capacity ledger — team hours vs. client demand, by month.</h1>
+          <h1 className="pg-app-header__title">Capacity ledger: team hours vs. client demand, by month.</h1>
         </div>
       </div>
 
@@ -661,8 +878,39 @@ function CapacityDashboardInner() {
         <span className="pg-tag" style={{ color: monthKind === "past" ? "var(--fg-tertiary)" : monthKind === "now" ? "var(--status-ok)" : "var(--accent)" }}>
           [{monthKind === "past" ? "past record" : monthKind === "now" ? "latest actuals" : "forecast"}]
         </span>
+        <button className="pg-btn-ghost" onClick={() => setShowAddClient((s) => !s)}><Plus size={11} /> Add client</button>
         <button className="pg-btn-ghost" style={{ marginLeft: "auto" }} onClick={resetSample}>Reset sample data</button>
       </div>
+
+      {showAddClient && (
+        <div className="pg-cap-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <span className="pg-field__label">New client -- creates it in the Clients module too, so both stay in sync</span>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <label className="pg-field" style={{ width: 220 }}>
+              <span className="pg-field__label">Client name</span>
+              <input className="pg-input" value={addClientForm.name} onChange={(e) => setAddClientForm((f) => ({ ...f, name: e.target.value }))} placeholder="Client name" />
+            </label>
+            <label className="pg-field">
+              <span className="pg-field__label">Consultant</span>
+              <select className="pg-input" value={addClientForm.lead} onChange={(e) => setAddClientForm((f) => ({ ...f, lead: e.target.value }))}>
+                {OWNERS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </label>
+            <label className="pg-field">
+              <span className="pg-field__label">Type</span>
+              <select className="pg-input" value={addClientForm.basis} onChange={(e) => setAddClientForm((f) => ({ ...f, basis: e.target.value }))}>
+                {FIXED_BASES.concat(["Hourly", "Ad hoc"]).map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </label>
+            <label className="pg-field" style={{ width: 120 }}>
+              <span className="pg-field__label">Agreed hrs</span>
+              <input className="pg-input" type="number" step="any" value={addClientForm.agreed} onChange={(e) => setAddClientForm((f) => ({ ...f, agreed: e.target.value }))} placeholder="e.g. 16" />
+            </label>
+            <button className="pg-btn" disabled={!addClientForm.name.trim()} onClick={submitAddClient}>Create</button>
+            <button className="pg-btn-ghost" onClick={() => setShowAddClient(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       <div className="pg-panel">
         <SearchBox label="Consultant" value={qConsultant} onChange={setQConsultant} />
@@ -721,9 +969,17 @@ function CapacityDashboardInner() {
                             const { demand, avg, isOverridden, isDynamic, dyn } = demandForGroup(g.group, g.rows, month);
                             return (
                               <tr key={g.group}>
-                                <td>{r.client}</td>
-                                <td><span className="pg-tag" style={{ color: "var(--accent)" }}>[{r.basis}]</span></td>
-                                <td className="right num">{fmt(r.agreed)}</td>
+                                <td>
+                                  {r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !multiFolderMatchesFor(r.group, [...realFolderSet])?.length && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}
+                                  {editingDemand === owner && (
+                                    <select className="pg-input" style={{ marginLeft: 8, padding: "2px 4px", fontSize: 11, width: 100 }}
+                                      value={owner} onChange={(e) => changeConsultant(r, e.target.value)} title="Reassign consultant -- also updates the Clients module">
+                                      {OWNERS.map((o) => <option key={o} value={o}>{o}</option>)}
+                                    </select>
+                                  )}
+                                </td>
+                                <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
+                                <td className="right num">{fmt(agreedAt(r, month))}</td>
                                 <td className="right num">
                                   {fmt(avg)}
                                   {isDynamic && (
@@ -762,7 +1018,7 @@ function CapacityDashboardInner() {
                                 <td className="right num">
                                   {gIsDynamic && (
                                     <Zap size={11} style={{ verticalAlign: -1, color: "var(--accent)" }}
-                                      title={`Live group average from ClickUp: "${gDyn.matchedFolder}" (${gDyn.monthsCounted} month${gDyn.monthsCounted === 1 ? "" : "s"} of billable data) — applied to the group total, not split across sub-projects`} />
+                                      title={`Live group average from ClickUp: "${gDyn.matchedFolder}" (${gDyn.monthsCounted} month${gDyn.monthsCounted === 1 ? "" : "s"} of billable data), applied to the group total, not split across sub-projects`} />
                                   )}
                                 </td>
                                 <td className="right num"><b>{gDemand.toFixed(1)}</b></td>
@@ -771,9 +1027,9 @@ function CapacityDashboardInner() {
                                 const { demand, avg, isOverridden } = demandFor(r, month);
                                 return (
                                   <tr key={r.id}>
-                                    <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}</td>
-                                    <td><span className="pg-tag" style={{ color: "var(--accent)" }}>[{r.basis}]</span></td>
-                                    <td className="right num">{fmt(r.agreed)}</td>
+                                    <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !multiFolderMatchesFor(r.group, [...realFolderSet])?.length && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}</td>
+                                    <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
+                                    <td className="right num">{fmt(agreedAt(r, month))}</td>
                                     <td className="right num">{fmt(avg)}</td>
                                     <td className="right num">
                                       {editingDemand === owner ? (
@@ -855,7 +1111,7 @@ function CapacityDashboardInner() {
                             <div className="pg-alertbar" style={{ background: "var(--status-over-soft)", color: "var(--status-over)", marginTop: 10 }}>
                               <AlertTriangle size={13} />
                               <span className="pg-alertbar__text">
-                                Risk: {addForm.from} would be committing {check.total.toFixed(1)} hrs in total (their own {check.ownDemand.toFixed(1)} hrs of client work + {(check.currentAway + preview).toFixed(1)} hrs given to others) against a capacity of {check.base.toFixed(1)} hrs — {(check.total - check.base).toFixed(1)} hrs over.
+                                Risk: {addForm.from} would be committing {check.total.toFixed(1)} hrs in total (their own {check.ownDemand.toFixed(1)} hrs of client work + {(check.currentAway + preview).toFixed(1)} hrs given to others) against a capacity of {check.base.toFixed(1)} hrs, {(check.total - check.base).toFixed(1)} hrs over.
                               </span>
                             </div>
                           )}
@@ -878,43 +1134,76 @@ function CapacityDashboardInner() {
             <div className="pg-cap-stat"><div className="pg-stat__value" style={{ color: difference < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{difference > 0 ? "+" : ""}{difference.toFixed(0)}</div><div className="pg-stat__label">Difference</div></div>
           </div>
 
-          <div className="pg-table-wrap" style={{ overflowX: "auto", marginTop: 14 }}>
-            <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span>Team roster</span>
-              <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
+          <div className="pg-cap-card" style={{ marginTop: 14, maxWidth: 460 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <span className="pg-field__label">Capacity utilization</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                {onNavigateTeam && <button className="pg-btn-ghost" onClick={onNavigateTeam}>Go to team</button>}
+                <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
+              </div>
             </div>
-            <table className="pg-table" style={{ minWidth: 640 }}>
-              <thead><tr><th>Consultant</th><th className="right num">Resource Hrs</th><th className="right num">Leaves</th><th className="right num">Public Hols</th><th className="right num">Monthly Hrs</th><th className="right num">Billable %</th><th className="right num">Billable Capacity</th><th className="right num">Allocated</th><th className="right num">Availability</th></tr></thead>
-              <tbody>
-                {people.map((p) => {
-                  const pc = personCalc[p.name];
-                  const pm = peopleMap[p.name];
-                  return (
-                    <tr key={p.id}>
-                      <td>{p.name} <span className="pg-tag" style={{ color: p.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 5 }}>[{p.role[0]}]</span></td>
-                      <td className="right num">{pm.resourceHours.toFixed(1)}</td>
-                      <td className="right num">
-                        {editRoster
-                          ? <input className="pg-input" type="number" min="0" step="any" style={{ width: 60, padding: "4px 6px" }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
-                          : (leaveFor(p.id) > 0 ? leaveFor(p.id).toFixed(1) : "—")}
-                      </td>
-                      <td className="right num">{pm.publicHolidayHrs.toFixed(1)} <span style={{ color: "var(--fg-tertiary)", fontSize: 10 }}>({pm.holidayDays}d)</span></td>
-                      <td className="right num">{pm.totalMonthlyHours.toFixed(1)}</td>
-                      <td className="right num">
-                        {editRoster
-                          ? <input className="pg-input" type="number" min="0" max="100" step="1" style={{ width: 52, padding: "4px 6px" }} value={Math.round(p.rate * 100)} onChange={(e) => updatePerson(p.id, "rate", (e.target.value === "" ? 0 : Number(e.target.value)) / 100)} />
-                          : `${(p.rate * 100).toFixed(0)}%`}
-                      </td>
-                      <td className="right num"><b>{pc.base.toFixed(1)}</b></td>
-                      <td className="right num">{pc.allocatedTotal > 0 ? pc.allocatedTotal.toFixed(1) : "—"}</td>
-                      <td className="right num" style={{ color: pc.spare < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{pc.spare > 0 ? "+" : ""}{pc.spare.toFixed(1)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+
+            <div style={{ position: "relative", marginTop: 12 }}>
+              <Search size={11} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--fg-tertiary)" }} />
+              <input
+                className="pg-input"
+                style={{ width: "100%", padding: "7px 10px 7px 28px", fontSize: 12, borderRadius: "var(--app-radius-pill)" }}
+                placeholder="Search consultant…"
+                value={qRoster}
+                onChange={(e) => setQRoster(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 16, marginTop: 20 }}>
+              <div className="pg-footnote" style={{ flex: 1, margin: 0, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center" }}>Billable</div>
+              <div className="pg-footnote" style={{ width: 92, flex: "none", margin: 0, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center" }}>Non-billable</div>
+            </div>
+
+            {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
+              const pc = personCalc[p.name];
+              const pm = peopleMap[p.name];
+              const capacity = pc.pool;               // billable capacity available to her, incl. help received
+              const allocated = pc.demand;              // client demand assigned to her
+              const overflow = Math.max(0, allocated - capacity);
+              const unbillableCapacity = pm.nonBillableHours;
+              const billablePct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : (allocated > 0 ? 100 : 0);
+              const unbillablePct = unbillableCapacity > 0 ? Math.min(100, (overflow / unbillableCapacity) * 100) : (overflow > 0 ? 100 : 0);
+              const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "ok";
+              const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-warn)" : "var(--status-ok)";
+              return (
+                <div key={p.id} style={{ marginTop: 14 }}>
+                  <div style={{ fontFamily: "var(--font-body)", fontWeight: 600, fontSize: 13, color: "var(--fg-primary)" }}>
+                    {p.name}
+                    {pm.resigningThisMonth && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} />}
+                  </div>
+                  <div style={{ display: "flex", gap: 16, marginTop: 6, alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                      <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
+                        <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
+                      </div>
+                      {editRoster ? (
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 4 }}>
+                          <span className="pg-footnote" style={{ margin: 0 }}>Leaves</span>
+                          <input className="pg-input" type="number" min="0" step="any" style={{ width: 52, padding: "2px 5px", fontSize: 11 }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
+                        </div>
+                      ) : (
+                        <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center" }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</p>
+                      )}
+                    </div>
+                    <div style={{ width: 92, flex: "none" }} title={overflow > 0 ? `${overflow.toFixed(1)} hrs over` : undefined}>
+                      <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
+                        <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
+                      </div>
+                      {overflow > 0 && (
+                        <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center", color: "var(--status-over)" }}>{overflow.toFixed(1)}h over</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <p className="pg-footnote">Total Resource Hours and Public Holidays are calculated from {MONTH_LABELS[month]}'s actual weekdays and each person's state. Leaves and Billable Allocation are only editable in Edit mode; everything else recalculates automatically.</p>
+          <p className="pg-footnote" style={{ maxWidth: 460 }}>Green = within billable capacity, yellow = fully allocated, red = overallocated (excess falls into the non-billable bar). Roster details (role, state, billable %, resignation dates, ClickUp aliases) now live in the Team module.</p>
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -936,7 +1225,7 @@ function CapacityDashboardInner() {
                   return <p key={item.date} style={{ fontFamily: "var(--font-body)", fontSize: 12.5, color: "var(--fg-secondary)", marginTop: 8 }}>{sentence}</p>;
                 });
               })()}
-              <p className="pg-footnote" style={{ marginTop: 8 }}>Sourced from each state's official 2026 public holiday calendar — Christmas Eve/New Year's Eve part-day holidays and weekend-falling dates with no substitute aren't counted here since they don't affect a working day.</p>
+              <p className="pg-footnote" style={{ marginTop: 8 }}>Sourced from each state's official 2026 public holiday calendar. Christmas Eve/New Year's Eve part-day holidays and weekend-falling dates with no substitute aren't counted here since they don't affect a working day.</p>
             </div>
 
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px dashed var(--border-soft)" }}>
@@ -967,10 +1256,10 @@ function CapacityDashboardInner() {
   );
 }
 
-export default function CapacityDashboard() {
+export default function CapacityDashboard({ onNavigateTeam }) {
   return (
     <ErrorBoundary>
-      <CapacityDashboardInner />
+      <CapacityDashboardInner onNavigateTeam={onNavigateTeam} />
     </ErrorBoundary>
   );
 }

@@ -7,9 +7,12 @@ import {
   RefreshCw, Wifi, WifiOff,
 } from "lucide-react";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
-import { idbGet, idbSet } from "./idbStore.js";
-import { findMatch, isInternalFolder } from "./nameMatch.js";
+import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
+import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
+import { findMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, dominantClientType, basisToClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync } from "./clickupSync.js";
+import { SEED_CLIENTS as CAP_SEED_CLIENTS, loadKey as loadCapKey } from "./CapacityDashboard.jsx";
+import { fetchClients as fetchPgClients, fetchClientEvents, applyDueClientEvents, typeForMonth } from "./clientsSync.js";
 
 // ---------------------------- time text → minutes ----------------------------
 function parseTimeTextToMinutes(raw) {
@@ -39,6 +42,11 @@ const fmt = (hrs, dec = 2) =>
     ? (Math.round(hrs * Math.pow(10, dec)) / Math.pow(10, dec)).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec })
     : "—";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// The browser's "Save as PDF" dialog suggests <title> as the default filename —
+// strip characters that are illegal in filenames on Windows/macOS (some client
+// names contain "/", e.g. "BAMSS / Childcare Sec Services") so that suggestion
+// doesn't get silently mangled or rejected.
+const filenameSafe = (s) => String(s ?? "").replace(/[\\/:*?"<>|]/g, "-").trim();
 function timeAgo(iso) {
   if (!iso) return null;
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -58,6 +66,36 @@ function formatTaskUsers(userMinutesMap) {
   const entries = [...userMinutesMap.entries()].sort((a, b) => b[1] - a[1]);
   if (entries.length === 1) return entries[0][0] || "—";
   return entries.map(([u, min]) => `${u || "—"} (${fmt(min / 60)}h)`).join(", ");
+}
+// Only ever a real link when every row logged under this task name shares the exact same
+// ClickUp task id -- an ambiguous name (two different real tasks, or two task-less rows,
+// that happen to share text) deliberately gets no link rather than a guess.
+function clickupTaskUrl(taskIdSet) {
+  if (!taskIdSet || taskIdSet.size !== 1) return null;
+  return `https://app.clickup.com/t/${[...taskIdSet][0]}`;
+}
+// Same link as the task itself (see clickupTaskUrl's note above) -- ClickUp doesn't expose
+// a way to deep-link to one specific person's time entry within a task, only the task page
+// itself (where the Time Tracked panel shows everyone who logged against it).
+function TaskUsersCell({ userMinutesMap, taskUrl }) {
+  if (!userMinutesMap || userMinutesMap.size === 0) return "—";
+  const entries = [...userMinutesMap.entries()].sort((a, b) => b[1] - a[1]);
+  const single = entries.length === 1;
+  return (
+    <>
+      {entries.map(([u, min], i) => (
+        <React.Fragment key={u || i}>
+          {i > 0 && ", "}
+          {taskUrl ? (
+            <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" className="pg-clickup-link">
+              {u || "—"}
+            </a>
+          ) : (u || "—")}
+          {!single && ` (${fmt(min / 60)}h)`}
+        </React.Fragment>
+      ))}
+    </>
+  );
 }
 
 // ------------------------------ name matching --------------------------------
@@ -120,7 +158,7 @@ function parseAccruedWorkbook(buffer) {
     const m = parseHeaderToMonth(header[c], contextYear);
     if (!m) continue;
     if (m.year > maxSaneYear) {
-      warnings.push(`Column "${String(header[c])}" parsed as ${m.label} — that looks like a typo in the source sheet (year is well in the future). It's still included, but check it.`);
+      warnings.push(`Column "${String(header[c])}" parsed as ${m.label}, which looks like a typo in the source sheet (year is well in the future). It's still included, but check it.`);
     } else {
       contextYear = m.year; // don't let a bad year poison inference for later month-only headers
     }
@@ -132,7 +170,7 @@ function parseAccruedWorkbook(buffer) {
   const byMonth = new Map();
   for (const bc of rawCols) byMonth.set(monthKey(bc.year, bc.month), bc);
   if (byMonth.size < rawCols.length) {
-    warnings.push(`Found ${rawCols.length - byMonth.size} duplicate month column(s) in the accrued sheet — using the rightmost (latest) one for each month.`);
+    warnings.push(`Found ${rawCols.length - byMonth.size} duplicate month column(s) in the accrued sheet, using the rightmost (latest) one for each month.`);
   }
   const balanceCols = [...byMonth.values()].sort((a, b) => (a.year - b.year) || (a.month - b.month));
 
@@ -167,7 +205,7 @@ function parseAccruedWorkbook(buffer) {
   const nameCounts = new Map();
   for (const c of clients) nameCounts.set(c.name, (nameCounts.get(c.name) || 0) + 1);
   const dupNames = [...nameCounts.entries()].filter(([, n]) => n > 1).map(([n]) => n);
-  if (dupNames.length) warnings.push(`${dupNames.length} client name${dupNames.length === 1 ? "" : "s"} appear more than once in the accrued sheet (${dupNames.slice(0, 5).join(", ")}${dupNames.length > 5 ? ", …" : ""}) — only the first row for each is used.`);
+  if (dupNames.length) warnings.push(`${dupNames.length} client name${dupNames.length === 1 ? "" : "s"} appear more than once in the accrued sheet (${dupNames.slice(0, 5).join(", ")}${dupNames.length > 5 ? ", …" : ""}); only the first row for each is used.`);
 
   return { clients, balanceCols, sheetName, warnings };
 }
@@ -216,6 +254,9 @@ function parseClickupCsv(file, onDone, onErr) {
       const hBillable = findHeader(headers, "Billable");
       const hUser = findHeader(headers, "Username");
       const hStart = findHeader(headers, "Start Text");
+      // Optional — only some ClickUp export presets include it. When present, lets task
+      // rows link straight to the task in ClickUp, same as the live Supabase sync does.
+      const hTaskId = findHeader(headers, "Task ID");
       if (!hFolder) { onErr("Couldn't find a \"Folder Name\" column. This should be a ClickUp time-tracking export."); return; }
       let zeroCount = 0;
       const rows = [];
@@ -235,6 +276,7 @@ function parseClickupCsv(file, onDone, onErr) {
         rows.push({
           folder,
           task: hTask ? String(r[hTask] || "").trim() || "Untitled" : "Untitled",
+          taskId: hTaskId ? (String(r[hTaskId] || "").trim() || null) : null,
           minutes, billable, hasBillableCol: !!hBillable,
           user: hUser ? String(r[hUser] || "").trim() : "",
           isInternal: isInternalFolder(folder),
@@ -243,7 +285,7 @@ function parseClickupCsv(file, onDone, onErr) {
           dateKey: startMonth ? dateKeyStr(startMonth.year, startMonth.month, startMonth.day) : null,
         });
       }
-      if (rows.length && zeroCount === rows.length) warnings.push("Every row parsed to zero hours — the ClickUp export format may have changed.");
+      if (rows.length && zeroCount === rows.length) warnings.push("Every row parsed to zero hours; the ClickUp export format may have changed.");
       onDone({ rows, hasBillable: !!hBillable, hasUser: !!hUser, hasStartDate: !!hStart, warnings });
     },
     error: (e) => onErr("Couldn't read the CSV: " + e.message),
@@ -258,29 +300,32 @@ function classifyClient(c) {
 }
 
 const TYPE_LABELS = {
+  all: "All Clients",
   package: "Clients on a Package",
   hourly: "Clients on Hourly rate",
   quoted: "Quoted Clients",
+  map: "MAP Clients",
   queensland: "Queensland Clients (prv)",
 };
 
+// Short canonical name for each client type — the shared vocabulary (nameMatch.js)
+// Capacity Planning and Performance also fold their finer-grained "basis" categories
+// down to, so a chip, export column, or copied summary reads identically across every
+// module instead of Client Invoicing's own longer phrasing above.
+const TYPE_LABELS_SHORT = { all: "All", ...CLIENT_TYPE_LABELS };
+
 // Category tags borrow the brand's purple family; Queensland (an inactive/
 // legacy bucket) is the one deliberate step outside it.
-const TYPE_TONES = {
-  package: "var(--accent)",
-  hourly: "var(--accent-orchid)",
-  queensland: "var(--status-info)",
-  quoted: "var(--fg-tertiary)",
-};
+const TYPE_TONES = CLIENT_TYPE_TONES;
 
 // ------------------------------- PDF (print) --------------------------------
-const PRINT = { ink: "#1F1B24", inkSoft: "#6B6172", brand: "#3F008E", line: "#E7E1F0", brandSoft: "#F1EAFB" };
+const PRINT = { ink: "#000000", inkSoft: "#000000", brand: "#3F008E", line: "#E7E1F0", brandSoft: "#F1EAFB" };
 
 function buildPrintHtml(c, monthText, priorMonthText) {
   const type = c.type;
   const isPkg = type === "package";
   const taskRows = [...c.tasksFiltered.entries()].sort((a, b) => b[1] - a[1])
-    .map(([task, min]) => `<tr><td>${esc(task)}</td><td class="right">${fmt(min / 60)}</td></tr>`).join("");
+    .map(([task, min]) => `<tr class="datarow"><td>${esc(task)}</td><td class="right">${fmt(min / 60)}</td></tr>`).join("");
   const workedRounded = Math.round(c.workedFiltered * 100) / 100;
   const priorSigned = c.priorBalance ?? 0;
   const priorLabel = priorSigned < 0 ? "Carried in from previous month"
@@ -290,87 +335,95 @@ function buildPrintHtml(c, monthText, priorMonthText) {
   const totalAccrued = workedRounded + priorSigned; // as spec'd: current spent + prior signed
 
   const reconciliation = isPkg ? `
-    <div class="section">
-      <h2>Reconciliation</h2>
-      <table>
-        <tr><td class="label">Package</td><td class="right">${fmt(c.pkg)} h / month</td></tr>
-        <tr><td class="label">${priorLabel}${priorMonthText ? ` (${esc(priorMonthText)})` : ""}</td><td class="right">${fmt(priorAbs)} h</td></tr>
-        <tr><td class="label">Time tracked this month</td><td class="right">${fmt(workedRounded)} h</td></tr>
-        <tr class="total"><td>Total accrued time</td><td class="right">${fmt(totalAccrued)} h</td></tr>
-        <tr><td class="label">New balance going forward</td><td class="right">${fmt(c.newBalance)} h ${c.newBalance > 0 ? "over" : c.newBalance < 0 ? "credit" : ""}</td></tr>
-        <tr><td class="label">Remaining this month</td><td class="right">${c.remaining >= 0 ? fmt(c.remaining) + " h left" : fmt(Math.abs(c.remaining)) + " h over"}</td></tr>
-      </table>
-      <p class="note">Total accrued time = time tracked this month + prior balance (signed). Negative prior = client credit carried in; positive prior = over-served last month.</p>
-    </div>` : `
-    <div class="section">
-      <h2>Summary</h2>
-      <table>
-        <tr><td class="label">Time tracked this month</td><td class="right">${fmt(workedRounded)} h</td></tr>
-      </table>
-      <p class="note">${type === "hourly" ? "Hourly-rate client — invoice at the agreed hourly rate for these hours." : "Queensland (previously) client — no accrued balance on record."}</p>
-    </div>`;
+    <tr class="noborder"><td colspan="2" class="section-heading">Reconciliation</td></tr>
+    <tr class="datarow"><td class="label">Package</td><td class="right">${fmt(c.pkg)} h / month</td></tr>
+    <tr class="datarow"><td class="label">${priorLabel}${priorMonthText ? ` (${esc(priorMonthText)})` : ""}</td><td class="right">${fmt(priorAbs)} h</td></tr>
+    <tr class="datarow"><td class="label">Time tracked this month</td><td class="right">${fmt(workedRounded)} h</td></tr>
+    <tr class="total"><td>Total accrued time</td><td class="right">${fmt(totalAccrued)} h</td></tr>
+    <tr class="datarow"><td class="label">New balance going forward</td><td class="right">${fmt(c.newBalance)} h ${c.newBalance > 0 ? "over" : c.newBalance < 0 ? "credit" : ""}</td></tr>
+    <tr class="datarow"><td class="label">Remaining this month</td><td class="right">${c.remaining >= 0 ? fmt(c.remaining) + " h left" : fmt(Math.abs(c.remaining)) + " h over"}</td></tr>
+    <tr class="noborder"><td colspan="2" class="note-cell">Total accrued time = time tracked this month + prior balance (signed). Negative prior = client credit carried in; positive prior = over-served last month.</td></tr>` : `
+    <tr class="noborder"><td colspan="2" class="section-heading">Summary</td></tr>
+    <tr class="datarow"><td class="label">Time tracked this month</td><td class="right">${fmt(workedRounded)} h</td></tr>
+    <tr class="noborder"><td colspan="2" class="note-cell">${type === "hourly" ? "Hourly-rate client: invoice at the agreed hourly rate for these hours." : "Queensland (previously) client: no accrued balance on record."}</td></tr>`;
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<title>${esc(c.displayName)} ${esc(monthText)}</title>
+<title>${esc(filenameSafe(c.displayName))} ${esc(filenameSafe(monthText))}</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
-  @page { margin: 18mm 18mm 34mm 18mm; size: A4; }
+  ${NORDIQUE_FONT_FACE_CSS}
+  @page { margin: 15mm; size: A4; }
   * { box-sizing: border-box; }
-  body { font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: ${PRINT.ink}; margin: 0; padding: 20px; }
-  .header { border-bottom: 2px solid ${PRINT.ink}; padding-bottom: 14px; margin-bottom: 22px; }
-  .brand { font-family: 'Quicksand', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
-  h1 { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
+  body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 600; color: ${PRINT.ink}; margin: 0; }
+  /* The letterhead footer repeats on every printed page via a <tfoot> with
+     display:table-footer-group — the one CSS mechanism Chromium actually
+     reserves per-page space for correctly. A position:fixed footer (the
+     previous approach) hits a longstanding Chromium print bug: the last
+     row before a page break bleeds a few mm into a fixed element regardless
+     of how much @page margin is reserved for it — reproduces even in a
+     bare table with zero custom CSS, so it isn't a tuning problem. Hence
+     the whole page being one table: everything that needs to flow across
+     pages safely (header, tasks, reconciliation) lives in its tbody. */
+  table.doc { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td { padding: 8px 10px; text-align: left; }
+  .header-cell { border-bottom: 2px solid ${PRINT.ink}; padding-bottom: 14px; }
+  .brand { font-family: 'Nordique Pro', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+  h1 { font-family: 'Nordique Pro', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
   .subtitle { color: ${PRINT.inkSoft}; font-size: 14px; margin-top: 4px; }
-  .section { margin-top: 22px; page-break-inside: avoid; }
-  .section h2 { font-family: 'Quicksand', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: ${PRINT.brand}; margin: 0 0 10px; font-weight: 600; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; border-radius: 10px; overflow: hidden; }
-  th, td { padding: 8px 10px; text-align: left; }
-  thead th { background: ${PRINT.brandSoft}; font-weight: 600; font-size: 12px; color: ${PRINT.ink}; border-bottom: 1px solid ${PRINT.line}; }
-  tbody tr, table tr { border-bottom: 1px solid ${PRINT.line}; }
-  .right { text-align: right; font-variant-numeric: tabular-nums; }
+  .section-heading { font-family: 'Nordique Pro', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: ${PRINT.brand}; font-weight: 600; padding-top: 22px; }
+  .noborder td, tr.noborder { border: none; }
+  .datarow { border-bottom: 1px solid ${PRINT.line}; page-break-inside: avoid; break-inside: avoid; font-weight: 300; }
+  .right { text-align: right; font-variant-numeric: tabular-nums; font-family: Arial, "Segoe UI", sans-serif; }
   .total td { font-weight: 700; border-top: 2px solid ${PRINT.ink}; border-bottom: none; padding-top: 12px; }
   .label { color: ${PRINT.inkSoft}; }
-  .note { margin-top: 10px; font-size: 11px; color: ${PRINT.inkSoft}; font-style: italic; }
-  .generated-note { margin-top: 24px; font-size: 9px; color: ${PRINT.inkSoft}; text-align: right; font-style: italic; }
-  .letterhead-footer {
-    position: fixed;
-    left: 0; right: 0; bottom: 0;
-    width: 100%;
-    height: 26mm;
-    background-image: url('data:image/jpeg;base64,${LETTERHEAD_FOOTER_B64}');
+  .note-cell { font-size: 11px; color: ${PRINT.inkSoft}; font-style: italic; padding-top: 4px; }
+  .generated-note-cell { font-size: 9px; color: ${PRINT.inkSoft}; text-align: right; font-style: italic; padding-top: 24px; }
+  .letterhead-footer-cell {
+    height: 15mm; /* the footer image is cropped to fit exactly within a 15mm margin at full page width */
+    padding: 0;
+    border: none;
+    background-image: url('data:image/png;base64,${LETTERHEAD_FOOTER_B64}');
     background-repeat: no-repeat;
     background-position: bottom center;
     background-size: 100% auto;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  @media print { .noprint { display: none; } body { padding: 0; } }
+  @media print { .noprint { display: none; } }
 </style>
 </head><body>
-  <div class="header">
-    <div class="brand">Purple Giraffe · client hours report</div>
-    <h1>${esc(c.displayName)}</h1>
-    <div class="subtitle">${esc(monthText)}</div>
-  </div>
+  <table class="doc">
+    <tfoot>
+      <tr><td colspan="2" class="letterhead-footer-cell"></td></tr>
+    </tfoot>
+    <tbody>
+      <tr class="noborder"><td colspan="2" class="header-cell">
+        <div class="brand">Purple Giraffe · client hours report</div>
+        <h1>${esc(c.displayName)}</h1>
+        <div class="subtitle">${esc(monthText)}</div>
+      </td></tr>
 
-  <div class="section">
-    <h2>Tasks worked this month</h2>
-    <table>
-      <thead><tr><th>Task</th><th class="right" style="width: 120px;">Time tracked (h)</th></tr></thead>
-      <tbody>${taskRows || `<tr><td colspan="2" class="label">No tasks in this filter.</td></tr>`}
+      <tr class="noborder"><td colspan="2" class="section-heading">Tasks worked this month</td></tr>
+      ${taskRows || `<tr class="datarow"><td colspan="2" class="label">No tasks in this filter.</td></tr>`}
       <tr class="total"><td>Total</td><td class="right">${fmt(workedRounded)} h</td></tr>
-      </tbody>
-    </table>
-  </div>
 
-  ${reconciliation}
+      ${reconciliation}
 
-  <div class="generated-note">Generated ${esc(new Date().toLocaleString())}</div>
+      <tr class="noborder"><td colspan="2" class="generated-note-cell">Generated ${esc(new Date().toLocaleString())}</td></tr>
+    </tbody>
+  </table>
 
-  <div class="letterhead-footer"></div>
-
-  <script>window.addEventListener('load', function() { setTimeout(function() { window.print(); }, 300); });</script>
+  <script>
+    window.addEventListener('load', function() {
+      // Print as soon as fonts are ready, but never wait more than 1.5s for
+      // them — a hung font-loading promise should never be able to silently
+      // stop the print dialog (and the "download") from happening at all.
+      var printed = false;
+      function go() { if (!printed) { printed = true; window.print(); } }
+      document.fonts.ready.then(go, go);
+      setTimeout(go, 1500);
+    });
+  </script>
 </body></html>`;
 }
 
@@ -443,6 +496,89 @@ export default function PGReconciliation() {
       if (raw) setNameMap(JSON.parse(raw));
     } catch (e) {}
   }, []);
+
+  // Capacity Planning's client list (Supabase-backed), read-only here — used only to
+  // cross-reference a client's current "basis" (Package/Project/Quoted/MAP/Strategy/
+  // Hourly/Ad hoc) so a client on a Marketing Action Plan shows up as its own "MAP"
+  // type below instead of whatever Client Invoicing's own package/hourly heuristic
+  // would otherwise guess. Reactive to the same PG_DATA_EVENT Capacity Planning
+  // broadcasts on every edit, so a basis change there is reflected here live.
+  const [capClients, setCapClients] = useState(CAP_SEED_CLIENTS);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => loadCapKey("cap_clients", CAP_SEED_CLIENTS).then((v) => { if (!cancelled) setCapClients(v || CAP_SEED_CLIENTS); });
+    load();
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === "cap_clients") load(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
+  }, []);
+  const capTypeByGroup = useMemo(() => {
+    const byGroup = new Map();
+    capClients.forEach((c) => { if (!byGroup.has(c.group)) byGroup.set(c.group, []); byGroup.get(c.group).push(c); });
+    const result = new Map();
+    byGroup.forEach((rows, group) => result.set(group, dominantClientType(rows)));
+    return result;
+  }, [capClients]);
+  // A group is offboarded once every sub-project/row under it is inactive — as long as
+  // even one row is still active, the group as a whole is still live. offboardedFrom is
+  // the latest of its rows' dates, since that's when the last bit of work actually stopped.
+  const capOffboardedByGroup = useMemo(() => {
+    const byGroup = new Map();
+    capClients.forEach((c) => { if (!byGroup.has(c.group)) byGroup.set(c.group, []); byGroup.get(c.group).push(c); });
+    const result = new Map();
+    byGroup.forEach((rows, group) => {
+      if (!rows.every((r) => r.status === "inactive")) return;
+      const dates = rows.map((r) => r.offboardedFrom).filter(Boolean).sort();
+      result.set(group, { offboardedFrom: dates.length ? dates[dates.length - 1] : null, note: rows.find((r) => r.offboardNote)?.offboardNote || "" });
+    });
+    return result;
+  }, [capClients]);
+  const capGroupNames = useMemo(() => [...capTypeByGroup.keys()], [capTypeByGroup]);
+  // Exact folder-name -> Capacity Planning row, for clients with more than one real
+  // ClickUp folder under the same group (e.g. Warrina Homes: a Package folder plus a
+  // separate one-off Quoted sub-project folder). classifyClient() below only asks "did
+  // some accrued-sheet row match this folder's name," so when a sub-project's name is
+  // close enough to fuzzy-match the SAME accrued row as the main package, it silently
+  // inherited that package's full $ balance/pacing treatment -- two folders both showing
+  // the exact same "package 24h, over-used 7.67h" figures as if each were its own
+  // independent copy of the same commitment, which is exactly backwards. Capacity
+  // Planning's own per-row basis is more precise than the accrued sheet can be here (the
+  // accrued sheet only tracks Package-type clients at all), so it wins when they disagree.
+  const capRowByClientName = useMemo(() => new Map(capClients.map((c) => [c.client, c])), [capClients]);
+
+  // The Clients module's roster + scheduled type-change events (Supabase-backed) — the
+  // authoritative source for "what type was this client actually on in a given month,"
+  // including temporary transitions like a package client billing hourly for a couple of
+  // months before reverting (e.g. GPEx, June-July 2026). Client Accruals already replays
+  // this history correctly (see accrualsSync.js's recomputeAccruals); Client Invoicing's
+  // own classifyClient() below only ever guessed from whatever accrued workbook happened
+  // to be uploaded, with no month- or history-awareness, so a scheduled transition never
+  // showed up here. Cross-referenced by ClickUp folder name below so each client card's
+  // type reflects whatever was actually in effect for the month currently in view.
+  const [pgClients, setPgClients] = useState([]);
+  const [pgClientEvents, setPgClientEvents] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try { await applyDueClientEvents(); } catch (e) { /* best-effort */ }
+      const [profiles, events] = await Promise.all([fetchPgClients(), fetchClientEvents()]);
+      if (!cancelled) { setPgClients(profiles); setPgClientEvents(events); }
+    };
+    load();
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === "pg_clients") load(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
+  }, []);
+  const pgClientNames = useMemo(() => pgClients.map((p) => p.client), [pgClients]);
+  // Exact ClickUp-folder -> profile lookup first (the authoritative mapping set via the
+  // Clients module's own folder field), falling back to fuzzy name matching only for
+  // profiles that haven't had their folder set yet.
+  const pgProfileByFolder = useMemo(() => {
+    const m = new Map();
+    pgClients.forEach((p) => { if (p.clickupFolder) m.set(p.clickupFolder, p); });
+    return m;
+  }, [pgClients]);
+  const pgClientByName = useMemo(() => new Map(pgClients.map((p) => [p.client, p])), [pgClients]);
 
   // Restore the uploaded data and filters from a previous session. The parsed CSV can run
   // several MB as JSON, too close to localStorage's shared per-origin quota to risk — so the
@@ -645,7 +781,7 @@ export default function PGReconciliation() {
       if (r.isInternal) continue;
       if (dataMonthKey && r.monthKey && r.monthKey !== dataMonthKey) continue;
       if (!map.has(r.folder))
-        map.set(r.folder, { name: r.folder, totalMin: 0, tasksAll: new Map(), userMinutes: new Map(), tasksByUser: new Map(), taskUsers: new Map() });
+        map.set(r.folder, { name: r.folder, totalMin: 0, tasksAll: new Map(), userMinutes: new Map(), tasksByUser: new Map(), taskUsers: new Map(), taskIds: new Map() });
       const c = map.get(r.folder);
       c.totalMin += r.minutes;
       c.tasksAll.set(r.task, (c.tasksAll.get(r.task) || 0) + r.minutes);
@@ -658,6 +794,15 @@ export default function PGReconciliation() {
       if (!c.taskUsers.has(r.task)) c.taskUsers.set(r.task, new Map());
       const tu = c.taskUsers.get(r.task);
       tu.set(u, (tu.get(u) || 0) + r.minutes);
+      // Every row sharing a task NAME should also share the same real ClickUp task id --
+      // but names aren't actually unique (e.g. two different "Untitled"/task-less rows,
+      // or two genuinely different tasks that happen to be named the same). Track every
+      // distinct id seen per name; a link is only shown when there's exactly one, so an
+      // ambiguous name never links to the wrong task.
+      if (r.taskId) {
+        if (!c.taskIds.has(r.task)) c.taskIds.set(r.task, new Set());
+        c.taskIds.get(r.task).add(r.taskId);
+      }
     }
 
     const out = [];
@@ -706,15 +851,75 @@ export default function PGReconciliation() {
         displayName: accruedClient?.name ?? c.name,
       };
       clientObj.type = classifyClient(clientObj);
+      // The Clients module knows what this client was actually billing as for THIS
+      // specific month (typeForMonth replays its scheduled type-change events) — that
+      // always wins over the accrued-workbook guess above, since a temporary transition
+      // (e.g. GPEx briefly moving to hourly for a couple of months before reverting to
+      // its package) has no way to be reflected in classifyClient()'s static, upload-only
+      // logic otherwise. Falls back to classifyClient()'s result for any client not yet
+      // registered in the Clients module.
+      const pgProfile = pgProfileByFolder.get(c.name) || (() => {
+        const m = findMatch(c.name, pgClientNames);
+        return m ? pgClientByName.get(m.name) : null;
+      })();
+      if (pgProfile && dataMonthKey) {
+        const seg = typeForMonth(pgProfile, pgClientEvents, dataMonthKey);
+        if (seg?.type) {
+          clientObj.type = seg.type;
+          // Only worth flagging as a transition when it actually changed something from
+          // the client's normal baseline — otherwise every already-registered client would
+          // show a "scheduled" badge for no reason.
+          clientObj.typeTransitioned = seg.type !== pgProfile.baseType;
+          clientObj.typeTransitionNote = seg.note;
+        }
+      }
+      // This exact folder's own Capacity Planning row (not just a fuzzy group match) --
+      // corrects classifyClient()'s "matched an accrued row with a package figure, so it
+      // must be a package" assumption for a sub-project folder that only fuzzy-matched
+      // the MAIN package's accrued-sheet row by name coincidence. When Capacity Planning
+      // already knows this specific folder is really Quoted/Hourly/etc, that overrides
+      // the false "package" guess -- this folder stops carrying the main package's $
+      // balance/pacing math (which was never really its own), instead of two folders
+      // both showing an identical "package 24h, over-used 7.67h" as if each independently
+      // owned the same commitment.
+      const capRow = capRowByClientName.get(c.name);
+      if (capRow) {
+        const capType = basisToClientType(capRow.basis);
+        if (capType !== "package" && clientObj.type === "package") {
+          clientObj.type = capType;
+          clientObj.packageOverriddenBy = capRow.basis;
+        }
+        clientObj.capGroup = capRow.group;
+      }
+      // Client Invoicing has no independent way to know a client is on a Marketing
+      // Action Plan (MAP) — that's tracked only in Capacity Planning's "basis" field.
+      // Cross-reference it here by name, purely additively: c.type (which the
+      // package/hourly/Queensland UI below is built around, including the real
+      // accrued-balance tracking) is left exactly as classifyClient() already
+      // determines it, so a MAP client that's also tracked with a package-style
+      // accrual keeps that UI. isMap just layers a separate "MAP" filter option and
+      // an inline tag on top, visible regardless of which type bucket a client
+      // otherwise falls into. Reads live capacity data, so a client moving off MAP
+      // is reflected here automatically next time this recomputes.
+      const capMatch = findMatch(c.name, capGroupNames);
+      clientObj.isMap = capMatch ? capTypeByGroup.get(capMatch.name) === "map" : false;
+      const offboarded = capMatch ? capOffboardedByGroup.get(capMatch.name) : null;
+      clientObj.isOffboarded = !!offboarded && (!dataMonthKey || !offboarded.offboardedFrom || dataMonthKey >= offboarded.offboardedFrom);
+      clientObj.offboardNote = offboarded?.note || "";
+      if (!clientObj.capGroup && capMatch) clientObj.capGroup = capMatch.name;
       out.push(clientObj);
     }
     return out;
-  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked]);
+  }, [clickup, accrued, accruedNames, nameMap, priorMonthKey, billableOnly, dataMonthKey, priorMonthWorked, capGroupNames, capTypeByGroup, capOffboardedByGroup, capRowByClientName, pgProfileByFolder, pgClientNames, pgClientByName, pgClientEvents]);
 
-  // counts by type
+  // counts by type — "map" counts c.isMap (an overlay tag), not c.type, since a MAP
+  // client keeps whatever c.type its own package/hourly classification landed on.
   const typeCounts = useMemo(() => {
-    const counts = { package: 0, hourly: 0, queensland: 0, quoted: 0 };
-    for (const c of clients) counts[c.type] = (counts[c.type] || 0) + 1;
+    const counts = { all: clients.length, package: 0, hourly: 0, queensland: 0, quoted: 0, map: 0 };
+    for (const c of clients) {
+      counts[c.type] = (counts[c.type] || 0) + 1;
+      if (c.isMap) counts.map++;
+    }
     return counts;
   }, [clients]);
 
@@ -741,9 +946,9 @@ export default function PGReconciliation() {
     return [...map.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => a.key.localeCompare(b.key));
   }, [clickup]);
 
-  // folders excluded as internal/non-client (Purple Giraffe, onboarding, WIP, etc.) — surfaced for
-  // transparency rather than silently dropped, since the keyword rule can misfire on a client-named
-  // onboarding folder (see the billable-hours guide, §3.1).
+  // folders excluded as internal/non-client (onboarding, WIP, etc. — NOT Purple Giraffe, which is
+  // DMA's real consultant hours) — surfaced for transparency rather than silently dropped, since the
+  // keyword rule can misfire on a client-named onboarding folder (see the billable-hours guide, §3.1).
   const excludedInternal = useMemo(() => {
     if (!clickup) return { total: 0, folders: [] };
     const byFolder = new Map();
@@ -757,20 +962,63 @@ export default function PGReconciliation() {
     return { total: folders.reduce((a, f) => a + f.hours, 0), folders };
   }, [clickup, billableOnly, dataMonthKey]);
 
+  // A client with more than one real ClickUp folder under the same Capacity Planning
+  // group (e.g. Warrina Homes: the main Package folder plus a one-off Quoted sub-project
+  // folder) previously showed as two unrelated-looking top-level cards, both titled the
+  // same thing -- easy to mistake for a duplicate/broken entry. Pick one member per group
+  // as the "primary" (the Package one, since that's the ongoing relationship; otherwise
+  // whichever logged the most hours) so the other(s) can nest underneath it instead.
+  const primaryNameByGroup = useMemo(() => {
+    const byGroup = new Map();
+    clients.forEach((c) => { if (!c.capGroup) return; if (!byGroup.has(c.capGroup)) byGroup.set(c.capGroup, []); byGroup.get(c.capGroup).push(c); });
+    const result = new Map();
+    byGroup.forEach((members, group) => {
+      if (members.length < 2) return;
+      const primary = members.find((m) => m.type === "package") || [...members].sort((a, b) => b.worked - a.worked)[0];
+      result.set(group, primary.name);
+    });
+    return result;
+  }, [clients]);
+  // primary's folder name -> its sibling sub-project(s), computed against the FULL client
+  // list (not the type-filtered one below) -- a sub-project's own type would otherwise make
+  // it invisible whenever the view is scoped to its parent's type, which is exactly the
+  // "where did the other Warrina Homes card go" confusion this is meant to fix.
+  const siblingsByPrimaryName = useMemo(() => {
+    const byGroup = new Map();
+    clients.forEach((c) => { if (!c.capGroup) return; if (!byGroup.has(c.capGroup)) byGroup.set(c.capGroup, []); byGroup.get(c.capGroup).push(c); });
+    const result = new Map();
+    byGroup.forEach((members, group) => {
+      const primaryName = primaryNameByGroup.get(group);
+      if (!primaryName) return;
+      result.set(primaryName, members.filter((m) => m.name !== primaryName));
+    });
+    return result;
+  }, [clients, primaryNameByGroup]);
+
+  function withConsultantFilter(c, consultant) {
+    const tasksFiltered = consultant ? (c.tasksByUser.get(consultant) || new Map()) : c.tasksAll;
+    const workedFiltered = consultant ? ((c.userMinutes.get(consultant) || 0) / 60) : c.worked;
+    // narrow each task's contributor breakdown to the selected consultant too, when filtering
+    const taskUsersFiltered = consultant
+      ? new Map([...tasksFiltered.keys()].map((task) => [task, new Map([[consultant, tasksFiltered.get(task)]])]))
+      : c.taskUsers;
+    return { ...c, tasksFiltered, workedFiltered, taskUsersFiltered };
+  }
+
   // filtered + sorted + consultant-scoped clients for display
   const visible = useMemo(() => {
-    let list = clients.filter((c) => c.type === clientTypeFilter);
+    let list = clientTypeFilter === "all" ? clients.slice()
+      : clientTypeFilter === "map" ? clients.filter((c) => c.isMap)
+      : clients.filter((c) => c.type === clientTypeFilter);
     if (consultantFilter) list = list.filter((c) => c.userMinutes.has(consultantFilter));
-    // per-consultant task view: if filter set, use tasksByUser for that consultant; else all tasks
-    list = list.map((c) => {
-      const tasksFiltered = consultantFilter ? (c.tasksByUser.get(consultantFilter) || new Map()) : c.tasksAll;
-      const workedFiltered = consultantFilter ? ((c.userMinutes.get(consultantFilter) || 0) / 60) : c.worked;
-      // narrow each task's contributor breakdown to the selected consultant too, when filtering
-      const taskUsersFiltered = consultantFilter
-        ? new Map([...tasksFiltered.keys()].map((task) => [task, new Map([[consultantFilter, tasksFiltered.get(task)]])]))
-        : c.taskUsers;
-      return { ...c, tasksFiltered, workedFiltered, taskUsersFiltered };
+    // A non-primary member of a multi-folder group is only ever shown nested under its
+    // primary (see siblingsByPrimaryName above), never again as its own top-level card.
+    list = list.filter((c) => {
+      if (!c.capGroup) return true;
+      const primaryName = primaryNameByGroup.get(c.capGroup);
+      return !primaryName || c.name === primaryName;
     });
+    list = list.map((c) => withConsultantFilter(c, consultantFilter));
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter((c) => c.name.toLowerCase().includes(q) || (c.displayName || "").toLowerCase().includes(q));
@@ -786,7 +1034,7 @@ export default function PGReconciliation() {
       });
     }
     return list;
-  }, [clients, clientTypeFilter, consultantFilter, search, sortMode]);
+  }, [clients, clientTypeFilter, consultantFilter, search, sortMode, primaryNameByGroup]);
 
   const stats = useMemo(() => {
     const hrs = visible.reduce((a, c) => a + (c.workedFiltered ?? c.worked), 0);
@@ -827,7 +1075,7 @@ export default function PGReconciliation() {
   const buildSummaryRows = () =>
     clients.map((c) => ({
       "Client (ClickUp)": c.name,
-      "Client type": TYPE_LABELS[c.type],
+      "Client type": TYPE_LABELS_SHORT[c.type],
       "Matched to (Accrued)": c.accruedClient?.name ?? "",
       "Match confidence": c.matchInfo ? `${Math.round(c.matchInfo.confidence * 100)}% (${c.matchInfo.method})` : "unmatched",
       "Package (h/month)": c.pkg ?? "",
@@ -878,9 +1126,9 @@ export default function PGReconciliation() {
   const summaryText = (c) => {
     const lines = [];
     const monthText = invoiceMonth || "this month";
-    lines.push(`${c.displayName} — hours for ${monthText}`);
+    lines.push(`${c.displayName}: hours for ${monthText}`);
     if (c.accruedClient && c.accruedClient.name !== c.name) lines.push(`(ClickUp folder: ${c.name})`);
-    lines.push(`Client type: ${TYPE_LABELS[c.type]}`);
+    lines.push(`Client type: ${TYPE_LABELS_SHORT[c.type]}`);
     if (consultantFilter) lines.push(`Filtered to consultant: ${consultantFilter}`);
     lines.push("");
     lines.push("Tasks:");
@@ -903,7 +1151,7 @@ export default function PGReconciliation() {
       lines.push(`Total accrued time: ${fmt(c.worked + p)} h`);
       lines.push(c.remaining >= 0 ? `Remaining this month: ${fmt(c.remaining)} h` : `Over by ${fmt(Math.abs(c.remaining))} h`);
       if (c.status === "over") lines.push(`⚠ Over the +10% KPI (${fmt(c.kpiPct, 1)}% of package)`);
-      if (c.status === "under") lines.push(`⚠ Under the −10% KPI (${fmt(c.kpiPct, 1)}% of package) — accruing`);
+      if (c.status === "under") lines.push(`⚠ Under the −10% KPI (${fmt(c.kpiPct, 1)}% of package), accruing`);
     }
     return lines.join("\n");
   };
@@ -947,7 +1195,7 @@ export default function PGReconciliation() {
           {clickupSource === "manual" ? (
             <>
               <WifiOff size={14} style={{ color: "var(--fg-tertiary)" }} />
-              <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Showing a manually uploaded file — overrides live sync until the next reload.</span>
+              <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Showing a manually uploaded file, overrides live sync until the next reload.</span>
             </>
           ) : syncMeta?.last_sync_status === "error" ? (
             <>
@@ -1039,9 +1287,11 @@ export default function PGReconciliation() {
               <span className="pg-field__label">Client type</span>
               <select value={clientTypeFilter} onChange={(e) => setClientTypeFilter(e.target.value)}
                 className="pg-select" style={{ minWidth: 260 }}>
+                <option value="all">All Clients ({typeCounts.all})</option>
                 <option value="package">Clients on a Package ({typeCounts.package})</option>
                 <option value="hourly">Clients on Hourly rate ({typeCounts.hourly})</option>
-                <option value="quoted" disabled>Quoted Clients ({typeCounts.quoted}) — coming later</option>
+                <option value="quoted" disabled>Quoted Clients ({typeCounts.quoted}), coming later</option>
+                <option value="map">MAP Clients ({typeCounts.map})</option>
                 <option value="queensland">Queensland Clients (prv) ({typeCounts.queensland})</option>
               </select>
             </label>
@@ -1072,7 +1322,7 @@ export default function PGReconciliation() {
         {/* mid-month pace banner — only shown when the reporting period is the current, still-open month */}
         {ready && monthProgress && (
           <div className="pg-banner-warn" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
-            Mid-month check — day {monthProgress.dayOfMonth} of {monthProgress.totalDays} ({fmt(monthProgress.pct, 0)}% of the month elapsed). Package figures below are hours worked so far this month, not a final total.
+            Mid-month check: day {monthProgress.dayOfMonth} of {monthProgress.totalDays} ({fmt(monthProgress.pct, 0)}% of the month elapsed). Package figures below are hours worked so far this month, not a final total.
           </div>
         )}
 
@@ -1122,29 +1372,63 @@ export default function PGReconciliation() {
         {/* client cards */}
         {ready && (
           <div>
-            {visible.map((c) => (
-              <ClientCard
-                key={c.name}
-                client={c}
-                priorMonthPretty={priorMonthPretty}
-                monthProgress={monthProgress}
-                hasUser={clickup.hasUser}
-                clientTypeFilter={clientTypeFilter}
-                consultantFilter={consultantFilter}
-                accruedNames={accruedNames}
-                usedAccruedNames={new Set(clients.filter((x) => x.matched).map((x) => x.accruedClient.name))}
-                open={!!expanded[c.name]}
-                onToggle={() => setExpanded((p) => ({ ...p, [c.name]: !p[c.name] }))}
-                onSetMatch={(v) => setManualMatch(c.name, v)}
-                onCopy={() => copySummary(c)}
-                onPdf={() => downloadPdf(c)}
-                copied={copied === c.name}
-              />
-            ))}
+            {visible.map((c) => {
+              const siblings = siblingsByPrimaryName.get(c.name);
+              return (
+                <div key={c.name} className={siblings ? "pg-client-family" : undefined}>
+                  <ClientCard
+                    client={c}
+                    priorMonthPretty={priorMonthPretty}
+                    monthProgress={monthProgress}
+                    hasUser={clickup.hasUser}
+                    clientTypeFilter={clientTypeFilter}
+                    consultantFilter={consultantFilter}
+                    accruedNames={accruedNames}
+                    usedAccruedNames={new Set(clients.filter((x) => x.matched).map((x) => x.accruedClient.name))}
+                    open={!!expanded[c.name]}
+                    onToggle={() => setExpanded((p) => ({ ...p, [c.name]: !p[c.name] }))}
+                    onSetMatch={(v) => setManualMatch(c.name, v)}
+                    onCopy={() => copySummary(c)}
+                    onPdf={() => downloadPdf(c)}
+                    copied={copied === c.name}
+                  />
+                  {siblings && siblings.length > 0 && (
+                    <div className="pg-client-family__subs">
+                      {siblings.map((s) => {
+                        const sc = withConsultantFilter(s, consultantFilter);
+                        return (
+                          <div key={sc.name} className="pg-client-family__sub">
+                            <div className="pg-client-family__sub-label">
+                              <Link2 size={10} /> Related sub-project of {c.displayName}
+                            </div>
+                            <ClientCard
+                              client={sc}
+                              priorMonthPretty={priorMonthPretty}
+                              monthProgress={monthProgress}
+                              hasUser={clickup.hasUser}
+                              clientTypeFilter={clientTypeFilter}
+                              consultantFilter={consultantFilter}
+                              accruedNames={accruedNames}
+                              usedAccruedNames={new Set(clients.filter((x) => x.matched).map((x) => x.accruedClient.name))}
+                              open={!!expanded[sc.name]}
+                              onToggle={() => setExpanded((p) => ({ ...p, [sc.name]: !p[sc.name] }))}
+                              onSetMatch={(v) => setManualMatch(sc.name, v)}
+                              onCopy={() => copySummary(sc)}
+                              onPdf={() => downloadPdf(sc)}
+                              copied={copied === sc.name}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             {visible.length === 0 && (
               <div className="pg-empty">
                 {clientTypeFilter === "quoted"
-                  ? "Quoted clients aren't tracked here yet — this bucket is a placeholder."
+                  ? "Quoted clients aren't tracked here yet, this bucket is a placeholder."
                   : consultantFilter
                     ? `${consultantFilter} didn't work on any ${TYPE_LABELS[clientTypeFilter].toLowerCase()} this month.`
                     : `No ${TYPE_LABELS[clientTypeFilter].toLowerCase()} in this view.`}
@@ -1201,6 +1485,23 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
   const isPackage = c.type === "package";
   const isQld = c.type === "queensland";
 
+  // Clicking a name in "Consultants involved" opens (if not already open) this card's
+  // own task table, scoped to just that person's tasks -- purely local to this card, so
+  // it doesn't touch the page-wide consultant filter/dropdown or affect any other client.
+  // Clicking the same person again clears back to the card's normal (unfiltered) task list.
+  const [drillConsultant, setDrillConsultant] = useState(null);
+  const selectConsultant = (u) => {
+    if (drillConsultant === u) { setDrillConsultant(null); return; }
+    setDrillConsultant(u);
+    if (!open) onToggle();
+  };
+  const drillTasks = drillConsultant ? (c.tasksByUser.get(drillConsultant) || new Map()) : null;
+  const tasksShown = drillTasks ?? c.tasksFiltered;
+  const taskUsersShown = drillConsultant
+    ? new Map([...tasksShown.keys()].map((task) => [task, new Map([[drillConsultant, tasksShown.get(task)]])]))
+    : c.taskUsersFiltered;
+  const workedShown = drillConsultant ? ((c.userMinutes.get(drillConsultant) || 0) / 60) : c.workedFiltered;
+
   const statusChip = () => {
     if (!isPackage) return null;
     if (c.pkg == null) return <span className="pg-tag pg-tag--muted">[no package on file]</span>;
@@ -1213,7 +1514,7 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
     return <span className="pg-tag" style={{ color: m.c }}>[{m.t}]</span>;
   };
 
-  const typeChip = () => <span className="pg-tag" style={{ color: TYPE_TONES[c.type] }}>[{TYPE_LABELS[c.type]}]</span>;
+  const typeChip = () => <span className="pg-tag" style={{ color: TYPE_TONES[c.type] }}>[{TYPE_LABELS_SHORT[c.type]}]</span>;
 
   const borderColor = isPackage
     ? (c.status === "over" ? "var(--status-over)" : c.status === "under" ? "var(--status-warn)" : "var(--status-ok)")
@@ -1227,6 +1528,7 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
         <button onClick={onToggle} className="pg-client__name" aria-expanded={open}>
           {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           {c.displayName}
+          {c.isOffboarded && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 6 }} title={c.offboardNote}>[Offboarded]</span>}
         </button>
         {c.matched && c.accruedClient.name !== c.name && (
           <span className="pg-client__linked">
@@ -1237,6 +1539,16 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
           </span>
         )}
         {typeChip()}
+        {c.typeTransitioned && (
+          <span className="pg-tag" style={{ color: "var(--status-warn)" }} title={c.typeTransitionNote || "On a scheduled temporary type change this month — see the Clients module"}>
+            [scheduled change]
+          </span>
+        )}
+        {c.isMap && (
+          <span className="pg-tag" style={{ color: CLIENT_TYPE_TONES.map }} title="Tracked as a Marketing Action Plan (MAP) in Capacity Planning">
+            [MAP]
+          </span>
+        )}
         {statusChip()}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
           <button onClick={onCopy} className="pg-btn-ghost">
@@ -1253,8 +1565,8 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
           <AlertTriangle size={13} />
           <span className="pg-alertbar__text">
             {isQld
-              ? "Queensland (previously) client — not on the accrued sheet, no reconciliation."
-              : "Hourly-rate client — no package on file. If this looks like a name mismatch, match it below."}
+              ? "Queensland (previously) client, not on the accrued sheet, no reconciliation."
+              : "Hourly-rate client, no package on file. If this looks like a name mismatch, match it below."}
           </span>
           <select defaultValue="__none__" onChange={(e) => onSetMatch(e.target.value)}>
             <option value="__none__">Match to accrued client…</option>
@@ -1308,11 +1620,18 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
           <div className="pg-consultants__label"><Users size={11} /> Consultants involved</div>
           <div className="pg-consultants__list">
             {consultantEntries.map(([u, min]) => {
-              const active = consultantFilter && u === consultantFilter;
+              const active = drillConsultant ? u === drillConsultant : (consultantFilter && u === consultantFilter);
               return (
-                <span key={u || "unknown"} className={"pg-consultants__item" + (active ? " pg-consultants__item--active" : "")}>
+                <button
+                  key={u || "unknown"}
+                  type="button"
+                  onClick={() => selectConsultant(u)}
+                  title={drillConsultant === u ? "Clear — show all tasks again" : `See the tasks behind ${u || "this consultant"}'s hours`}
+                  className={"pg-consultants__item" + (active ? " pg-consultants__item--active" : "")}
+                  style={{ background: "none", border: 0, padding: 0 }}
+                >
                   {u || "—"} <span>({fmt(min / 60)} h)</span>
-                </span>
+                </button>
               );
             })}
           </div>
@@ -1323,7 +1642,7 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
       {open && (
         <div className="pg-table-wrap">
           <div className="pg-table-head">
-            Tasks {consultantFilter ? `worked by ${consultantFilter}` : "worked this month"}
+            Tasks {drillConsultant ? `worked by ${drillConsultant}` : consultantFilter ? `worked by ${consultantFilter}` : "worked this month"}
           </div>
           <table className="pg-table">
             <thead>
@@ -1334,20 +1653,29 @@ function ClientCard({ client: c, priorMonthPretty, monthProgress, hasUser, clien
               </tr>
             </thead>
             <tbody>
-              {[...c.tasksFiltered.entries()].sort((a, b) => b[1] - a[1]).map(([task, min]) => (
-                <tr key={task}>
-                  <td>{task}</td>
-                  {hasUser && <td>{formatTaskUsers(c.taskUsersFiltered?.get(task))}</td>}
-                  <td className="right num">{fmt(min / 60)}</td>
-                </tr>
-              ))}
-              {c.tasksFiltered.size === 0 && (
+              {[...tasksShown.entries()].sort((a, b) => b[1] - a[1]).map(([task, min]) => {
+                const taskUrl = clickupTaskUrl(c.taskIds?.get(task));
+                return (
+                  <tr key={task}>
+                    <td>
+                      {taskUrl ? (
+                        <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" className="pg-clickup-link">
+                          {task}
+                        </a>
+                      ) : task}
+                    </td>
+                    {hasUser && <td><TaskUsersCell userMinutesMap={taskUsersShown?.get(task)} taskUrl={taskUrl} /></td>}
+                    <td className="right num">{fmt(min / 60)}</td>
+                  </tr>
+                );
+              })}
+              {tasksShown.size === 0 && (
                 <tr><td colSpan={hasUser ? 3 : 2} className="empty">No tasks in this filter.</td></tr>
               )}
               <tr className="total">
                 <td>Total</td>
                 {hasUser && <td></td>}
-                <td className="right num">{fmt(c.workedFiltered)}</td>
+                <td className="right num">{fmt(workedShown)}</td>
               </tr>
             </tbody>
           </table>

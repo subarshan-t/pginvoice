@@ -52,6 +52,12 @@
   /* Solid accent-fill background (primary buttons, active nav) — Purple Giraffe
      Design OS Purple 500, used sparingly per the system's restraint rule. */
   --accent-bg: rgb(111, 74, 246);
+
+  /* The design system's own --fg-tertiary (rgba(207,196,197,0.6) on a near-black
+     page) sits under ~4:1 contrast — too faint for the mono uppercase labels,
+     table headers, and footnotes that lean on it throughout this app. Raise the
+     opacity so it stays clearly legible without changing its hue. */
+  --fg-tertiary: rgba(207, 196, 197, 0.78);
 }
 
 /* ============================================================================
@@ -72,7 +78,10 @@
 
   --fg-primary:   rgb(23, 23, 23);     /* #171717 */
   --fg-secondary: rgb(90, 87, 86);
-  --fg-tertiary:  rgb(119, 115, 109);  /* #77736D */
+  /* Darkened from the skill's flat #77736D (~4.7:1) toward main's contrast fix
+     (~6.4:1) for reliable legibility on the mono uppercase labels/footnotes
+     that lean on it — same warm-gray hue direction, just deeper. */
+  --fg-tertiary:  rgba(19, 19, 19, 0.68);
 
   --border-subtle: rgb(236, 234, 230); /* #ECEAE6 */
   --border-soft:   rgba(23, 23, 23, 0.12);
@@ -101,17 +110,26 @@ body {
 button { font: inherit; }
 
 .pg-app { min-height: 100vh; }
-.pg-container { max-width: 1080px; margin: 0 auto; padding: 56px 32px 96px; }
+.pg-container { max-width: 1320px; margin: 0 auto; padding: 56px 24px 96px; }
+@media (max-width: 760px) {
+  .pg-container, .pg-cap-container { padding-left: 14px; padding-right: 14px; }
+}
 
-/* ---- app shell / sidebar nav -----------------------------------------------
+/* ---- app shell / sidebar nav ---------------------------------------------
    Purple Giraffe Design OS §5.1 — the sidebar is a signature floating element:
    white rounded surface, soft shadow, inset from the viewport, narrow purple
    active marker over a soft lavender active surface. Dark theme keeps the
-   original flush rail (the floating treatment is a light-canvas idea). ------ */
-.pg-shell { display: flex; min-height: 100vh; background: var(--bg-base); }
-.pg-shell__main { flex: 1; min-width: 0; }
+   original flush rail (the floating treatment is a light-canvas idea).
+
+   The shell itself is pinned to exactly the viewport height, with the sidebar
+   and main content each scrolling independently inside it — so the nav links,
+   theme toggle, and sign-out button stay in place at a fixed spot regardless
+   of how far the active module's content scrolls, instead of the whole shell
+   (sidebar included) growing to the page's full scroll height. */
+.pg-shell { display: flex; height: 100vh; background: var(--bg-base); overflow: hidden; }
+.pg-shell__main { flex: 1; min-width: 0; height: 100vh; overflow-y: auto; }
 .pg-sidebar {
-  width: 232px; flex: none; border-right: 1px solid var(--border-subtle);
+  width: 232px; flex: none; height: 100vh; overflow-y: auto; border-right: 1px solid var(--border-subtle);
   padding: 22px 14px; display: flex; flex-direction: column; gap: 22px;
   transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
@@ -143,8 +161,9 @@ button { font: inherit; }
   border-radius: var(--app-radius-pill); background: var(--accent-bg);
 }
 @media (max-width: 760px) {
-  .pg-shell { flex-direction: column; }
-  .pg-sidebar { width: 100%; border-right: 0; border-bottom: 1px solid var(--border-subtle); flex-direction: row; align-items: center; }
+  .pg-shell { flex-direction: column; height: auto; overflow: visible; }
+  .pg-shell__main { height: auto; overflow-y: visible; }
+  .pg-sidebar { width: 100%; height: auto; overflow-y: visible; border-right: 0; border-bottom: 1px solid var(--border-subtle); flex-direction: row; align-items: center; }
   :root[data-theme="light"] .pg-sidebar { margin: 12px; border-radius: var(--app-radius); }
   .pg-sidebar__nav { flex-direction: row; }
 }
@@ -267,6 +286,18 @@ button { font: inherit; }
 .pg-client__name:hover { color: var(--accent); }
 .pg-client__linked { display: flex; align-items: center; gap: 5px; font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); }
 
+/* ---- related sub-project(s), nested under their primary client card -------
+   A client with more than one real ClickUp folder (a main package plus an
+   occasional one-off quoted project, say) shows the extra folder(s) here
+   instead of as their own unrelated-looking top-level card. */
+.pg-client-family__subs { margin-left: 28px; padding-left: 16px; border-left: 2px dashed var(--border-soft); }
+.pg-client-family__sub { margin-top: 4px; }
+.pg-client-family__sub .pg-client { margin-top: 8px; }
+.pg-client-family__sub-label {
+  display: flex; align-items: center; gap: 5px; margin-top: 12px;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary);
+}
+
 .pg-alertbar { margin-top: 12px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; font-size: 12px; font-family: var(--font-body); border-radius: var(--app-radius-sm); }
 .pg-alertbar__text { flex: 1; }
 .pg-alertbar select { font-family: var(--font-body); font-size: 12px; padding: 5px 8px; max-width: 220px; background: rgba(0,0,0,0.15); border: 1px solid currentColor; border-radius: var(--app-radius-sm); color: inherit; outline: none; }
@@ -301,9 +332,16 @@ button { font: inherit; }
 .pg-consultants { margin-top: 16px; padding: 12px 14px; background: var(--bg-base); border: 1px solid var(--border-subtle); border-radius: var(--app-radius-sm); }
 .pg-consultants__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-tertiary); display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .pg-consultants__list { display: flex; flex-wrap: wrap; gap: 4px 18px; }
-.pg-consultants__item { font-family: var(--font-mono); font-size: 12px; color: var(--fg-secondary); }
+.pg-consultants__item { font-family: var(--font-mono); font-size: 12px; color: var(--fg-secondary); transition: color var(--dur) var(--ease); }
+.pg-consultants__item:hover { color: var(--accent); cursor: pointer; }
 .pg-consultants__item--active { color: var(--accent); font-weight: 500; }
 .pg-consultants__item span { color: var(--fg-tertiary); }
+
+/* ---- inline links to ClickUp (task table) ---------------------------------
+   Plain text by default, same as any other cell — only the hover reveals
+   these are clickable, same pattern as the consultants row above. */
+.pg-clickup-link { color: inherit; text-decoration: none; }
+.pg-clickup-link:hover { color: var(--accent); cursor: pointer; }
 
 /* ---- task table -------------------------------------------------------------*/
 .pg-table-wrap { margin-top: 16px; border: 1px solid var(--border-soft); border-radius: var(--app-radius); overflow: hidden; }
@@ -325,12 +363,14 @@ button { font: inherit; }
 
 /* ---- capacity planning module ---------------------------------------------
    Wider container than .pg-container — the roster table has nine numeric
-   columns and needs the room; everything else (tokens, spacing, radii) is
-   the same system, just reusing generic classes (.pg-panel, .pg-table,
-   .pg-tag, .pg-btn…) already defined above. */
-.pg-cap-container { max-width: 1320px; margin: 0 auto; padding: 56px 32px 96px; }
-.pg-cap-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 18px; align-items: start; margin-top: 20px; }
-@media (max-width: 980px) { .pg-cap-grid { grid-template-columns: 1fr; } }
+   columns plus an actions column and needs the room; everything else (tokens,
+   spacing, radii) is the same system, just reusing generic classes (.pg-panel,
+   .pg-table, .pg-tag, .pg-btn…) already defined above. The grid ratio favors
+   the roster pane a bit more than the client-detail pane so more of the
+   roster's columns fit without horizontal scrolling. */
+.pg-cap-container { max-width: 1600px; margin: 0 auto; padding: 56px 24px 96px; }
+.pg-cap-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; align-items: start; margin-top: 20px; }
+@media (max-width: 1100px) { .pg-cap-grid { grid-template-columns: 1fr; } }
 /* independent scroll regions: each column sticks to the viewport and scrolls on its
    own, so scrolling through a long consultant-card list never pushes the roster out
    of view (and vice versa) */
@@ -341,7 +381,7 @@ button { font: inherit; }
 .pg-cap-pane::-webkit-scrollbar { width: 8px; }
 .pg-cap-pane::-webkit-scrollbar-thumb { background: var(--border-soft); border-radius: var(--app-radius-pill); }
 .pg-cap-pane::-webkit-scrollbar-track { background: transparent; }
-@media (max-width: 980px) {
+@media (max-width: 1100px) {
   .pg-cap-pane { position: static; max-height: none; overflow-y: visible; padding-right: 0; }
 }
 .pg-cap-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); box-shadow: var(--shadow-sm); padding: 18px 22px; margin-top: 12px; }

@@ -4,8 +4,8 @@ import {
   Search, Download, ChevronDown, Plus, X, Users,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, isInternalFolder } from "./nameMatch.js";
-import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey } from "./CapacityDashboard.jsx";
+import { findMatch, multiFolderMatchesFor, findPersonMatch, isInternalFolder, basisToClientType, dominantClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
+import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey, agreedAt } from "./CapacityDashboard.jsx";
 
 const CLICKUP_DB_KEY = "clickup";
 const NOTES_KEY = "perf_notes_v1";
@@ -223,9 +223,14 @@ function PerformanceInner() {
       const cu = await idbGet(CLICKUP_DB_KEY);
       if (cancelled) return;
       setClickup(cu || null);
-      setClients(loadKey("cap_clients", SEED_CLIENTS));
-      setPeople(loadKey("cap_people", SEED_PEOPLE));
-      setNotes(loadKey(NOTES_KEY, []));
+      setClients(await loadKey("cap_clients", SEED_CLIENTS));
+      setPeople(await loadKey("cap_people", SEED_PEOPLE));
+      // This module's own notes are plain localStorage (see addNote/removeNote below),
+      // never part of the Capacity Planning data now backed by Supabase — read it the
+      // same way it's written, not via the shared (Supabase-backed) loadKey.
+      let localNotes = [];
+      try { const raw = window.localStorage.getItem(NOTES_KEY); localNotes = raw ? JSON.parse(raw) : []; } catch (e) { /* ignore */ }
+      setNotes(localNotes);
       setLoaded(true);
     };
     load();
@@ -293,41 +298,92 @@ function PerformanceInner() {
     });
     return [...map.values()];
   }, [clients]);
-  function groupMeta(g) {
+  // `m`, when given, pulls each row's agreed hours as of that month from its `history`
+  // (e.g. Baintech's package dropped 38 -> 32 hrs/month in June 2026) instead of always
+  // using today's value, so past months in the trend chart show what was actually agreed then.
+  function groupMeta(g, m) {
     const isFixed = g.rows.some((r) => FIXED_BASES.includes(r.basis));
-    const agreedTotal = g.rows.reduce((s, r) => s + (r.agreed || 0), 0);
-    const basisLabel = g.rows.length > 1 ? "Combined" : g.rows[0].basis;
+    const agreedTotal = g.rows.reduce((s, r) => s + ((m ? agreedAt(r, m) : r.agreed) || 0), 0);
+    const basisLabel = g.rows.length > 1 ? "Combined" : CLIENT_TYPE_LABELS[basisToClientType(g.rows[0].basis)];
     return { isFixed, agreedTotal, basisLabel };
   }
 
-  /* ---- per-group monthly actuals, matched to a ClickUp folder by fuzzy name ----
-     Billable, non-internal minutes only — the same "worked" definition Client
-     Invoicing and Capacity Planning's dynamic average already use. */
-  const clientMonthly = useMemo(() => {
-    const result = new Map();
-    if (!clickup?.rows?.length) return result;
+  // Billable, non-internal minutes per real ClickUp folder per month — the same "worked"
+  // definition Client Invoicing and Capacity Planning's dynamic average already use.
+  // Factored out of clientMonthly below so the per-row matching a multi-basis group needs
+  // (see groupRowMonthly) can reuse it instead of recomputing.
+  const folderMonthMap = useMemo(() => {
     const folderMonth = new Map();
     const folders = new Set();
-    for (const r of clickup.rows) {
-      if (isInternalFolder(r.folder)) continue;
-      if (clickup.hasBillable && !r.billable) continue;
-      if (!r.monthKey) continue;
-      folders.add(r.folder);
-      if (!folderMonth.has(r.folder)) folderMonth.set(r.folder, new Map());
-      const byMonth = folderMonth.get(r.folder);
-      byMonth.set(r.monthKey, (byMonth.get(r.monthKey) || 0) + r.minutes);
+    if (clickup?.rows?.length) {
+      for (const r of clickup.rows) {
+        if (isInternalFolder(r.folder)) continue;
+        if (clickup.hasBillable && !r.billable) continue;
+        if (!r.monthKey) continue;
+        folders.add(r.folder);
+        if (!folderMonth.has(r.folder)) folderMonth.set(r.folder, new Map());
+        const byMonth = folderMonth.get(r.folder);
+        byMonth.set(r.monthKey, (byMonth.get(r.monthKey) || 0) + r.minutes);
+      }
     }
-    const folderList = [...folders];
-    groups.forEach((g) => {
-      const match = findMatch(g.group, folderList);
-      if (!match) return;
-      const byMonth = folderMonth.get(match.name) || new Map();
+    return { folderMonth, folderList: [...folders] };
+  }, [clickup]);
+
+  function matchMonthHours(name, folderMonth, folderList) {
+    const multi = multiFolderMatchesFor(name, folderList);
+    if (multi && multi.length) {
+      const byMonth = new Map();
+      for (const f of multi) {
+        const fm = folderMonth.get(f);
+        if (!fm) continue;
+        for (const [mk, min] of fm) byMonth.set(mk, (byMonth.get(mk) || 0) + min);
+      }
       const monthHours = new Map();
       activeMonths.forEach((m) => monthHours.set(m, (byMonth.get(m) || 0) / 60));
-      result.set(g.group, { matchedFolder: match.name, confidence: match.confidence, monthHours });
+      return { matchedFolder: `${multi.length} folders`, confidence: 1, monthHours };
+    }
+    const match = findMatch(name, folderList);
+    if (!match) return null;
+    const byMonth = folderMonth.get(match.name) || new Map();
+    const monthHours = new Map();
+    activeMonths.forEach((m) => monthHours.set(m, (byMonth.get(m) || 0) / 60));
+    return { matchedFolder: match.name, confidence: match.confidence, monthHours };
+  }
+
+  /* ---- per-group monthly actuals, matched to a ClickUp folder by fuzzy name ---- */
+  const clientMonthly = useMemo(() => {
+    const result = new Map();
+    const { folderMonth, folderList } = folderMonthMap;
+    if (!folderList.length) return result;
+    groups.forEach((g) => {
+      const m = matchMonthHours(g.group, folderMonth, folderList);
+      if (m) result.set(g.group, m);
     });
     return result;
-  }, [clickup, groups, activeMonths]);
+  }, [folderMonthMap, groups, activeMonths]);
+
+  // For a "Combined" group whose rows span more than one basis (e.g. Warrina Homes: a
+  // Package row plus a Quoted sub-project row), clientMonthly's single group-level match
+  // can't tell which folder's hours belong to which row — everything gets attributed to
+  // whichever type groupMeta/dominantClientType calls dominant, silently mis-bucketing the
+  // other row's real hours. Try matching each row's own (more specific) name to its own
+  // folder(s) instead; a row that can't be individually matched contributes 0 here rather
+  // than guessing, since folding it into the wrong type is worse than omitting it. Single-
+  // row groups (the vast majority) are untouched — they already have an unambiguous match.
+  const groupRowMonthly = useMemo(() => {
+    const result = new Map(); // group name -> [{ row, monthHours }]
+    const { folderMonth, folderList } = folderMonthMap;
+    if (!folderList.length) return result;
+    groups.forEach((g) => {
+      if (g.rows.length < 2) return;
+      const rows = g.rows.map((row) => {
+        const m = matchMonthHours(row.client, folderMonth, folderList);
+        return { row, monthHours: m ? m.monthHours : new Map() };
+      });
+      result.set(g.group, rows);
+    });
+    return result;
+  }, [folderMonthMap, groups, activeMonths]);
 
   // expanding-window average — same semantics as Capacity Planning's trailingAverage:
   // the mean of every month in the selected range strictly before `m`.
@@ -338,13 +394,30 @@ function PerformanceInner() {
     return prior.reduce((a, b) => a + b, 0) / prior.length;
   }
 
+  // A group only earns a place in the client list if it was still an active engagement as of
+  // the latest month in view, or it actually logged real hours somewhere in the selected
+  // range — an offboarded client with zero matched activity in the period is just noise.
+  function groupIsActiveOrLogged(g) {
+    if (!latestMonth) return true;
+    // "archived" (unverified -- no documentation support, not a confirmed offboard) never
+    // counts as unconditionally active on its own -- it only earns a place if it actually
+    // logged real hours somewhere in the range, same as an offboarded client past its date.
+    // A confirmed-inactive client with an offboardedFrom date still counts as active for
+    // months before that date, since it genuinely was.
+    const stillActive = g.rows.some((r) => r.status !== "archived" && (!r.offboardedFrom || r.offboardedFrom > latestMonth));
+    if (stillActive) return true;
+    const cm = clientMonthly.get(g.group);
+    return !!cm && activeMonths.some((m) => (cm.monthHours.get(m) || 0) > 0);
+  }
+
   const filteredGroups = useMemo(() => groups.filter((g) =>
     (!qClient || g.group.toLowerCase().includes(qClient.toLowerCase())) &&
-    (!qBasis || g.rows.some((r) => r.basis === qBasis))
-  ), [groups, qClient, qBasis]);
+    (!qBasis || g.rows.some((r) => basisToClientType(r.basis) === qBasis)) &&
+    groupIsActiveOrLogged(g)
+  ), [groups, qClient, qBasis, latestMonth, clientMonthly, activeMonths]);
 
   const clientTableRows = useMemo(() => filteredGroups.map((g) => {
-    const meta = groupMeta(g);
+    const meta = groupMeta(g, latestMonth);
     const cm = clientMonthly.get(g.group);
     const monthHours = cm ? cm.monthHours : new Map();
     const last = latestMonth ? (monthHours.get(latestMonth) || 0) : null;
@@ -356,51 +429,126 @@ function PerformanceInner() {
   }).sort((a, b) => {
     const av = a.variance === null ? -999 : Math.abs(a.variance), bv = b.variance === null ? -999 : Math.abs(b.variance);
     return bv - av;
-  }), [filteredGroups, clientMonthly, latestMonth, activeMonths]);
+  }), [filteredGroups, clientMonthly, latestMonth, activeMonths, clients]);
+
+  // A fixed-agreement client only counts toward Agreed for months it was actually
+  // an active engagement — approximated by whether they logged any ClickUp hours
+  // that specific month. Applying the client's *current* agreed total to every
+  // month in the range regardless (the old behavior) drew a flat Agreed line even
+  // across months before a new client signed on, or after an old one left.
+  function activeInMonth(g, m) {
+    const cm = clientMonthly.get(g.group);
+    return !!cm && (cm.monthHours.get(m) || 0) > 0;
+  }
 
   const clientChart = useMemo(() => {
+    const TYPE_ORDER = ["hourly", "package", "quoted", "map"];
+    const TYPE_LINE_LABEL = { hourly: "Hours for Hourly", package: "Hours for Packaged", quoted: "Hours for Quoted", map: "Hours for MAP" };
+
     if (selectedClient) {
       const g = groups.find((x) => x.group === selectedClient);
-      if (!g) return { series: [], isFixed: null, ytd: {}, current: {} };
-      const meta = groupMeta(g);
+      if (!g) return { series: [], isFixed: null, ytd: [], current: [] };
+      const meta = groupMeta(g, latestMonth);
       const cm = clientMonthly.get(g.group);
       const monthHours = cm ? cm.monthHours : new Map();
       const actualsPts = activeMonths.map((m) => monthHours.get(m) ?? 0);
-      const agreedPts = meta.isFixed ? activeMonths.map(() => meta.agreedTotal) : activeMonths.map(() => null);
+      const agreedPts = meta.isFixed ? activeMonths.map((m) => (activeInMonth(g, m) ? groupMeta(g, m).agreedTotal : 0)) : activeMonths.map(() => null);
       const hourlyPts = meta.isFixed ? activeMonths.map(() => null) : activeMonths.map((m) => expandingAvgAt(monthHours, m));
       const series = [
         { label: "Agreed", color: "var(--fg-tertiary)", points: agreedPts },
         { label: "Hourly (trailing)", color: "var(--accent-orchid)", points: hourlyPts },
         { label: "Actuals", color: "var(--accent)", points: actualsPts },
       ].filter((s) => s.points.some((v) => v !== null));
+      const ytdAgreed = agreedPts.reduce((s, v) => s + (v || 0), 0);
       const ytdActuals = actualsPts.reduce((s, v) => s + (v || 0), 0);
       return {
         series, isFixed: meta.isFixed, matched: !!cm, matchedFolder: cm?.matchedFolder,
-        ytd: { agreed: meta.isFixed ? meta.agreedTotal * activeMonths.length : null, hourly: meta.isFixed ? null : (activeMonths.length ? ytdActuals / activeMonths.length : null), actuals: ytdActuals },
-        current: { agreed: meta.isFixed ? meta.agreedTotal : null, hourly: meta.isFixed ? null : expandingAvgAt(monthHours, latestMonth), actuals: latestMonth ? (monthHours.get(latestMonth) ?? 0) : null },
+        ytd: [
+          { label: "Agreed", value: meta.isFixed ? fmt0(ytdAgreed) : "—" },
+          { label: "Hourly", value: meta.isFixed ? "—" : (activeMonths.length ? fmt1(ytdActuals / activeMonths.length) : "—") },
+          { label: "Actuals", value: fmt0(ytdActuals) },
+        ],
+        current: [
+          { label: "Agreed", value: meta.isFixed && activeInMonth(g, latestMonth) ? fmt0(meta.agreedTotal) : "—" },
+          { label: "Hourly", value: meta.isFixed ? "—" : fmt1(expandingAvgAt(monthHours, latestMonth)) },
+          { label: "Actuals", value: latestMonth ? fmt0(monthHours.get(latestMonth) ?? 0) : "—" },
+        ],
       };
     }
-    // aggregate — every matched group
-    const matchedGroups = groups.filter((g) => clientMonthly.has(g.group));
-    const fixedGroups = matchedGroups.filter((g) => groupMeta(g).isFixed);
-    const hourlyGroups = matchedGroups.filter((g) => !groupMeta(g).isFixed);
-    const agreedTotal = fixedGroups.reduce((s, g) => s + groupMeta(g).agreedTotal, 0);
-    const hourlyByMonth = activeMonths.map((m) => hourlyGroups.reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0));
-    const actualsByMonth = activeMonths.map((m) => matchedGroups.reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0));
-    const agreedByMonth = activeMonths.map(() => agreedTotal);
-    const series = [
-      { label: "Agreed", color: "var(--fg-tertiary)", points: agreedByMonth },
-      { label: "Hourly clients (actual)", color: "var(--accent-orchid)", points: hourlyByMonth },
-      { label: "Actuals (all)", color: "var(--accent)", points: actualsByMonth },
-    ];
-    const totYtd = actualsByMonth.reduce((a, b) => a + b, 0);
+
+    // aggregate, bucketed by canonical client type — every matched group within
+    // the current name search (qClient), independent of the Type picker (qBasis),
+    // which instead decides *which of these type lines* actually get shown below.
+    const matchedGroups = groups.filter((g) =>
+      (!qClient || g.group.toLowerCase().includes(qClient.toLowerCase())) && clientMonthly.has(g.group)
+    );
+    // Single-row groups (the vast majority) bucket by the group as a whole; a multi-basis
+    // "Combined" group (e.g. Warrina Homes: a Package row plus a Quoted sub-project row)
+    // gets split per row instead — see groupRowMonthly — so its Quoted hours land in the
+    // Quoted line rather than all being swept into whichever basis is "dominant".
+    const groupsByType = { hourly: [], package: [], quoted: [], map: [] };
+    const splitRowsByType = { hourly: [], package: [], quoted: [], map: [] };
+    matchedGroups.forEach((g) => {
+      const rowSplit = groupRowMonthly.get(g.group);
+      if (rowSplit) rowSplit.forEach((rs) => splitRowsByType[basisToClientType(rs.row.basis)].push(rs));
+      else groupsByType[dominantClientType(g.rows)].push(g);
+    });
+
+    const hoursByType = {}, agreedByType = {};
+    TYPE_ORDER.forEach((t) => {
+      hoursByType[t] = activeMonths.map((m) =>
+        groupsByType[t].reduce((s, g) => s + (clientMonthly.get(g.group).monthHours.get(m) || 0), 0) +
+        splitRowsByType[t].reduce((s, rs) => s + (rs.monthHours.get(m) || 0), 0)
+      );
+      agreedByType[t] = t === "hourly" ? null : activeMonths.map((m) =>
+        groupsByType[t].reduce((s, g) => s + (activeInMonth(g, m) ? groupMeta(g, m).agreedTotal : 0), 0) +
+        splitRowsByType[t].reduce((s, rs) => s + ((rs.monthHours.get(m) || 0) > 0 ? (agreedAt(rs.row, m) || 0) : 0), 0)
+      );
+    });
+    const sumArrays = (arrs) => activeMonths.map((_, i) => arrs.reduce((s, a) => s + (a ? a[i] : 0), 0));
+    const totalAgreedByMonth = sumArrays(["package", "quoted", "map"].map((t) => agreedByType[t]));
+    const totalHoursByMonth = sumArrays(TYPE_ORDER.map((t) => hoursByType[t]));
+
     const lastIdx = activeMonths.length - 1;
-    return {
-      series, isFixed: null, matched: matchedGroups.length > 0,
-      ytd: { agreed: agreedTotal * activeMonths.length, hourly: activeMonths.length ? hourlyByMonth.reduce((a, b) => a + b, 0) / activeMonths.length : null, actuals: totYtd },
-      current: { agreed: agreedTotal, hourly: lastIdx >= 0 ? hourlyByMonth[lastIdx] : null, actuals: lastIdx >= 0 ? actualsByMonth[lastIdx] : null },
-    };
-  }, [selectedClient, groups, clientMonthly, activeMonths, latestMonth]);
+    const ytdOf = (arr) => arr.reduce((a, b) => a + b, 0);
+    const atLast = (arr) => lastIdx >= 0 ? arr[lastIdx] : 0;
+
+    let series, ytd, current;
+    if (!qBasis) {
+      // "All" — total Agreed plus every type's own Hours line.
+      series = [
+        { label: "Total Agreed", color: "var(--fg-tertiary)", points: totalAgreedByMonth },
+        ...TYPE_ORDER.map((t) => ({ label: TYPE_LINE_LABEL[t], color: CLIENT_TYPE_TONES[t], points: hoursByType[t] })),
+      ];
+      ytd = [
+        { label: "Total Agreed", value: fmt0(ytdOf(totalAgreedByMonth)) },
+        ...TYPE_ORDER.map((t) => ({ label: TYPE_LINE_LABEL[t], value: fmt0(ytdOf(hoursByType[t])) })),
+      ];
+      current = [
+        { label: "Total Agreed", value: fmt0(atLast(totalAgreedByMonth)) },
+        ...TYPE_ORDER.map((t) => ({ label: TYPE_LINE_LABEL[t], value: fmt0(atLast(hoursByType[t])) })),
+      ];
+    } else if (qBasis === "hourly") {
+      // Hourly has no fixed agreement, so there's no Agreed line to show for it.
+      series = [{ label: TYPE_LINE_LABEL.hourly, color: CLIENT_TYPE_TONES.hourly, points: hoursByType.hourly }];
+      ytd = [{ label: TYPE_LINE_LABEL.hourly, value: fmt0(ytdOf(hoursByType.hourly)) }];
+      current = [{ label: TYPE_LINE_LABEL.hourly, value: fmt0(atLast(hoursByType.hourly)) }];
+    } else {
+      series = [
+        { label: "Agreed", color: "var(--fg-tertiary)", points: agreedByType[qBasis] },
+        { label: TYPE_LINE_LABEL[qBasis], color: CLIENT_TYPE_TONES[qBasis], points: hoursByType[qBasis] },
+      ];
+      ytd = [
+        { label: "Agreed", value: fmt0(ytdOf(agreedByType[qBasis])) },
+        { label: TYPE_LINE_LABEL[qBasis], value: fmt0(ytdOf(hoursByType[qBasis])) },
+      ];
+      current = [
+        { label: "Agreed", value: fmt0(atLast(agreedByType[qBasis])) },
+        { label: TYPE_LINE_LABEL[qBasis], value: fmt0(atLast(hoursByType[qBasis])) },
+      ];
+    }
+    return { series, isFixed: null, matched: matchedGroups.length > 0, ytd, current, totalHoursByMonth };
+  }, [selectedClient, groups, qClient, qBasis, clientMonthly, groupRowMonthly, activeMonths, latestMonth]);
 
   /* ---- team: match real ClickUp usernames to the roster by fuzzy name ---- */
   const userMatch = useMemo(() => {
@@ -408,11 +556,12 @@ function PerformanceInner() {
     if (!clickup?.rows?.length) return map;
     const usernames = new Set();
     for (const r of clickup.rows) if (r.user) usernames.add(r.user);
-    const rosterNames = people.map((p) => p.name);
     usernames.forEach((u) => {
-      if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, null); return; }
-      const m = findMatch(u, rosterNames);
-      map.set(u, m ? m.name : null);
+      // The "Purple Giraffe" ClickUp login is a shared account DMA (an external
+      // contractor) logs time under — attribute it to DMA rather than dropping it.
+      if (u.trim().toLowerCase() === "purple giraffe") { map.set(u, "DMA (external)"); return; }
+      const p = findPersonMatch(u, people);
+      map.set(u, p ? p.name : null);
     });
     return map;
   }, [clickup, people]);
@@ -432,7 +581,6 @@ function PerformanceInner() {
     const monthSet = new Set(activeMonths);
     for (const r of clickup.rows) {
       if (!r.monthKey || !r.user || !monthSet.has(r.monthKey)) continue;
-      if (r.user.trim().toLowerCase() === "purple giraffe") continue;
       const key = userMatch.get(r.user) || r.user;
       if (!map.has(key)) map.set(key, new Map());
       const byMonth = map.get(key);
@@ -513,7 +661,10 @@ function PerformanceInner() {
     };
   }, [selectedConsultant, teamMonthly, activeMonths]);
 
-  const basisOptions = [{ value: null, label: "All types" }, ...Array.from(new Set(clients.map((c) => c.basis))).sort().map((b) => ({ value: b, label: b }))];
+  // Grouped down to the same 4 canonical types Client Invoicing uses (see
+  // basisToClientType), rather than surfacing every raw "basis" value —
+  // MAP/Strategy/Project aren't categories anyone outside this data recognizes.
+  const basisOptions = [{ value: null, label: "All types" }, ...Array.from(new Set(clients.map((c) => basisToClientType(c.basis)))).sort().map((t) => ({ value: t, label: CLIENT_TYPE_LABELS[t] }))];
 
   function exportXlsx() {
     const wb = XLSX.utils.book_new();
@@ -554,19 +705,19 @@ function PerformanceInner() {
       <div className="pg-app-header">
         <div>
           <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-          <h1 className="pg-app-header__title">Performance scorecard — how is the business actually doing?</h1>
+          <h1 className="pg-app-header__title">Performance scorecard: how is the business actually doing?</h1>
           <p className="pg-app-header__sub">Select a client or consultant to see their own trend; leave it blank for the whole-business view. Figures come live from whatever ClickUp export is loaded in Client Invoicing, and the roster/client list from Capacity Planning.</p>
         </div>
       </div>
 
       {!hasData && (
         <div className="pg-banner-warn">
-          No ClickUp data loaded yet — upload a CSV in Client Invoicing to see real trends here. The roster and client list below are shown with no actuals until then.
+          No ClickUp data loaded yet, upload a CSV in Client Invoicing to see real trends here. The roster and client list below are shown with no actuals until then.
         </div>
       )}
       {hasData && botHours > 0.05 && (
         <div className="pg-banner-warn">
-          {fmt1(botHours)} h logged under the shared "Purple Giraffe" ClickUp account are excluded from the by-person breakdown below (not a real team member).
+          {fmt1(botHours)} h logged under the shared "Purple Giraffe" ClickUp account are attributed to "DMA (external)" in the by-person breakdown below (that account is how DMA's time is logged).
         </div>
       )}
 
@@ -622,9 +773,15 @@ function PerformanceInner() {
                 <LineChart series={clientChart.series} months={activeMonths} />
                 {selectedClient && (
                   <p className="pg-footnote" style={{ marginTop: 6 }}>
-                    Showing <b>{selectedClient}</b> — {clientChart.isFixed ? "no Hourly line, since this is a fixed-agreement client." : "no Agreed line, since this client has no fixed agreement."}
-                    {!clientChart.matched && " No matching ClickUp folder found for this client — actuals are 0."}
+                    Showing <b>{selectedClient}</b>: {clientChart.isFixed ? "no Hourly line, since this is a fixed-agreement client." : "no Agreed line, since this client has no fixed agreement."}
+                    {!clientChart.matched && " No matching ClickUp folder found for this client, actuals are 0."}
                   </p>
+                )}
+                {!selectedClient && qBasis === "hourly" && (
+                  <p className="pg-footnote" style={{ marginTop: 6 }}>No Agreed line for Hourly clients, since they have no fixed agreement.</p>
+                )}
+                {!selectedClient && (
+                  <p className="pg-footnote" style={{ marginTop: 6 }}>A client only counts toward an Agreed line for months it actually logged ClickUp hours, so new clients and departures move the total instead of it staying flat across the whole range.</p>
                 )}
               </div>
 
@@ -660,15 +817,11 @@ function PerformanceInner() {
             <div className="pg-cap-pane">
               <div className="pg-cap-stat">
                 <div className="pg-field__label" style={{ marginBottom: 8 }}>All data ({rangeLabel})</div>
-                <StatRow label="Agreed" value={clientChart.ytd.agreed === null || clientChart.ytd.agreed === undefined ? "—" : fmt0(clientChart.ytd.agreed)} />
-                <StatRow label="Hourly" value={clientChart.ytd.hourly === null || clientChart.ytd.hourly === undefined ? "—" : fmt1(clientChart.ytd.hourly)} />
-                <StatRow label="Actuals" value={fmt0(clientChart.ytd.actuals)} />
+                {clientChart.ytd.map((s) => <StatRow key={s.label} label={s.label} value={s.value} />)}
               </div>
               <div className="pg-cap-stat" style={{ marginTop: 12 }}>
                 <div className="pg-field__label" style={{ marginBottom: 8 }}>Current month {latestMonth ? `(${monthLabelShort(latestMonth)})` : ""}</div>
-                <StatRow label="Agreed" value={clientChart.current.agreed === null || clientChart.current.agreed === undefined ? "—" : fmt0(clientChart.current.agreed)} />
-                <StatRow label="Hourly" value={clientChart.current.hourly === null || clientChart.current.hourly === undefined ? "—" : fmt1(clientChart.current.hourly)} />
-                <StatRow label="Actuals" value={fmt0(clientChart.current.actuals)} />
+                {clientChart.current.map((s) => <StatRow key={s.label} label={s.label} value={s.value} />)}
               </div>
 
               <NotesPanel notes={notes} noteDraft={noteDraft} setNoteDraft={setNoteDraft} addNote={addNote} removeNote={removeNote} />
