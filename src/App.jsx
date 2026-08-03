@@ -1369,13 +1369,14 @@ export default function PGReconciliation({ onNavigateClients }) {
               <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Live sync hasn't run yet.</span>
             </>
           )}
-          {clickupSource !== "manual" && syncMeta?.last_synced_at && syncMeta?.last_sync_status !== "error" && (
-            <span className="pg-status-pill" style={{ marginLeft: "auto", color: "var(--status-ok)", background: "var(--status-ok-soft)" }}>Synced</span>
-          )}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <WarningIcon title="ClickUp export" warnings={clickup?.warnings} />
+            <WarningIcon title="Accrued sheet" warnings={accrued?.warnings} />
+            {clickupSource !== "manual" && syncMeta?.last_synced_at && syncMeta?.last_sync_status !== "error" && (
+              <span className="pg-status-pill" style={{ color: "var(--status-ok)", background: "var(--status-ok-soft)" }}>Synced</span>
+            )}
+          </div>
         </div>
-
-        <WarningBanner title="ClickUp export" warnings={clickup?.warnings} />
-        <WarningBanner title="Accrued sheet" warnings={accrued?.warnings} />
 
         {/* config row */}
         {ready && (
@@ -1585,22 +1586,32 @@ function KpiCard({ label, value, sub, tone, icon, delta, spark }) {
     </div>
   );
 }
-// Collapsed to a single summary line by default (matching the approved mockup) — the
-// full warning text is still there behind "View details", not silently dropped.
-function WarningBanner({ title, warnings }) {
+// Compact icon trigger — replaces the old full-width banner. The full warning
+// text still lives behind a click, just in a small balloon instead of taking
+// over a whole row.
+function WarningIcon({ title, warnings }) {
   const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
   if (!warnings || warnings.length === 0) return null;
   return (
-    <div className="pg-banner-warn" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <span>{warnings.length === 1 ? warnings[0] : `${title}: ${warnings.length} warnings found.`}</span>
-        <button className="pg-btn-ghost" style={{ flex: "none" }} onClick={() => setOpen((o) => !o)}>
-          {open ? "Hide details" : "View details"}
-        </button>
-      </div>
-      {open && warnings.length > 1 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {warnings.map((w, i) => <div key={i}>{w}</div>)}
+    <div className="pg-warn-icon-wrap" ref={ref}>
+      <button
+        className="pg-warn-icon" onClick={() => setOpen((o) => !o)}
+        title={`${title}: ${warnings.length} warning${warnings.length === 1 ? "" : "s"}`}
+        aria-label={`Show ${title} warnings`}
+      >
+        <AlertTriangle size={14} />
+        {warnings.length > 1 && <span className="pg-warn-icon__count">{warnings.length}</span>}
+      </button>
+      {open && (
+        <div className="pg-warn-balloon">
+          <div className="pg-warn-balloon__title">{title}</div>
+          {warnings.map((w, i) => <div key={i} className="pg-warn-balloon__item">{w}</div>)}
         </div>
       )}
     </div>

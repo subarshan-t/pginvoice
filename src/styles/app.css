@@ -682,3 +682,35 @@ button { font: inherit; }
 .pg-drawer__footer .pg-btn { flex: 1; justify-content: center; }
 .pg-drawer__footer .pg-btn-ghost { flex: 1; justify-content: center; }
 .pg-drawer__meta { display: flex; align-items: center; margin-top: 12px; font-family: var(--font-mono); font-size: 10px; color: var(--fg-tertiary); }
+
+/* ---- client invoicing: compact warning icon + balloon popover -------------
+   Replaces the old full-width warning banner — a small triangle badge that
+   opens a floating detail balloon instead of taking over a whole row. */
+.pg-warn-icon-wrap { position: relative; display: inline-flex; }
+.pg-warn-icon {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; background: var(--status-warn-soft); border: 0; border-radius: var(--app-radius-pill);
+  color: var(--status-warn); cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+.pg-warn-icon:hover { background: var(--status-warn); color: white; }
+.pg-warn-icon__count {
+  position: absolute; top: -4px; right: -4px; min-width: 15px; height: 15px; padding: 0 3px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--status-warn); color: white; border: 2px solid var(--bg-card);
+  border-radius: var(--app-radius-pill); font-family: var(--font-mono); font-size: 9px; font-weight: 600;
+}
+.pg-warn-balloon {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; width: 320px; max-width: 80vw;
+  background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius);
+  box-shadow: var(--shadow-floating); padding: 14px 16px;
+  animation: pg-fade-in 0.15s var(--ease);
+}
+.pg-warn-balloon::before {
+  content: ""; position: absolute; bottom: 100%; right: 12px; width: 10px; height: 10px;
+  background: var(--bg-card); border-left: 1px solid var(--border-subtle); border-top: 1px solid var(--border-subtle);
+  transform: rotate(45deg) translateY(5px);
+}
+.pg-warn-balloon__title { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--status-warn); margin-bottom: 8px; }
+.pg-warn-balloon__item { font-family: var(--font-body); font-size: 12px; color: var(--fg-secondary); padding: 6px 0; border-top: 1px dashed var(--border-subtle); }
+.pg-warn-balloon__item:first-of-type { border-top: 0; }
