@@ -162,8 +162,14 @@ button { font: inherit; }
   border-radius: var(--app-radius-pill); background: var(--accent-bg);
 }
 
-/* ---- sidebar: collapsed state, profile card, icon-only footer row -------- */
+/* ---- sidebar: collapsed state, profile card, icon-only footer row --------
+   Labels always render in the DOM now (not conditionally, per collapsed) so
+   the mobile sheet — which reuses this same markup — never inherits a stale
+   "collapsed" flag from a previous desktop session and silently loses all
+   its text. CSS hides them for the real desktop icon-rail state only; the
+   mobile media query below unconditionally forces them back on. */
 .pg-sidebar--collapsed { width: 76px; }
+.pg-sidebar--collapsed .pg-sidebar__hide-collapsed { display: none; }
 .pg-sidebar--collapsed .pg-sidebar__link { justify-content: center; padding-left: 10px; }
 .pg-sidebar--collapsed .pg-sidebar__brand { flex-direction: column; justify-content: center; gap: 8px; padding: 0; }
 .pg-sidebar--collapsed .pg-sidebar__brand .pg-sidebar__icon-btn { margin-left: 0 !important; }
@@ -220,9 +226,12 @@ button { font: inherit; }
     color: var(--fg-secondary); cursor: pointer;
   }
   .pg-sidebar__mobile-toggle:hover { background: var(--bg-elevated); }
-  .pg-sidebar--collapsed { width: auto; } /* desktop collapse state doesn't apply on mobile */
-  .pg-sidebar--collapsed .pg-sidebar__brand { justify-content: flex-start; }
-  .pg-sidebar--collapsed .pg-sidebar__brand span { display: inline; }
+  /* Desktop collapse state doesn't apply on mobile — the hamburger's open/
+     closed state is the only thing controlling visibility here. */
+  .pg-sidebar--collapsed { width: auto; }
+  .pg-sidebar--collapsed .pg-sidebar__brand { flex-direction: row; justify-content: flex-start; padding: 4px; }
+  .pg-sidebar--collapsed .pg-sidebar__link { justify-content: flex-start; padding: 9px 10px 9px 14px; }
+  .pg-sidebar--collapsed .pg-sidebar__hide-collapsed { display: revert; }
 
   /* Collapsed by default: only the brand row + hamburger are visible. */
   .pg-sidebar__scroll { display: none; }

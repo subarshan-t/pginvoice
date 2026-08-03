@@ -122,7 +122,7 @@ export default function Shell() {
       <aside className={"pg-sidebar" + (collapsed ? " pg-sidebar--collapsed" : "") + (mobileNavOpen ? " pg-sidebar--mobile-open" : "")}>
         <div className="pg-sidebar__brand">
           <img src="/assets/giraffe-mark.png" alt="" />
-          {!collapsed && <span>Purple Giraffe</span>}
+          <span className="pg-sidebar__hide-collapsed">Purple Giraffe</span>
           <button
             className="pg-sidebar__icon-btn pg-sidebar__desktop-only"
             style={{ marginLeft: "auto" }}
@@ -150,7 +150,7 @@ export default function Shell() {
                 title={collapsed ? m.label : undefined}
               >
                 <m.icon size={16} />
-                {!collapsed && m.label}
+                <span className="pg-sidebar__hide-collapsed">{m.label}</span>
               </button>
             ))}
           </nav>
@@ -164,19 +164,17 @@ export default function Shell() {
                 title={collapsed ? m.label : undefined}
               >
                 <m.icon size={16} />
-                {!collapsed && m.label}
+                <span className="pg-sidebar__hide-collapsed">{m.label}</span>
               </button>
             ))}
           </nav>
 
           <div className="pg-sidebar__profile" title={collapsed ? username : undefined}>
             <div className="pg-sidebar__avatar">{username.slice(0, 1).toUpperCase()}</div>
-            {!collapsed && (
-              <div className="pg-sidebar__profile-text">
-                <div className="pg-sidebar__profile-name">{username}</div>
-                <div className="pg-sidebar__profile-role">Admin</div>
-              </div>
-            )}
+            <div className="pg-sidebar__profile-text pg-sidebar__hide-collapsed">
+              <div className="pg-sidebar__profile-name">{username}</div>
+              <div className="pg-sidebar__profile-role">Admin</div>
+            </div>
           </div>
 
           <div className="pg-sidebar__footer-row">
