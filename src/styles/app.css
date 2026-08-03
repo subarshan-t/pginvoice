@@ -128,14 +128,15 @@ button { font: inherit; }
    (sidebar included) growing to the page's full scroll height. */
 .pg-shell { display: flex; height: 100vh; background: var(--bg-base); overflow: hidden; }
 .pg-shell__main { flex: 1; min-width: 0; height: 100vh; overflow-y: auto; }
+/* Floating panel — same inset, radius and shadow in both themes, so the nav's
+   size/shape never shifts when the theme toggle is used; only the colors (via
+   --bg-card / --border-subtle / --shadow-floating) follow the theme. */
 .pg-sidebar {
-  width: 232px; flex: none; height: 100vh; overflow-y: auto; border-right: 1px solid var(--border-subtle);
-  padding: 22px 14px; display: flex; flex-direction: column; gap: 22px;
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
-}
-:root[data-theme="light"] .pg-sidebar {
-  margin: 20px 0 20px 20px; border-right: 0; border-radius: var(--app-radius-shell);
+  width: 232px; flex: none; height: calc(100vh - 40px); overflow-y: auto;
+  margin: 20px 0 20px 20px; border-radius: var(--app-radius-shell);
   background: var(--bg-card); box-shadow: var(--shadow-floating);
+  padding: 22px 14px; display: flex; flex-direction: column; gap: 22px;
+  transition: width var(--dur) var(--ease), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .pg-sidebar__brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
 .pg-sidebar__brand img { width: 22px; height: 22px; filter: grayscale(1); flex: none; }
@@ -156,7 +157,7 @@ button { font: inherit; }
 .pg-sidebar__link:hover { color: var(--fg-primary); background: var(--bg-elevated); }
 .pg-sidebar__link--active { background: var(--accent-soft); color: var(--accent); }
 .pg-sidebar__link--active svg { opacity: 1; }
-:root[data-theme="light"] .pg-sidebar__link--active::before {
+.pg-sidebar__link--active::before {
   content: ""; position: absolute; left: 2px; top: 6px; bottom: 6px; width: 3px;
   border-radius: var(--app-radius-pill); background: var(--accent-bg);
 }
@@ -194,8 +195,7 @@ button { font: inherit; }
 @media (max-width: 760px) {
   .pg-shell { flex-direction: column; height: auto; overflow: visible; }
   .pg-shell__main { height: auto; overflow-y: visible; }
-  .pg-sidebar { width: 100%; height: auto; overflow-y: visible; border-right: 0; border-bottom: 1px solid var(--border-subtle); flex-direction: row; align-items: center; }
-  :root[data-theme="light"] .pg-sidebar { margin: 12px; border-radius: var(--app-radius); }
+  .pg-sidebar { width: 100%; height: auto; overflow-y: visible; flex-direction: row; align-items: center; margin: 12px; border-radius: var(--app-radius); }
   .pg-sidebar__nav { flex-direction: row; }
 }
 
