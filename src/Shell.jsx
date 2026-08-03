@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { FileText, BarChart3, TrendingUp, CalendarDays, Clock, Users, Sun, Moon, LogOut } from "lucide-react";
+import { LayoutDashboard, FileText, BarChart3, TrendingUp, CalendarDays, Clock, Users, Building2, Sun, Moon, LogOut, ChevronLeft, ChevronRight } from "lucide-react";
+import Overview from "./Overview.jsx";
 import PGReconciliation from "./App.jsx";
 import CapacityDashboard from "./CapacityDashboard.jsx";
 import PerformanceScorecard from "./PerformanceScorecard.jsx";
@@ -8,14 +9,17 @@ import ClientAccruals from "./ClientAccruals.jsx";
 import Clients from "./Clients.jsx";
 import TeamDashboard from "./TeamDashboard.jsx";
 
+// Nav order/labels follow the approved Purple Giraffe Design OS mockup.
+// Settings / Integrations / Help aren't built yet, so they're left off for now.
 const MODULES = [
+  { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "invoicing", label: "Client Invoicing", icon: FileText },
-  { key: "capacity", label: "Capacity planning", icon: BarChart3 },
-  { key: "team", label: "Team", icon: Users },
-  { key: "performance", label: "Performance", icon: TrendingUp },
-  { key: "timesheet", label: "Timesheet summary", icon: CalendarDays },
+  { key: "capacity", label: "Capacity Planning", icon: BarChart3 },
+  { key: "team", label: "Consultants", icon: Users },
+  { key: "clients", label: "Clients", icon: Building2 },
+  { key: "timesheet", label: "Timesheets", icon: CalendarDays },
   { key: "accruals", label: "Client Accruals", icon: Clock },
-  { key: "clients", label: "Clients", icon: Users },
+  { key: "performance", label: "Reporting", icon: TrendingUp },
 ];
 
 const THEME_KEY = "pg-theme";
@@ -37,7 +41,7 @@ function LoginGate({ onSuccess }) {
     if (username === VALID_USERNAME && password === VALID_PASSWORD) {
       try { window.sessionStorage.setItem(AUTH_KEY, "1"); } catch (e) {}
       setError("");
-      onSuccess();
+      onSuccess(username);
     } else {
       setError("Incorrect username or password.");
     }
@@ -65,13 +69,19 @@ function LoginGate({ onSuccess }) {
   );
 }
 
+const COLLAPSE_KEY = "pg-sidebar-collapsed";
+
 export default function Shell() {
   const [authed, setAuthed] = useState(() => {
     try { return window.sessionStorage.getItem(AUTH_KEY) === "1"; } catch (e) { return false; }
   });
-  const [active, setActive] = useState("invoicing");
+  const [username, setUsername] = useState(VALID_USERNAME);
+  const [active, setActive] = useState("overview");
   const [theme, setTheme] = useState(() => {
     try { return window.localStorage.getItem(THEME_KEY) || "light"; } catch (e) { return "light"; }
+  });
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return window.localStorage.getItem(COLLAPSE_KEY) === "1"; } catch (e) { return false; }
   });
 
   // Applied on <html> (not just the shell) so the whole document — including anything
@@ -83,7 +93,11 @@ export default function Shell() {
     try { window.localStorage.setItem(THEME_KEY, theme); } catch (e) {}
   }, [theme]);
 
-  if (!authed) return <LoginGate onSuccess={() => setAuthed(true)} />;
+  useEffect(() => {
+    try { window.localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0"); } catch (e) {}
+  }, [collapsed]);
+
+  if (!authed) return <LoginGate onSuccess={(u) => { setUsername(u); setAuthed(true); }} />;
 
   const logOut = () => {
     try { window.sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
@@ -92,10 +106,10 @@ export default function Shell() {
 
   return (
     <div className="pg-shell">
-      <aside className="pg-sidebar">
+      <aside className={"pg-sidebar" + (collapsed ? " pg-sidebar--collapsed" : "")}>
         <div className="pg-sidebar__brand">
           <img src="/assets/giraffe-mark.png" alt="" />
-          <span>Purple Giraffe</span>
+          {!collapsed && <span>Purple Giraffe</span>}
         </div>
         <nav className="pg-sidebar__nav">
           {MODULES.map((m) => (
@@ -103,37 +117,57 @@ export default function Shell() {
               key={m.key}
               className={"pg-sidebar__link" + (active === m.key ? " pg-sidebar__link--active" : "")}
               onClick={() => setActive(m.key)}
+              title={collapsed ? m.label : undefined}
             >
               <m.icon size={16} />
-              {m.label}
+              {!collapsed && m.label}
             </button>
           ))}
         </nav>
-        <button
-          className="pg-sidebar__link pg-sidebar__theme-toggle"
-          style={{ marginTop: "auto" }}
-          onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          aria-label="Toggle dark / light mode"
-        >
-          {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          {theme === "dark" ? "Light mode" : "Dark mode"}
-        </button>
-        <button
-          className="pg-sidebar__link"
-          onClick={logOut}
-          title="Sign out"
-          aria-label="Sign out"
-        >
-          <LogOut size={16} />
-          Sign out
-        </button>
+
+        <div className="pg-sidebar__profile" title={collapsed ? username : undefined}>
+          <div className="pg-sidebar__avatar">{username.slice(0, 1).toUpperCase()}</div>
+          {!collapsed && (
+            <div className="pg-sidebar__profile-text">
+              <div className="pg-sidebar__profile-name">{username}</div>
+              <div className="pg-sidebar__profile-role">Admin</div>
+            </div>
+          )}
+        </div>
+
+        <div className="pg-sidebar__footer-row">
+          <button
+            className="pg-sidebar__icon-btn"
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+          </button>
+          <button
+            className="pg-sidebar__icon-btn"
+            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label="Toggle dark / light mode"
+          >
+            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
+          <button
+            className="pg-sidebar__icon-btn"
+            onClick={logOut}
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <LogOut size={15} />
+          </button>
+        </div>
       </aside>
       <main className="pg-shell__main">
-        {/* All three modules stay mounted at once — switching tabs used to unmount
-            the inactive one and wipe its in-memory state (an uploaded CSV, filters,
-            etc). Hiding with CSS instead of conditional rendering keeps that state
-            alive across tab switches. */}
+        {/* All modules stay mounted at once — switching tabs used to unmount the
+            inactive one and wipe its in-memory state (an uploaded CSV, filters,
+            etc). Hiding with CSS instead of conditional rendering keeps that
+            state alive across tab switches. */}
+        <div style={{ display: active === "overview" ? "block" : "none" }}><Overview /></div>
         <div style={{ display: active === "invoicing" ? "block" : "none" }}><PGReconciliation /></div>
         <div style={{ display: active === "capacity" ? "block" : "none" }}><CapacityDashboard onNavigateTeam={() => setActive("team")} /></div>
         <div style={{ display: active === "team" ? "block" : "none" }}><TeamDashboard /></div>

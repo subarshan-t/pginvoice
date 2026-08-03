@@ -144,7 +144,6 @@ button { font: inherit; }
   text-transform: uppercase; color: var(--fg-secondary);
 }
 .pg-sidebar__nav { display: flex; flex-direction: column; gap: 2px; }
-.pg-sidebar__theme-toggle { border-top: 1px solid var(--border-subtle); padding-top: 16px; }
 .pg-sidebar__link {
   display: flex; align-items: center; gap: 10px; text-align: left; position: relative;
   background: transparent; border: 0; border-radius: var(--app-radius-sm);
@@ -160,6 +159,37 @@ button { font: inherit; }
   content: ""; position: absolute; left: 2px; top: 6px; bottom: 6px; width: 3px;
   border-radius: var(--app-radius-pill); background: var(--accent-bg);
 }
+
+/* ---- sidebar: collapsed state, profile card, icon-only footer row -------- */
+.pg-sidebar--collapsed { width: 76px; }
+.pg-sidebar--collapsed .pg-sidebar__link { justify-content: center; padding-left: 10px; }
+.pg-sidebar--collapsed .pg-sidebar__brand { justify-content: center; padding: 0; }
+
+.pg-sidebar__profile {
+  display: flex; align-items: center; gap: 10px; margin-top: auto;
+  padding: 10px 8px; border-top: 1px solid var(--border-subtle);
+}
+.pg-sidebar--collapsed .pg-sidebar__profile { justify-content: center; padding: 10px 0; }
+.pg-sidebar__avatar {
+  flex: none; width: 30px; height: 30px; border-radius: var(--app-radius-pill);
+  background: var(--accent-soft); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+}
+.pg-sidebar__profile-text { min-width: 0; }
+.pg-sidebar__profile-name { font-size: 13px; font-weight: 600; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-sidebar__profile-role { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); margin-top: 1px; }
+
+.pg-sidebar__footer-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 0 4px; }
+.pg-sidebar--collapsed .pg-sidebar__footer-row { flex-direction: column; }
+.pg-sidebar__icon-btn {
+  display: flex; align-items: center; justify-content: center; flex: 1;
+  background: transparent; border: 0; border-radius: var(--app-radius-sm);
+  padding: 8px; color: var(--fg-tertiary); cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.pg-sidebar__icon-btn:hover { color: var(--fg-primary); background: var(--bg-elevated); }
+
 @media (max-width: 760px) {
   .pg-shell { flex-direction: column; height: auto; overflow: visible; }
   .pg-shell__main { height: auto; overflow-y: visible; }
@@ -410,3 +440,99 @@ button { font: inherit; }
 }
 .pg-tab:hover { color: var(--fg-secondary); }
 .pg-tab--active { color: var(--fg-primary); font-weight: 600; border-bottom-color: var(--accent); }
+
+/* ---- client invoicing: KPI summary row -------------------------------------
+   Purple Giraffe Design OS §11.2 — one metric per card, headline number before
+   any raw data or upload controls. */
+.pg-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 20px; }
+@media (max-width: 900px) { .pg-kpi-row { grid-template-columns: repeat(2, 1fr); } }
+.pg-kpi-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); box-shadow: var(--shadow-sm); padding: 18px 20px; }
+.pg-kpi-card__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pg-kpi-card__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); }
+.pg-kpi-card__icon { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: var(--app-radius-pill); background: var(--accent-soft); color: var(--accent); flex: none; }
+.pg-kpi-card__value { font-family: var(--font-display); font-weight: 400; font-size: 28px; color: var(--fg-primary); margin-top: 8px; }
+.pg-kpi-card__sub { font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); margin-top: 2px; }
+
+/* ---- client invoicing: row list --------------------------------------------
+   Purple Giraffe Design OS §11.5 — comparison rows, minimal separators, no
+   per-row edit buttons; a row opens the full-detail drawer instead. */
+.pg-rowlist { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.pg-row {
+  width: 100%; display: flex; align-items: center; gap: 16px; text-align: left;
+  background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius);
+  box-shadow: var(--shadow-sm); padding: 14px 18px; cursor: pointer; color: inherit;
+  transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.pg-row:hover { box-shadow: var(--shadow-md); }
+.pg-row--active { border-color: var(--accent); }
+.pg-row--nested { margin-left: 28px; width: calc(100% - 28px); background: var(--bg-base); }
+.pg-row__index { font-family: var(--font-mono); font-size: 12px; color: var(--fg-tertiary); width: 18px; flex: none; }
+.pg-row__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1.4; }
+.pg-row__name-main { font-family: var(--font-display); font-weight: 400; font-size: 16px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-row__name-sub { display: flex; align-items: center; gap: 4px; font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-row__num { flex: none; width: 90px; font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary); font-variant-numeric: tabular-nums; }
+.pg-row__num-label { display: block; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-tertiary); margin-bottom: 2px; }
+.pg-row__status { flex: none; width: 130px; text-align: right; font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--fg-secondary); }
+@media (max-width: 900px) {
+  .pg-row { flex-wrap: wrap; }
+  .pg-row__num, .pg-row__status { width: auto; }
+}
+
+/* ---- client invoicing: right-side drawer -----------------------------------
+   Purple Giraffe Design OS §11.7 — client detail, slides from the right,
+   preserves the list's filters/scroll position underneath. */
+.pg-drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(23, 23, 23, 0.28); z-index: 40;
+  animation: pg-fade-in 0.2s var(--ease);
+}
+@keyframes pg-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pg-slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.pg-drawer {
+  position: fixed; top: 20px; right: 20px; bottom: 20px; width: 480px; max-width: calc(100vw - 40px);
+  background: var(--bg-card); border-radius: var(--app-radius-shell); box-shadow: var(--shadow-floating);
+  z-index: 41; overflow-y: auto; padding: 20px 24px 24px;
+  animation: pg-slide-in 0.28s var(--ease);
+}
+@media (max-width: 760px) { .pg-drawer { top: 0; right: 0; bottom: 0; left: 0; width: auto; max-width: none; border-radius: 0; } }
+.pg-drawer__header { display: flex; justify-content: flex-end; }
+.pg-drawer__icon-btn {
+  display: flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+  background: transparent; border: 0; border-radius: var(--app-radius-pill); color: var(--fg-tertiary); cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.pg-drawer__icon-btn:hover { background: var(--bg-elevated); color: var(--fg-primary); }
+.pg-drawer__title-row { display: flex; align-items: flex-start; gap: 12px; margin-top: 4px; }
+.pg-drawer__avatar { flex: none; width: 40px; height: 40px; border-radius: var(--app-radius-sm); display: flex; align-items: center; justify-content: center; }
+.pg-drawer__name { font-family: var(--font-display); font-weight: 400; font-size: 20px; color: var(--fg-primary); }
+.pg-drawer__sub { font-family: var(--font-body); font-size: 12px; color: var(--fg-tertiary); margin-top: 2px; }
+.pg-drawer__linked { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); }
+.pg-status-pill { flex: none; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 5px 10px; border-radius: var(--app-radius-pill); }
+.pg-status-pill--dot { margin-left: 8px; }
+.pg-drawer__section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.pg-drawer__section:first-of-type { border-top: 0; }
+.pg-drawer__section-title { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); margin-bottom: 10px; }
+.pg-drawer__field-row { display: flex; gap: 20px; }
+.pg-drawer__field { display: flex; flex-direction: column; gap: 4px; }
+.pg-drawer__field-value { font-family: var(--font-display); font-size: 16px; color: var(--fg-primary); }
+.pg-drawer__overunder { display: flex; align-items: baseline; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border-soft); }
+.pg-drawer__overunder-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); }
+.pg-drawer__overunder-value { font-family: var(--font-display); font-size: 22px; }
+.pg-drawer__overunder-tag { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-tertiary); margin-left: auto; }
+.pg-drawer__contrib-list { display: flex; flex-direction: column; gap: 4px; }
+.pg-drawer__contrib {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  background: transparent; border: 0; border-radius: var(--app-radius-sm); padding: 6px 4px; cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+.pg-drawer__contrib:hover, .pg-drawer__contrib--active { background: var(--accent-soft); }
+.pg-drawer__contrib-avatar {
+  flex: none; width: 26px; height: 26px; border-radius: var(--app-radius-pill); background: var(--bg-elevated);
+  display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--fg-secondary);
+}
+.pg-drawer__contrib-name { flex: 1; font-family: var(--font-body); font-size: 13px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-drawer__contrib-hrs { font-family: var(--font-mono); font-size: 12px; color: var(--fg-secondary); }
+.pg-drawer__contrib-pct { font-family: var(--font-mono); font-size: 11px; color: var(--fg-tertiary); width: 32px; text-align: right; }
+.pg-drawer__footer { display: flex; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.pg-drawer__footer .pg-btn { flex: 1; justify-content: center; }
+.pg-drawer__footer .pg-btn-ghost { flex: 1; justify-content: center; }
+.pg-drawer__meta { display: flex; align-items: center; margin-top: 12px; font-family: var(--font-mono); font-size: 10px; color: var(--fg-tertiary); }
