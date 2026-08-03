@@ -203,7 +203,11 @@ button { font: inherit; }
    rather than every nav item crammed into one unreadable horizontal strip. */
 @media (max-width: 760px) {
   .pg-shell { flex-direction: column; height: 100vh; overflow: hidden; }
-  .pg-shell__main { height: 100vh; overflow-y: auto; }
+  /* flex:1 (not height:100vh) — in the stacked column layout the top bar
+     already takes its own space above this, so demanding a further full
+     viewport height here overflowed the shell and made scrolled content
+     slide up underneath the bar instead of being pushed below it. */
+  .pg-shell__main { flex: 1; height: auto; min-height: 0; overflow-y: auto; }
 
   .pg-sidebar {
     width: auto; height: auto; overflow: visible; margin: 12px; padding: 10px 12px;
@@ -246,6 +250,10 @@ button { font: inherit; }
   color: var(--fg-primary); margin: 6px 0 0;
 }
 .pg-app-header__sub { font-family: var(--font-body); font-size: 14px; line-height: 1.6; color: var(--fg-secondary); margin: 10px 0 0; max-width: 640px; }
+@media (max-width: 640px) {
+  .pg-app-header__title { font-size: 28px; }
+  .pg-app-header__icon { width: 32px; height: 32px; }
+}
 
 /* ---- warning banner -------------------------------------------------------*/
 .pg-banner-warn {
