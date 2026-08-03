@@ -1134,76 +1134,76 @@ function CapacityDashboardInner({ onNavigateTeam }) {
             <div className="pg-cap-stat"><div className="pg-stat__value" style={{ color: difference < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{difference > 0 ? "+" : ""}{difference.toFixed(0)}</div><div className="pg-stat__label">Difference</div></div>
           </div>
 
-          <div className="pg-table-wrap" style={{ marginTop: 14, maxWidth: 460 }}>
-            <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <span>Capacity utilization</span>
-              {onNavigateTeam && <button className="pg-btn-ghost" onClick={onNavigateTeam}>Go to team</button>}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px 0" }}>
-              <div style={{ position: "relative", flex: 1 }}>
-                <Search size={11} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--fg-tertiary)" }} />
-                <input
-                  className="pg-input"
-                  style={{ width: "100%", padding: "5px 8px 5px 24px", fontSize: 12 }}
-                  placeholder="Search consultant…"
-                  value={qRoster}
-                  onChange={(e) => setQRoster(e.target.value)}
-                />
+          <div className="pg-cap-card" style={{ marginTop: 14, maxWidth: 460 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <span className="pg-field__label">Capacity utilization</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                {onNavigateTeam && <button className="pg-btn-ghost" onClick={onNavigateTeam}>Go to team</button>}
+                <button className="pg-btn-ghost" onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
               </div>
-              <button className="pg-btn-ghost" style={{ padding: "5px 8px", fontSize: 11, flex: "none" }} onClick={() => setEditRoster((v) => !v)}>{editRoster ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
             </div>
 
-            <table className="pg-table" style={{ tableLayout: "fixed", marginTop: 4 }}>
-              <colgroup>
-                <col style={{ width: "26%" }} />
-                <col style={{ width: "44%" }} />
-                <col style={{ width: "30%" }} />
-              </colgroup>
-              <thead>
-                <tr><th></th><th>Billable</th><th>Non-billable</th></tr>
-              </thead>
-              <tbody>
-                {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
-                  const pc = personCalc[p.name];
-                  const pm = peopleMap[p.name];
-                  const capacity = pc.pool;               // billable capacity available to her, incl. help received
-                  const allocated = pc.demand;              // client demand assigned to her
-                  const overflow = Math.max(0, allocated - capacity);
-                  const unbillableCapacity = pm.nonBillableHours;
-                  const billablePct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : (allocated > 0 ? 100 : 0);
-                  const unbillablePct = unbillableCapacity > 0 ? Math.min(100, (overflow / unbillableCapacity) * 100) : (overflow > 0 ? 100 : 0);
-                  const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "ok";
-                  const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-warn)" : "var(--status-ok)";
-                  return (
-                    <tr key={p.id}>
-                      <td style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.name}>
-                        {p.name}
-                        {pm.resigningThisMonth && <AlertTriangle size={10} style={{ marginLeft: 4, verticalAlign: -1, color: "var(--status-warn)" }} />}
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <div className="pg-bar-track" style={{ flex: 1, height: 5, margin: 0 }}>
-                            <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
-                          </div>
-                          {editRoster ? (
-                            <input className="pg-input" type="number" min="0" step="any" style={{ width: 42, flex: "none", padding: "2px 4px", fontSize: 11 }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} title="Leave hrs" />
-                          ) : (
-                            <span className="pg-footnote" style={{ margin: 0, flex: "none", whiteSpace: "nowrap" }}>{allocated.toFixed(0)}/{capacity.toFixed(0)}h</span>
-                          )}
+            <div style={{ position: "relative", marginTop: 12 }}>
+              <Search size={11} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--fg-tertiary)" }} />
+              <input
+                className="pg-input"
+                style={{ width: "100%", padding: "7px 10px 7px 28px", fontSize: 12, borderRadius: "var(--app-radius-pill)" }}
+                placeholder="Search consultant…"
+                value={qRoster}
+                onChange={(e) => setQRoster(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 16, marginTop: 20 }}>
+              <div className="pg-footnote" style={{ flex: 1, margin: 0, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center" }}>Billable</div>
+              <div className="pg-footnote" style={{ width: 92, flex: "none", margin: 0, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center" }}>Non-billable</div>
+            </div>
+
+            {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
+              const pc = personCalc[p.name];
+              const pm = peopleMap[p.name];
+              const capacity = pc.pool;               // billable capacity available to her, incl. help received
+              const allocated = pc.demand;              // client demand assigned to her
+              const overflow = Math.max(0, allocated - capacity);
+              const unbillableCapacity = pm.nonBillableHours;
+              const billablePct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : (allocated > 0 ? 100 : 0);
+              const unbillablePct = unbillableCapacity > 0 ? Math.min(100, (overflow / unbillableCapacity) * 100) : (overflow > 0 ? 100 : 0);
+              const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "ok";
+              const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-warn)" : "var(--status-ok)";
+              return (
+                <div key={p.id} style={{ marginTop: 14 }}>
+                  <div style={{ fontFamily: "var(--font-body)", fontWeight: 600, fontSize: 13, color: "var(--fg-primary)" }}>
+                    {p.name}
+                    {pm.resigningThisMonth && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} />}
+                  </div>
+                  <div style={{ display: "flex", gap: 16, marginTop: 6, alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                      <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
+                        <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
+                      </div>
+                      {editRoster ? (
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 4 }}>
+                          <span className="pg-footnote" style={{ margin: 0 }}>Leaves</span>
+                          <input className="pg-input" type="number" min="0" step="any" style={{ width: 52, padding: "2px 5px", fontSize: 11 }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
                         </div>
-                      </td>
-                      <td title={overflow > 0 ? `${overflow.toFixed(1)} hrs over` : undefined}>
-                        <div className="pg-bar-track" style={{ height: 5, margin: 0 }}>
-                          <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      ) : (
+                        <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center" }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</p>
+                      )}
+                    </div>
+                    <div style={{ width: 92, flex: "none" }} title={overflow > 0 ? `${overflow.toFixed(1)} hrs over` : undefined}>
+                      <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
+                        <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
+                      </div>
+                      {overflow > 0 && (
+                        <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center", color: "var(--status-over)" }}>{overflow.toFixed(1)}h over</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <p className="pg-footnote" style={{ maxWidth: 460 }}>Green = within billable capacity, yellow = fully allocated, red = overallocated (excess falls into the non-billable bar — hover it for the exact overrun). "x/yh" = allocated vs. billable capacity hours; in edit mode that becomes a leave-hours input. Roster details (role, state, billable %, resignation dates, ClickUp aliases) now live in the Team module.</p>
+          <p className="pg-footnote" style={{ maxWidth: 460 }}>Green = within billable capacity, yellow = fully allocated, red = overallocated (excess falls into the non-billable bar). Roster details (role, state, billable %, resignation dates, ClickUp aliases) now live in the Team module.</p>
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
