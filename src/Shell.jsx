@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { LayoutDashboard, FileText, BarChart3, TrendingUp, CalendarDays, Clock, Users, Building2, Sun, Moon, LogOut, ChevronLeft, ChevronRight } from "lucide-react";
+import { LayoutDashboard, FileText, BarChart3, TrendingUp, CalendarDays, Clock, Users, Building2, Sun, Moon, LogOut, ChevronLeft, ChevronRight, Settings, Plug, HelpCircle } from "lucide-react";
 import Overview from "./Overview.jsx";
+import PlaceholderPage from "./PlaceholderPage.jsx";
 import PGReconciliation from "./App.jsx";
 import CapacityDashboard from "./CapacityDashboard.jsx";
 import PerformanceScorecard from "./PerformanceScorecard.jsx";
@@ -10,7 +11,6 @@ import Clients from "./Clients.jsx";
 import TeamDashboard from "./TeamDashboard.jsx";
 
 // Nav order/labels follow the approved Purple Giraffe Design OS mockup.
-// Settings / Integrations / Help aren't built yet, so they're left off for now.
 const MODULES = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "invoicing", label: "Client Invoicing", icon: FileText },
@@ -20,6 +20,13 @@ const MODULES = [
   { key: "timesheet", label: "Timesheets", icon: CalendarDays },
   { key: "accruals", label: "Client Accruals", icon: Clock },
   { key: "performance", label: "Reporting", icon: TrendingUp },
+];
+// Present in the approved nav, but no real functionality behind them yet —
+// each renders an honest "not built" placeholder rather than fake content.
+const SECONDARY_MODULES = [
+  { key: "settings", label: "Settings", icon: Settings },
+  { key: "integrations", label: "Integrations", icon: Plug },
+  { key: "help", label: "Help", icon: HelpCircle },
 ];
 
 const THEME_KEY = "pg-theme";
@@ -125,6 +132,20 @@ export default function Shell() {
           ))}
         </nav>
 
+        <nav className="pg-sidebar__nav" style={{ marginTop: "auto" }}>
+          {SECONDARY_MODULES.map((m) => (
+            <button
+              key={m.key}
+              className={"pg-sidebar__link" + (active === m.key ? " pg-sidebar__link--active" : "")}
+              onClick={() => setActive(m.key)}
+              title={collapsed ? m.label : undefined}
+            >
+              <m.icon size={16} />
+              {!collapsed && m.label}
+            </button>
+          ))}
+        </nav>
+
         <div className="pg-sidebar__profile" title={collapsed ? username : undefined}>
           <div className="pg-sidebar__avatar">{username.slice(0, 1).toUpperCase()}</div>
           {!collapsed && (
@@ -175,6 +196,15 @@ export default function Shell() {
         <div style={{ display: active === "timesheet" ? "block" : "none" }}><TimesheetSummary /></div>
         <div style={{ display: active === "accruals" ? "block" : "none" }}><ClientAccruals /></div>
         <div style={{ display: active === "clients" ? "block" : "none" }}><Clients /></div>
+        <div style={{ display: active === "settings" ? "block" : "none" }}>
+          <PlaceholderPage title="Settings." subtitle="Account, workspace and preference settings aren't built yet." icon={Settings} empty="Settings module coming soon." />
+        </div>
+        <div style={{ display: active === "integrations" ? "block" : "none" }}>
+          <PlaceholderPage title="Integrations." subtitle="Connected apps and sync configuration aren't built yet." icon={Plug} empty="Integrations module coming soon." />
+        </div>
+        <div style={{ display: active === "help" ? "block" : "none" }}>
+          <PlaceholderPage title="Help." subtitle="Documentation and support aren't built yet." icon={HelpCircle} empty="Help module coming soon." />
+        </div>
       </main>
     </div>
   );

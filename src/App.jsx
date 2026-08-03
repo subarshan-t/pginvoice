@@ -1269,18 +1269,9 @@ export default function PGReconciliation({ onNavigateClients }) {
   return (
     <div className="pg-app">
       <div className="pg-container">
-        {/* header + primary actions */}
-        <div className="pg-app-header" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-            <div className="pg-app-header__icon"><FileText size={18} /></div>
-            <div>
-              <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-              <h1 className="pg-app-header__title">Client Invoicing</h1>
-              <p className="pg-app-header__sub">
-                Reconcile monthly hours, review client servicing and generate invoice-ready summaries.
-              </p>
-            </div>
-          </div>
+        {/* command row: global client search + primary actions */}
+        <div className="pg-cmdrow">
+          <CommandSearch clients={clients} onSelect={(name) => setDrawerClientName(name)} />
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="pg-btn-ghost" onClick={handleManualSync} disabled={syncing}>
               <RefreshCw size={12} style={syncing ? { animation: "pg-spin 1s linear infinite" } : undefined} /> {syncing ? "Syncing…" : "Sync now"}
@@ -1304,6 +1295,20 @@ export default function PGReconciliation({ onNavigateClients }) {
             <button className="pg-btn" onClick={() => drawerClient && downloadPdf(drawerClient)} disabled={!drawerClient} title={drawerClient ? undefined : "Select a client below first"}>
               <Printer size={13} /> Generate PDF
             </button>
+          </div>
+        </div>
+
+        {/* header */}
+        <div className="pg-app-header">
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+            <div className="pg-app-header__icon"><FileText size={18} /></div>
+            <div>
+              <span className="pg-eyebrow">Purple Giraffe · Internal</span>
+              <h1 className="pg-app-header__title">Client Invoicing</h1>
+              <p className="pg-app-header__sub">
+                Reconcile monthly hours, review client servicing and generate invoice-ready summaries.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -1610,6 +1615,67 @@ function WarningBanner({ title, warnings }) {
       {open && warnings.length > 1 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {warnings.map((w, i) => <div key={i}>{w}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+// Global client search — real, not decorative: filters the full client list (not
+// just the currently-visible/type-filtered rows) and opens the drawer on selection.
+// Cmd/Ctrl+K focuses it from anywhere on the page, matching the mockup's convention.
+function CommandSearch({ clients, onSelect }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const inputRef = useRef(null);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        setOpen(true);
+      }
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? clients.filter((c) => c.displayName.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)).slice(0, 8)
+    : [];
+
+  return (
+    <div className="pg-cmdsearch" ref={wrapRef}>
+      <Search size={14} className="pg-cmdsearch__icon" />
+      <input
+        ref={inputRef}
+        className="pg-cmdsearch__input"
+        placeholder="Search or run a command…"
+        value={query}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+      />
+      <span className="pg-cmdsearch__kbd">⌘K</span>
+      {open && q && (
+        <div className="pg-menu" style={{ left: 0, right: "auto", top: "calc(100% + 6px)", minWidth: "100%" }}>
+          {matches.length === 0 && <div className="pg-menu-item" style={{ cursor: "default", color: "var(--fg-tertiary)" }}>No clients match "{query}"</div>}
+          {matches.map((c) => (
+            <ExportItem
+              key={c.name}
+              icon={<Users size={14} />}
+              label={c.displayName}
+              onClick={() => { onSelect(c.name); setQuery(""); setOpen(false); }}
+            />
+          ))}
         </div>
       )}
     </div>
