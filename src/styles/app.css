@@ -192,12 +192,50 @@ button { font: inherit; }
 }
 .pg-sidebar__icon-btn:hover { color: var(--fg-primary); background: var(--bg-elevated); }
 
+/* Wrapper for everything below the brand row — lets the brand row stay fixed
+   while this part scrolls, and gives mobile something to hide/show as a unit. */
+.pg-sidebar__scroll { display: flex; flex-direction: column; gap: 22px; flex: 1; min-height: 0; }
+.pg-sidebar__mobile-toggle { display: none; }
+
+/* ---- mobile: sidebar becomes a compact top bar, opening as a full sheet ----
+   Purple Giraffe Design OS §15 — "navigation becomes a sheet" on mobile,
+   rather than every nav item crammed into one unreadable horizontal strip. */
 @media (max-width: 760px) {
-  .pg-shell { flex-direction: column; height: auto; overflow: visible; }
-  .pg-shell__main { height: auto; overflow-y: visible; }
-  .pg-sidebar { width: 100%; height: auto; overflow-y: visible; flex-direction: row; align-items: center; margin: 12px; border-radius: var(--app-radius); }
-  .pg-sidebar__nav { flex-direction: row; }
+  .pg-shell { flex-direction: column; height: 100vh; overflow: hidden; }
+  .pg-shell__main { height: 100vh; overflow-y: auto; }
+
+  .pg-sidebar {
+    width: auto; height: auto; overflow: visible; margin: 12px; padding: 10px 12px;
+    flex: none;
+  }
+  .pg-sidebar__brand { padding: 4px; }
+  .pg-sidebar__mobile-toggle {
+    display: flex; align-items: center; justify-content: center; margin-left: auto;
+    width: 32px; height: 32px; background: transparent; border: 0; border-radius: var(--app-radius-sm);
+    color: var(--fg-secondary); cursor: pointer;
+  }
+  .pg-sidebar__mobile-toggle:hover { background: var(--bg-elevated); }
+  .pg-sidebar--collapsed { width: auto; } /* desktop collapse state doesn't apply on mobile */
+  .pg-sidebar--collapsed .pg-sidebar__brand { justify-content: flex-start; }
+  .pg-sidebar--collapsed .pg-sidebar__brand span { display: inline; }
+
+  /* Collapsed by default: only the brand row + hamburger are visible. */
+  .pg-sidebar__scroll { display: none; }
+  .pg-sidebar--mobile-open {
+    position: fixed; inset: 12px; height: auto; z-index: 60;
+    display: flex; flex-direction: column;
+  }
+  .pg-sidebar--mobile-open .pg-sidebar__scroll {
+    display: flex; overflow-y: auto; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-subtle);
+  }
+  .pg-sidebar__nav { flex-direction: column; }
+  .pg-sidebar__desktop-only { display: none; }
 }
+.pg-sidebar-backdrop {
+  position: fixed; inset: 0; z-index: 59; background: rgba(23, 23, 23, 0.32);
+  animation: pg-fade-in 0.2s var(--ease);
+}
+@media (min-width: 761px) { .pg-sidebar-backdrop { display: none; } }
 
 /* ---- header -------------------------------------------------------------- */
 .pg-app-header { display: flex; align-items: flex-end; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid var(--border-soft); }
@@ -458,6 +496,12 @@ button { font: inherit; }
 
 /* ---- command row: global search + primary actions ------------------------- */
 .pg-cmdrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+.pg-cmdrow__actions { flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .pg-cmdsearch { max-width: none; flex-basis: 100%; }
+  .pg-cmdrow__actions { flex-basis: 100%; }
+  .pg-cmdrow__actions .pg-btn, .pg-cmdrow__actions .pg-btn-ghost { flex: 1; justify-content: center; }
+}
 .pg-cmdsearch {
   position: relative; display: flex; align-items: center; gap: 8px; flex: 1; min-width: 220px; max-width: 420px;
   background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius-btn);
@@ -509,6 +553,17 @@ button { font: inherit; }
 @media (max-width: 900px) {
   .pg-row { flex-wrap: wrap; }
   .pg-row__num, .pg-row__status { width: auto; }
+}
+@media (max-width: 640px) {
+  /* Name forced onto its own full-width line (flex-basis 100% breaks the row),
+     everything else wraps below it instead of being squeezed to zero width. */
+  .pg-row { row-gap: 8px; padding: 12px 14px; }
+  .pg-row__index { order: 0; }
+  .pg-row__name { order: 1; flex: 1 1 100%; }
+  .pg-row .pg-tag { order: 2; }
+  .pg-row__num { order: 3; }
+  .pg-row__status { order: 4; text-align: left; }
+  .pg-row__chevron { order: 5; margin-left: auto; }
 }
 
 /* ---- client invoicing: inline row expand (chevron), separate from the drawer ----- */

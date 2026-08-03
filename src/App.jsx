@@ -1272,7 +1272,7 @@ export default function PGReconciliation({ onNavigateClients }) {
         {/* command row: global client search + primary actions */}
         <div className="pg-cmdrow">
           <CommandSearch clients={clients} onSelect={(name) => setDrawerClientName(name)} />
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="pg-cmdrow__actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="pg-btn-ghost" onClick={handleManualSync} disabled={syncing}>
               <RefreshCw size={12} style={syncing ? { animation: "pg-spin 1s linear infinite" } : undefined} /> {syncing ? "Syncing…" : "Sync now"}
             </button>

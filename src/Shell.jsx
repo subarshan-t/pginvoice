@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { LayoutDashboard, FileText, BarChart3, TrendingUp, CalendarDays, Clock, Users, Building2, Sun, Moon, LogOut, ChevronLeft, ChevronRight, Settings, Plug, HelpCircle } from "lucide-react";
+import { LayoutDashboard, FileText, BarChart3, TrendingUp, CalendarDays, Clock, Users, Building2, Sun, Moon, LogOut, ChevronLeft, ChevronRight, Settings, Plug, HelpCircle, Menu, X } from "lucide-react";
 import Overview from "./Overview.jsx";
 import PlaceholderPage from "./PlaceholderPage.jsx";
 import PGReconciliation from "./App.jsx";
@@ -90,6 +90,11 @@ export default function Shell() {
   const [collapsed, setCollapsed] = useState(() => {
     try { return window.localStorage.getItem(COLLAPSE_KEY) === "1"; } catch (e) { return false; }
   });
+  // Mobile only — the sidebar becomes a compact top bar (brand + hamburger) below
+  // 760px, and this opens it as a full-screen sheet instead of the desktop
+  // collapse-to-icons behavior, per §15 "navigation becomes a sheet" on mobile.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const goTo = (key) => { setActive(key); setMobileNavOpen(false); };
 
   // Applied on <html> (not just the shell) so the whole document — including anything
   // rendered outside .pg-shell, like a future modal or the browser's own UI chrome via
@@ -113,74 +118,84 @@ export default function Shell() {
 
   return (
     <div className="pg-shell">
-      <aside className={"pg-sidebar" + (collapsed ? " pg-sidebar--collapsed" : "")}>
+      {mobileNavOpen && <div className="pg-sidebar-backdrop" onClick={() => setMobileNavOpen(false)} />}
+      <aside className={"pg-sidebar" + (collapsed ? " pg-sidebar--collapsed" : "") + (mobileNavOpen ? " pg-sidebar--mobile-open" : "")}>
         <div className="pg-sidebar__brand">
           <img src="/assets/giraffe-mark.png" alt="" />
           {!collapsed && <span>Purple Giraffe</span>}
+          <button
+            className="pg-sidebar__mobile-toggle"
+            onClick={() => setMobileNavOpen((o) => !o)}
+            aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+          >
+            {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
         </div>
-        <nav className="pg-sidebar__nav">
-          {MODULES.map((m) => (
+        <div className="pg-sidebar__scroll">
+          <nav className="pg-sidebar__nav">
+            {MODULES.map((m) => (
+              <button
+                key={m.key}
+                className={"pg-sidebar__link" + (active === m.key ? " pg-sidebar__link--active" : "")}
+                onClick={() => goTo(m.key)}
+                title={collapsed ? m.label : undefined}
+              >
+                <m.icon size={16} />
+                {!collapsed && m.label}
+              </button>
+            ))}
+          </nav>
+
+          <nav className="pg-sidebar__nav" style={{ marginTop: "auto" }}>
+            {SECONDARY_MODULES.map((m) => (
+              <button
+                key={m.key}
+                className={"pg-sidebar__link" + (active === m.key ? " pg-sidebar__link--active" : "")}
+                onClick={() => goTo(m.key)}
+                title={collapsed ? m.label : undefined}
+              >
+                <m.icon size={16} />
+                {!collapsed && m.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="pg-sidebar__profile" title={collapsed ? username : undefined}>
+            <div className="pg-sidebar__avatar">{username.slice(0, 1).toUpperCase()}</div>
+            {!collapsed && (
+              <div className="pg-sidebar__profile-text">
+                <div className="pg-sidebar__profile-name">{username}</div>
+                <div className="pg-sidebar__profile-role">Admin</div>
+              </div>
+            )}
+          </div>
+
+          <div className="pg-sidebar__footer-row">
             <button
-              key={m.key}
-              className={"pg-sidebar__link" + (active === m.key ? " pg-sidebar__link--active" : "")}
-              onClick={() => setActive(m.key)}
-              title={collapsed ? m.label : undefined}
+              className="pg-sidebar__icon-btn pg-sidebar__desktop-only"
+              onClick={() => setCollapsed((c) => !c)}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
-              <m.icon size={16} />
-              {!collapsed && m.label}
+              {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
             </button>
-          ))}
-        </nav>
-
-        <nav className="pg-sidebar__nav" style={{ marginTop: "auto" }}>
-          {SECONDARY_MODULES.map((m) => (
             <button
-              key={m.key}
-              className={"pg-sidebar__link" + (active === m.key ? " pg-sidebar__link--active" : "")}
-              onClick={() => setActive(m.key)}
-              title={collapsed ? m.label : undefined}
+              className="pg-sidebar__icon-btn"
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              aria-label="Toggle dark / light mode"
             >
-              <m.icon size={16} />
-              {!collapsed && m.label}
+              {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
             </button>
-          ))}
-        </nav>
-
-        <div className="pg-sidebar__profile" title={collapsed ? username : undefined}>
-          <div className="pg-sidebar__avatar">{username.slice(0, 1).toUpperCase()}</div>
-          {!collapsed && (
-            <div className="pg-sidebar__profile-text">
-              <div className="pg-sidebar__profile-name">{username}</div>
-              <div className="pg-sidebar__profile-role">Admin</div>
-            </div>
-          )}
-        </div>
-
-        <div className="pg-sidebar__footer-row">
-          <button
-            className="pg-sidebar__icon-btn"
-            onClick={() => setCollapsed((c) => !c)}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-          </button>
-          <button
-            className="pg-sidebar__icon-btn"
-            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            aria-label="Toggle dark / light mode"
-          >
-            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
-          </button>
-          <button
-            className="pg-sidebar__icon-btn"
-            onClick={logOut}
-            title="Sign out"
-            aria-label="Sign out"
-          >
-            <LogOut size={15} />
-          </button>
+            <button
+              className="pg-sidebar__icon-btn"
+              onClick={logOut}
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <LogOut size={15} />
+            </button>
+          </div>
         </div>
       </aside>
       <main className="pg-shell__main">
