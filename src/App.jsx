@@ -1269,7 +1269,8 @@ export default function PGReconciliation({ onNavigateClients }) {
   return (
     <div className={"pg-app pg-app--invoicing" + (drawerClient ? " pg-app--drawer-open" : "")}>
       <div className={"pg-container" + (drawerClient ? " pg-container--dimmed" : "")}>
-        {/* header */}
+        {/* header + command row combined — title on the left, search centered in
+            the remaining space, actions pinned right, all on the same top line. */}
         <div className="pg-app-header">
           <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
             <div className="pg-app-header__icon"><FileText size={18} /></div>
@@ -1281,15 +1282,12 @@ export default function PGReconciliation({ onNavigateClients }) {
               </p>
             </div>
           </div>
-        </div>
 
-        {/* command row: search sits dead-center of the row, actions pinned right —
-            a 3-column grid keeps the search bar centered regardless of how wide
-            the action-button group ends up. */}
-        <div className="pg-cmdrow">
-          <span />
-          <CommandSearch clients={clients} onSelect={(name) => setDrawerClientName(name)} />
-          <div className="pg-cmdrow__actions" style={{ display: "flex", alignItems: "center", gap: 8, justifySelf: "end" }}>
+          <div className="pg-cmdrow">
+            <CommandSearch clients={clients} onSelect={(name) => setDrawerClientName(name)} />
+          </div>
+
+          <div className="pg-cmdrow__actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="pg-btn-ghost" onClick={handleManualSync} disabled={syncing}>
               <RefreshCw size={12} style={syncing ? { animation: "pg-spin 1s linear infinite" } : undefined} /> {syncing ? "Syncing…" : "Sync now"}
             </button>
