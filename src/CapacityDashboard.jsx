@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, multiFolderMatchesFor, isInternalFolder, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
+import { findMatch, findPersonMatch, multiFolderMatchesFor, isInternalFolder, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
 import { loadState, saveState } from "./capacityStore.js";
 import { fetchClients as fetchPgClients, createClient as createPgClient, createClientEvent, applyDueClientEvents } from "./clientsSync.js";
 
@@ -514,6 +514,27 @@ function CapacityDashboardInner({ onNavigateTeam }) {
     if (entry.type === "pct") { const base = peopleMap[entry.from] ? peopleMap[entry.from].monthly : 0; return base * Number(entry.value || 0); }
     return Number(entry.value || 0);
   }, [peopleMap]);
+
+  // Real billable hours each consultant actually logged in ClickUp this month — not the
+  // client-group demand estimate (agreed package hours / trailing average) used for the
+  // capacity ledger above. This is what "Capacity Utilization" needs: the honest answer to
+  // "did she cover her clients out of her own billable time, or did it spill into her
+  // non-billable hours" has to come from her real timesheet, not a forecast. Internal
+  // (onboarding/admin) folders are excluded the same way the rest of the app excludes them.
+  const actualBillableByPerson = useMemo(() => {
+    const m = {};
+    const rows = clickupData?.rows || [];
+    if (!rows.length) return m;
+    for (const r of rows) {
+      if (r.monthKey !== month) continue;
+      if (r.isInternal) continue;
+      if (clickupData.hasBillable && !r.billable) continue;
+      const person = findPersonMatch(r.user, people);
+      if (!person) continue;
+      m[person.name] = (m[person.name] || 0) + r.minutes / 60;
+    }
+    return m;
+  }, [clickupData, people, month]);
 
   const givenAway = useMemo(() => { const m = {}; support.forEach((s) => { m[s.from] = (m[s.from] || 0) + hoursOf(s); }); return m; }, [support, hoursOf]);
   const receivedBy = useMemo(() => { const m = {}; support.forEach((s) => { if (!m[s.to]) m[s.to] = []; m[s.to].push({ ...s, hours: hoursOf(s) }); }); return m; }, [support, hoursOf]);
@@ -1163,7 +1184,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
               const pc = personCalc[p.name];
               const pm = peopleMap[p.name];
               const capacity = pm.billableHours;        // her own individual billable capacity — same number as the Consultants module's Billable Hrs, not netted against support given/received
-              const allocated = pc.demand;              // client demand assigned to her
+              const allocated = actualBillableByPerson[p.name] || 0; // real billable hours she actually logged in ClickUp this month — not the planning-ledger demand estimate
               const overflow = Math.max(0, allocated - capacity);
               const unbillableCapacity = pm.nonBillableHours;
               const billablePct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : (allocated > 0 ? 100 : 0);
@@ -1203,7 +1224,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
               );
             })}
           </div>
-          <p className="pg-footnote" style={{ maxWidth: 460 }}>Billable capacity and non-billable capacity both come from the Consultants module (contracted hrs/wk, billable %, leaves, resignation date) and update immediately here as they're edited there. Green = within billable capacity, yellow = fully allocated, red = overallocated — the excess spills into and eats away at that person's non-billable hours. Roster details (role, state, billable %, resignation dates, ClickUp aliases) now live in the Team module.</p>
+          <p className="pg-footnote" style={{ maxWidth: 460 }}>Bars compare real billable hours logged in ClickUp this month against capacity from the Consultants module (contracted hrs/wk, billable %, leaves, resignation date) — a live check on whether each consultant is serving clients within their billable hours or having to dip into non-billable time to keep up. Green = within billable capacity, yellow = fully allocated, red = overallocated — the excess is billable overflow eating into that person's non-billable hours; all-red means they've blown through both. Roster details (role, state, billable %, resignation dates, ClickUp aliases) live in the Team module.</p>
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
