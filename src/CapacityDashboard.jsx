@@ -1190,20 +1190,20 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                         <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center" }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</p>
                       )}
                     </div>
-                    <div style={{ width: 92, flex: "none" }} title={overflow > 0 ? `${overflow.toFixed(1)} hrs over` : undefined}>
+                    <div style={{ width: 92, flex: "none" }} title={overflow > 0 ? `${overflow.toFixed(1)} hrs of billable overflow eating into non-billable time` : undefined}>
                       <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
                         <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
                       </div>
-                      {overflow > 0 && (
-                        <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center", color: "var(--status-over)" }}>{overflow.toFixed(1)}h over</p>
-                      )}
+                      <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center", color: overflow > 0 ? "var(--status-over)" : undefined }}>
+                        {overflow.toFixed(1)} / {unbillableCapacity.toFixed(1)} hrs
+                      </p>
                     </div>
                   </div>
                 </div>
               );
             })}
           </div>
-          <p className="pg-footnote" style={{ maxWidth: 460 }}>Green = within billable capacity, yellow = fully allocated, red = overallocated (excess falls into the non-billable bar). Roster details (role, state, billable %, resignation dates, ClickUp aliases) now live in the Team module.</p>
+          <p className="pg-footnote" style={{ maxWidth: 460 }}>Billable capacity and non-billable capacity both come from the Consultants module (contracted hrs/wk, billable %, leaves, resignation date) and update immediately here as they're edited there. Green = within billable capacity, yellow = fully allocated, red = overallocated — the excess spills into and eats away at that person's non-billable hours. Roster details (role, state, billable %, resignation dates, ClickUp aliases) now live in the Team module.</p>
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
