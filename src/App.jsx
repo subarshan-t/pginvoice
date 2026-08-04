@@ -675,14 +675,17 @@ export default function PGReconciliation({ onNavigateClients }) {
     setDataMonthKey(availableMonths.length ? availableMonths[availableMonths.length - 1].key : "");
   }, [clickup]); // eslint-disable-line
 
-  // cross-check historical months against the matching accrued-sheet column: whenever the
-  // reporting period changes, chain "prior balance from" to the month right before it, if
-  // the accrued sheet has that column — this is what makes reconciling an older month in a
-  // multi-month export line up with the right historical balance instead of always the latest.
+  // Whenever the reporting period changes, chain "prior balance from" to the month
+  // right before it — this is what makes reconciling an older month in a multi-month
+  // export line up with the right historical balance instead of always the latest.
+  // Chains there even when the accrued sheet doesn't have that column yet (rather than
+  // silently falling back to whatever the last available column happens to be, which
+  // would understate the real carry-in by a month or more); buildClientsForMonth
+  // estimates the missing balance from ClickUp hours in that case, and the dropdown
+  // below shows it as an "(estimated)" option so it's never mistaken for sheet data.
   useEffect(() => {
     if (!accrued || !dataMonthKey) return;
-    const desired = prevMonthKeyStr(dataMonthKey);
-    if (accrued.balanceCols.some((c) => monthKey(c.year, c.month) === desired)) setPriorMonthKey(desired);
+    setPriorMonthKey(prevMonthKeyStr(dataMonthKey));
   }, [dataMonthKey, accrued]); // eslint-disable-line
 
   // pre-fill the (still freely editable) invoice-month label from the detected period,
@@ -826,7 +829,20 @@ export default function PGReconciliation({ onNavigateClients }) {
         }
       }
       const pkg = accruedClient?.package ?? null;
-      const priorBalance = accruedClient && priorKey ? (accruedClient.balances[priorKey] ?? null) : null;
+      let priorBalance = accruedClient && priorKey ? (accruedClient.balances[priorKey] ?? null) : null;
+      // The accrued sheet doesn't have a column for the prior month (e.g. it hasn't
+      // been re-uploaded with last month's closing balance yet) — estimate it the same
+      // way the mismatch cross-check below does: worked hours that month (from the
+      // live ClickUp data, if it covers that month) minus package, plus whatever
+      // balance the sheet DOES have for the month before that. Flagged as estimated
+      // rather than presented as verified accrued-sheet data.
+      let priorBalanceEstimated = false;
+      if (priorBalance === null && accruedClient && pkg !== null && pkg > 0 && monthWorked) {
+        const priorWorkedH = (monthWorked.get(c.name) || 0) / 60;
+        const priorPriorBalance = accruedClient.balances[prevMonthKeyStr(priorKey)] ?? 0;
+        priorBalance = priorWorkedH - pkg + priorPriorBalance;
+        priorBalanceEstimated = true;
+      }
       let newBalance = null, remaining = null, kpiPct = null, status = "no-pkg";
       if (pkg !== null && pkg > 0) {
         const prior = priorBalance ?? 0;
@@ -842,7 +858,7 @@ export default function PGReconciliation({ onNavigateClients }) {
       // ClickUp data we have for that month right now. A mismatch usually means ClickUp
       // entries were edited after the accrued sheet was last updated for that period.
       let priorMismatch = null;
-      if (pkg !== null && pkg > 0 && priorBalance !== null && monthWorked) {
+      if (!priorBalanceEstimated && pkg !== null && pkg > 0 && priorBalance !== null && monthWorked) {
         const priorWorkedH = (monthWorked.get(c.name) || 0) / 60;
         const priorPriorBalance = accruedClient.balances[prevMonthKeyStr(priorKey)] ?? 0;
         const recomputed = priorWorkedH - pkg + priorPriorBalance;
@@ -852,7 +868,7 @@ export default function PGReconciliation({ onNavigateClients }) {
       }
       const clientObj = {
         ...c, worked, accruedClient, matchInfo,
-        pkg, priorBalance, newBalance, remaining, kpiPct, status, priorMismatch,
+        pkg, priorBalance, priorBalanceEstimated, newBalance, remaining, kpiPct, status, priorMismatch,
         matched: !!accruedClient,
         displayName: accruedClient?.name ?? c.name,
       };
@@ -1159,7 +1175,11 @@ export default function PGReconciliation({ onNavigateClients }) {
   const priorMonthPretty = useMemo(() => {
     if (!priorMonthKey || !accrued) return "";
     const bc = accrued.balanceCols.find((c) => monthKey(c.year, c.month) === priorMonthKey);
-    return bc ? bc.label : "";
+    if (bc) return bc.label;
+    // Not in the sheet yet — still show a readable month name rather than blank
+    // (the value itself is the ClickUp-estimated fallback, flagged separately).
+    const [py, pm] = priorMonthKey.split("-").map(Number);
+    return monthLabel(py, pm - 1);
   }, [priorMonthKey, accrued]);
   const fileMonthTag = (invoiceMonth || new Date().toLocaleString(undefined, { month: "short", year: "numeric" }))
     .replace(/[^a-z0-9]+/gi, "-").toLowerCase();
@@ -1202,6 +1222,36 @@ export default function PGReconciliation({ onNavigateClients }) {
         "Available next month (h)": Math.round((c.pkg - c.newBalance) * 100) / 100,
         "KPI variance (%)": Math.round(c.kpiPct * 10) / 10,
       }));
+  // Ready-to-merge accrued-hours export for the real last calendar month (not
+  // whatever reporting period happens to be selected) — e.g. if it's August
+  // right now, this always exports July's closing balances. Uses the same
+  // buildClientsForMonth pipeline as everything else, so a client whose July
+  // balance the sheet doesn't have yet gets the same ClickUp-estimated
+  // fallback the rest of the app uses, clearly labelled as such.
+  const buildLastMonthAccruedRows = () => {
+    const now = new Date();
+    const thisRealMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const lastMonthKey = prevMonthKeyStr(thisRealMonthKey);
+    const priorToLast = prevMonthKeyStr(lastMonthKey);
+    const [ly, lm] = lastMonthKey.split("-").map(Number);
+    const colLabel = monthLabel(ly, lm - 1);
+    const list = buildClientsForMonth(lastMonthKey, priorToLast).filter((c) => c.pkg != null && c.pkg > 0);
+    return {
+      rows: list.map((c) => ({
+        "Client": c.displayName,
+        "Agreed h.p.m": c.pkg,
+        [colLabel]: c.newBalance != null ? Math.round(c.newBalance * 100) / 100 : "",
+        "Estimated (no sheet data for this month yet)": c.priorBalanceEstimated ? "Yes" : "",
+      })),
+      lastMonthKey, colLabel,
+    };
+  };
+  const exportLastMonthAccrued = () => {
+    setExportOpen(false);
+    const { rows, lastMonthKey, colLabel } = buildLastMonthAccruedRows();
+    exportXlsx(rows, `PG-accrued-${lastMonthKey}.xlsx`, colLabel);
+  };
+
   const exportCsv = (rows, filename) => {
     if (rows.length === 0) { download(new Blob(["No records"], { type: "text/csv" }), filename); return; }
     download(new Blob([Papa.unparse(rows)], { type: "text/csv;charset=utf-8" }), filename);
@@ -1305,6 +1355,12 @@ export default function PGReconciliation({ onNavigateClients }) {
                     <div className="pg-menu-sep" />
                     <ExportItem icon={<FileText size={14} />} label="Full monthly summary (CSV)" onClick={() => doExport("summary", "csv")} />
                     <ExportItem icon={<FileSpreadsheet size={14} />} label="Full monthly summary (Excel)" onClick={() => doExport("summary", "xlsx")} />
+                    <div className="pg-menu-sep" />
+                    <ExportItem
+                      icon={<FileSpreadsheet size={14} />} label="Accrued hours — last month (Excel)"
+                      onClick={exportLastMonthAccrued}
+                      title="Closing balances for last calendar month, ready to merge into the master accrued sheet"
+                    />
                   </div>
                 )}
               </div>
@@ -1404,6 +1460,12 @@ export default function PGReconciliation({ onNavigateClients }) {
                 {accrued.balanceCols.map((bc) => (
                   <option key={monthKey(bc.year, bc.month)} value={monthKey(bc.year, bc.month)}>{bc.label}</option>
                 ))}
+                {/* The desired prior month isn't in the sheet yet — shown as its own
+                    clearly-labelled option so the select never silently shows a stale
+                    column instead. Selecting it just keeps the estimated fallback. */}
+                {priorMonthKey && !accrued.balanceCols.some((bc) => monthKey(bc.year, bc.month) === priorMonthKey) && (
+                  <option value={priorMonthKey}>{priorMonthPretty} (estimated — not in sheet yet)</option>
+                )}
               </select>
             </label>
             {clickup.hasBillable && (
@@ -2011,7 +2073,10 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
                 value={c.priorBalance != null ? `${fmt(Math.abs(c.priorBalance))} h` : "—"}
                 tone={c.priorBalance != null && c.priorBalance > 0 ? "var(--status-over)" : c.priorBalance != null && c.priorBalance < 0 ? "var(--status-ok)" : undefined}
                 sub={priorMonthPretty ? `from ${priorMonthPretty}` : null}
-                flag={c.priorMismatch ? {
+                flag={c.priorBalanceEstimated ? {
+                  text: "estimated",
+                  title: `The accrued sheet has no column for ${priorMonthPretty || "the prior month"} — this figure is estimated from ClickUp hours worked that month instead of the sheet's own recorded balance. Re-upload the accrued sheet with that month's column once it's available for the verified number.`,
+                } : c.priorMismatch ? {
                   text: "mismatch identified",
                   title: `Accrued sheet says ${fmt(c.priorMismatch.sheetValue)} h${priorMonthPretty ? ` for ${priorMonthPretty}` : ""}, but recalculating from the current ClickUp data for that month gives ${fmt(c.priorMismatch.recomputed)} h. Likely a ClickUp entry was edited after the sheet was last updated.`,
                 } : null} />
