@@ -5,6 +5,7 @@ import { SEED_PEOPLE, loadKey, MONTHS, CURRENT_MONTH, MONTH_LABELS, computeMonth
 import { normalizeName } from "./nameMatch.js";
 import { saveState } from "./capacityStore.js";
 import { PG_DATA_EVENT } from "./idbStore.js";
+import { PersonAvatar, resizePhotoFile } from "./avatar.jsx";
 
 const uid = (p) => p + Math.random().toString(36).slice(2, 9);
 const ROLES = ["Consultant", "Coordinator"];
@@ -31,6 +32,43 @@ function Picker({ value, options, onChange }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ============================================================
+   PHOTO UPLOAD — click a person's avatar in edit mode to set/replace their
+   photo, or clear it back to the initial-letter placeholder.
+============================================================ */
+function PhotoUpload({ name, photo, onChange }) {
+  const inputRef = useRef(null);
+  const [error, setError] = useState("");
+
+  const pick = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ""; // allow re-picking the same file later
+    if (!file) return;
+    setError("");
+    resizePhotoFile(file, (dataUrl) => onChange(dataUrl), (msg) => setError(msg));
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <button
+        type="button"
+        onClick={() => inputRef.current && inputRef.current.click()}
+        title="Set photo"
+        style={{ border: 0, background: "none", padding: 0, cursor: "pointer", borderRadius: "50%" }}
+      >
+        <PersonAvatar name={name} photo={photo} size={30} />
+      </button>
+      <input ref={inputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pick} />
+      {photo && (
+        <button type="button" className="pg-btn-ghost" style={{ padding: "3px 5px" }} title="Remove photo" onClick={() => onChange("")}>
+          <X size={11} />
+        </button>
+      )}
+      {error && <span className="pg-footnote" style={{ color: "var(--status-over)" }}>{error}</span>}
     </div>
   );
 }
@@ -224,7 +262,7 @@ function TeamDashboardInner() {
     setPeople((ps) => [...ps, {
       id: uid("p"), name, role: form.role || "Consultant", state: form.state || "SA",
       contracted: Number(form.contracted) || 0, rate: Number(form.rate) || 0,
-      note: "", resignationDate: null, alias: "",
+      note: "", resignationDate: null, alias: "", photo: "",
     }]);
   }, []);
 
@@ -336,9 +374,14 @@ function TeamDashboardInner() {
             {rows.map(({ person: p, avail }) => (
               <tr key={p.id}>
                 <td>
-                  {editing
-                    ? <input className="pg-input" style={{ width: 120, padding: "4px 6px" }} value={p.name} onChange={(e) => updatePerson(p.id, "name", e.target.value)} />
-                    : <>{p.name} {p.resignationDate && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[resigns {p.resignationDate}]</span>} {p.alias && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[alias: {p.alias}]</span>}</>}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {editing
+                      ? <PhotoUpload name={p.name} photo={p.photo} onChange={(dataUrl) => updatePerson(p.id, "photo", dataUrl)} />
+                      : <PersonAvatar name={p.name} photo={p.photo} size={26} />}
+                    {editing
+                      ? <input className="pg-input" style={{ width: 120, padding: "4px 6px" }} value={p.name} onChange={(e) => updatePerson(p.id, "name", e.target.value)} />
+                      : <span>{p.name} {p.resignationDate && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[resigns {p.resignationDate}]</span>} {p.alias && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[alias: {p.alias}]</span>}</span>}
+                  </div>
                 </td>
                 <td>
                   {editing ? (

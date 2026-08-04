@@ -9,10 +9,11 @@ import {
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
 import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, dominantClientType, basisToClientType } from "./nameMatch.js";
+import { findMatch, findPersonMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, dominantClientType, basisToClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync } from "./clickupSync.js";
-import { SEED_CLIENTS as CAP_SEED_CLIENTS, loadKey as loadCapKey } from "./CapacityDashboard.jsx";
+import { SEED_CLIENTS as CAP_SEED_CLIENTS, SEED_PEOPLE, loadKey as loadCapKey } from "./CapacityDashboard.jsx";
 import { fetchClients as fetchPgClients, fetchClientEvents, applyDueClientEvents, typeForMonth } from "./clientsSync.js";
+import { PersonAvatar } from "./avatar.jsx";
 
 // ---------------------------- time text → minutes ----------------------------
 function parseTimeTextToMinutes(raw) {
@@ -509,6 +510,19 @@ export default function PGReconciliation({ onNavigateClients }) {
     const load = () => loadCapKey("cap_clients", CAP_SEED_CLIENTS).then((v) => { if (!cancelled) setCapClients(v || CAP_SEED_CLIENTS); });
     load();
     const onUpdate = (e) => { if (!e.detail || e.detail.key === "cap_clients") load(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
+  }, []);
+
+  // The Consultants module's roster (Supabase-backed), read-only here — used only to look
+  // up a consultant's photo by their ClickUp username, so an avatar uploaded once in
+  // Consultants shows up in the Consultant contributions list below without duplicating it.
+  const [capPeople, setCapPeople] = useState(SEED_PEOPLE);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => loadCapKey("cap_people", SEED_PEOPLE).then((v) => { if (!cancelled) setCapPeople(v || SEED_PEOPLE); });
+    load();
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === "cap_people") load(); };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);
@@ -2121,6 +2135,7 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
               {shownConsultants.map(([u, min]) => {
                 const active = drillConsultant ? u === drillConsultant : (consultantFilter && u === consultantFilter);
                 const pct = consultantTotal > 0 ? Math.round((min / consultantTotal) * 100) : 0;
+                const matchedPerson = u ? findPersonMatch(u, capPeople) : null;
                 return (
                   <button
                     key={u || "unknown"}
@@ -2129,7 +2144,7 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
                     className={"pg-drawer__contrib" + (active ? " pg-drawer__contrib--active" : "")}
                     title={drillConsultant === u ? "Clear — show all tasks again" : `See the tasks behind ${u || "this consultant"}'s hours`}
                   >
-                    <span className="pg-drawer__contrib-avatar">{(u || "?").slice(0, 1).toUpperCase()}</span>
+                    <PersonAvatar name={u} photo={matchedPerson?.photo} size={26} style={{ borderRadius: "var(--app-radius-pill)" }} />
                     <span className="pg-drawer__contrib-name">{u || "—"}</span>
                     <span className="pg-drawer__contrib-hrs">{fmt(min / 60)} h</span>
                     <span className="pg-drawer__contrib-pct">{pct}%</span>

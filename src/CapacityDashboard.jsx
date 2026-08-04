@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, multiFolderMatchesFor, isInternalFolder, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
+import { PersonAvatar } from "./avatar.jsx";
 import { loadState, saveState } from "./capacityStore.js";
 import { fetchClients as fetchPgClients, createClient as createPgClient, createClientEvent, applyDueClientEvents } from "./clientsSync.js";
 
@@ -1182,7 +1183,8 @@ function CapacityDashboardInner({ onNavigateTeam }) {
               const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-ok)" : "var(--status-warn)";
               return (
                 <div key={p.id} style={{ marginTop: 14 }}>
-                  <div style={{ fontFamily: "var(--font-body)", fontWeight: 600, fontSize: 13, color: "var(--fg-primary)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--font-body)", fontWeight: 600, fontSize: 13, color: "var(--fg-primary)" }}>
+                    <PersonAvatar name={p.name} photo={p.photo} size={22} />
                     {p.name}
                     {pm.resigningThisMonth && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} />}
                   </div>
