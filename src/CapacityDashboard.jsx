@@ -1162,22 +1162,22 @@ function CapacityDashboardInner({ onNavigateTeam }) {
             {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
               const pc = personCalc[p.name];
               const pm = peopleMap[p.name];
-              // Capacity = everything actually assembled to cover her client list: her own
-              // billable hours, plus whatever other consultants are supporting her with —
-              // exactly the "Total capacity assembled for <name>" figure in the Capacity
-              // Planning card above (pc.pool). Adding or removing a support entry there
-              // changes this instantly. Her raw individual billable hours alone (pm.billableHours)
-              // is NOT what's being checked here — the question is whether the whole team's
-              // assembled effort covers her demand, not just her own slice of it.
-              const capacity = pc.pool;
-              const allocated = pc.demand;              // total demand from every client assigned to her
+              // Her own personal utilization: how much of HER OWN billable time is committed
+              // — to her own clients (usedOwnOnClients) plus whatever she's giving away to
+              // help other consultants (away) — against her own billable capacity. This is
+              // exactly the "<name> (own time) X% of their time" row in her Capacity Planning
+              // card above; it deliberately ignores what other consultants are covering for
+              // her clients, since that's their own utilization, tracked on their own row.
+              const capacity = pm.billableHours;
+              const allocated = pc.allocatedTotal;      // her own clients' hours she personally covers + hours she gives away to support others
               const overflow = Math.max(0, allocated - capacity);
               const unbillableCapacity = pm.nonBillableHours;
               const billablePct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : (allocated > 0 ? 100 : 0);
               const unbillablePct = unbillableCapacity > 0 ? Math.min(100, (overflow / unbillableCapacity) * 100) : (overflow > 0 ? 100 : 0);
-              // Green = fully (100%) allocated against assembled capacity — the target. Yellow =
-              // under-allocated, spare capacity available. Red = over-allocated — demand has
-              // outrun everything assembled to cover it, spilling into the non-billable bar.
+              // Green = fully (100%) using her own billable capacity — the target. Yellow =
+              // under-allocated, spare capacity available. Red = over-committed — she's promised
+              // more of her own time (to her clients + to others) than she actually has,
+              // spilling into her non-billable hours.
               const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "under";
               const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-ok)" : "var(--status-warn)";
               return (
@@ -1213,7 +1213,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
               );
             })}
           </div>
-          <p className="pg-footnote" style={{ maxWidth: 460 }}>Bars compare total client demand against total capacity assembled to cover it — that consultant's own billable hours plus whatever support other consultants are giving her, exactly the "Total capacity assembled" figure in her Capacity Planning card. Adding, removing, or resizing a support entry there moves the bar immediately. Yellow = under-allocated, spare capacity available. Green = fully allocated to capacity — the target. Red = over-allocated — demand has outrun the assembled capacity and spills into non-billable hours; all-red means it's blown through both. Roster details (role, state, billable %, resignation dates, ClickUp aliases) live in the Team module.</p>
+          <p className="pg-footnote" style={{ maxWidth: 460 }}>Each bar is that consultant's own personal utilization — the hours she personally spends on her own clients plus whatever she gives away to support other consultants — against her own billable capacity, exactly the "(own time) X%" row in her Capacity Planning card above. Yellow = under-allocated, spare capacity available. Green = fully using her own billable hours — the target. Red = over-committed — she's promised more of her own time than she has, spilling into her non-billable hours. Roster details (role, state, billable %, resignation dates, ClickUp aliases) live in the Team module.</p>
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
