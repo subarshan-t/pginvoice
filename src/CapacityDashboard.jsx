@@ -1162,7 +1162,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
             {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
               const pc = personCalc[p.name];
               const pm = peopleMap[p.name];
-              const capacity = pc.pool;               // billable capacity available to her, incl. help received
+              const capacity = pm.billableHours;        // her own individual billable capacity — same number as the Consultants module's Billable Hrs, not netted against support given/received
               const allocated = pc.demand;              // client demand assigned to her
               const overflow = Math.max(0, allocated - capacity);
               const unbillableCapacity = pm.nonBillableHours;
