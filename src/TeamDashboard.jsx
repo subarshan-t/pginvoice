@@ -256,19 +256,18 @@ function TeamDashboardInner() {
 
   const visiblePeople = people.filter((p) => !qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()));
 
-  // Active team members for the selected month, with their billable/non-billable
-  // availability — computed via computeMonthlyAvailability, the exact same function
+  // One row per roster entry, carrying that person's capacity/hours for the currently
+  // selected month — computed via computeMonthlyAvailability, the exact same function
   // Capacity Planning's peopleMap calls, so the numbers here and there never drift.
-  const availability = useMemo(() => {
-    return people
-      .map((p) => {
-        const leaveHrs = Number(leaves[`${p.id}_${month}`] || 0);
-        const avail = computeMonthlyAvailability(p, month, leaveHrs);
-        return avail ? { person: p, ...avail } : null;
-      })
-      .filter(Boolean)
-      .filter((row) => !qRoster || row.person.name.toLowerCase().includes(qRoster.toLowerCase()));
-  }, [people, leaves, month, qRoster]);
+  // Unlike the old separate Availability table, this doesn't drop anyone who isn't
+  // active this month (resigned earlier, etc) — they still need to be editable — it
+  // just shows "—" for their hours instead of a row.
+  const rows = useMemo(() => {
+    return visiblePeople.map((p) => {
+      const leaveHrs = Number(leaves[`${p.id}_${month}`] || 0);
+      return { person: p, avail: computeMonthlyAvailability(p, month, leaveHrs) };
+    });
+  }, [visiblePeople, leaves, month]);
 
   const monthIdx = MONTHS.indexOf(month);
   const shiftMonth = (d) => setMonth(MONTHS[Math.max(0, Math.min(MONTHS.length - 1, monthIdx + d))]);
@@ -297,9 +296,9 @@ function TeamDashboardInner() {
       )}
 
       <div className="pg-table-wrap" style={{ marginTop: 14 }}>
-        <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+        <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span>Team roster</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <div style={{ position: "relative" }}>
               <Search size={11} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--fg-tertiary)" }} />
               <input
@@ -310,22 +309,31 @@ function TeamDashboardInner() {
                 onChange={(e) => setQRoster(e.target.value)}
               />
             </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button className="pg-btn-ghost" style={{ padding: "5px 8px" }} onClick={() => shiftMonth(-1)} disabled={monthIdx === 0}><ChevronLeft size={12} /></button>
+              <span style={{ fontFamily: "var(--font-display)", fontSize: 14, minWidth: 60, textAlign: "center" }}>{MONTH_LABELS[month]}</span>
+              <button className="pg-btn-ghost" style={{ padding: "5px 8px" }} onClick={() => shiftMonth(1)} disabled={monthIdx === MONTHS.length - 1}><ChevronRight size={12} /></button>
+            </div>
             <button className="pg-btn-ghost" onClick={() => setEditing((v) => !v)}>{editing ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}</button>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
-        <table className="pg-table" style={{ minWidth: 720 }}>
+        <table className="pg-table" style={{ minWidth: 900 }}>
           <thead>
             <tr>
               <th>Name</th><th>Role</th><th>State</th>
               <th className="right num">Contracted Hrs/wk</th>
               <th className="right num">Billable %</th>
+              <th className="right num">Monthly Hrs</th>
+              <th className="right num">Billable Hrs</th>
+              <th className="right num">Non-billable Hrs</th>
               <th>Note</th>
               {editing && <th></th>}
             </tr>
           </thead>
           <tbody>
-            {visiblePeople.map((p) => (
+            {rows.length === 0 && <tr><td colSpan={editing ? 10 : 9} className="empty">No consultants match this search.</td></tr>}
+            {rows.map(({ person: p, avail }) => (
               <tr key={p.id}>
                 <td>
                   {editing
@@ -358,6 +366,9 @@ function TeamDashboardInner() {
                     ? <input className="pg-input" type="number" min="0" max="100" step="1" style={{ width: 52, padding: "4px 6px" }} value={Math.round(p.rate * 100)} onChange={(e) => updatePerson(p.id, "rate", (e.target.value === "" ? 0 : Number(e.target.value)) / 100)} />
                     : `${(p.rate * 100).toFixed(0)}%`}
                 </td>
+                <td className="right num">{avail ? avail.totalMonthlyHours.toFixed(1) : "—"}</td>
+                <td className="right num">{avail ? <b>{avail.billableHours.toFixed(1)}</b> : "—"}</td>
+                <td className="right num">{avail ? avail.nonBillableHours.toFixed(1) : "—"}</td>
                 <td>
                   {editing
                     ? <input className="pg-input" style={{ width: 200, padding: "4px 6px" }} value={p.note || ""} onChange={(e) => updatePerson(p.id, "note", e.target.value)} />
@@ -376,45 +387,7 @@ function TeamDashboardInner() {
         </div>
       </div>
       {editing && <AddPersonForm onAdd={addPerson} />}
-      <p className="pg-footnote">This roster is the shared source of truth for Capacity Planning and Performance — changes here take effect immediately in both. A resignation date set via the ⋮ menu prorates that month's capacity to their last working day, and drops them from later months. Leaves are month-specific and stay editable in Capacity Planning.</p>
-
-      <div className="pg-table-wrap" style={{ marginTop: 20 }}>
-        <div className="pg-table-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <span>Availability</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button className="pg-btn-ghost" style={{ padding: "5px 8px" }} onClick={() => shiftMonth(-1)} disabled={monthIdx === 0}><ChevronLeft size={12} /></button>
-            <span style={{ fontFamily: "var(--font-display)", fontSize: 14, minWidth: 60, textAlign: "center" }}>{MONTH_LABELS[month]}</span>
-            <button className="pg-btn-ghost" style={{ padding: "5px 8px" }} onClick={() => shiftMonth(1)} disabled={monthIdx === MONTHS.length - 1}><ChevronRight size={12} /></button>
-          </div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-        <table className="pg-table" style={{ minWidth: 640 }}>
-          <thead>
-            <tr>
-              <th>Active team member</th>
-              <th className="right num">Monthly Hrs</th>
-              <th className="right num">Billable Hrs</th>
-              <th className="right num">Non-billable Hrs</th>
-            </tr>
-          </thead>
-          <tbody>
-            {availability.length === 0 && <tr><td colSpan={4} className="empty">No active team members match this search for {MONTH_LABELS[month]}.</td></tr>}
-            {availability.map(({ person, totalMonthlyHours, billableHours, nonBillableHours, resigningThisMonth }) => (
-              <tr key={person.id}>
-                <td>
-                  {person.name} <span className="pg-tag" style={{ color: person.role === "Consultant" ? "var(--accent)" : "var(--accent-orchid)", marginLeft: 5 }}>[{person.role[0]}]</span>
-                  {resigningThisMonth && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }}>[resigns {person.resignationDate}]</span>}
-                </td>
-                <td className="right num">{totalMonthlyHours.toFixed(1)}</td>
-                <td className="right num"><b>{billableHours.toFixed(1)}</b></td>
-                <td className="right num">{nonBillableHours.toFixed(1)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      </div>
-      <p className="pg-footnote">Lists only team members active in {MONTH_LABELS[month]} (excludes anyone who resigned in an earlier month). Billable/Non-billable Hrs are this person's monthly capacity split by their billable %, before any client demand or support given/received is applied — Capacity Planning's Capacity Utilization view starts from these same numbers.</p>
+      <p className="pg-footnote">This roster is the shared source of truth for Capacity Planning and Performance — changes here take effect immediately in both. Monthly/Billable/Non-billable Hrs are this person's capacity for {MONTH_LABELS[month]} (use the arrows above to move to other months, including future ones), split by their billable % before any client demand or support given/received is applied — shown as "—" for months they weren't active in. A resignation date set via the ⋮ menu prorates that month's capacity to their last working day, and drops them from later months. Leaves are month-specific and stay editable in Capacity Planning.</p>
     </div>
   );
 }
