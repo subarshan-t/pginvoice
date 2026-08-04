@@ -218,20 +218,35 @@ function TeamDashboardInner() {
   const [editing, setEditing] = useState(false);
   const [qRoster, setQRoster] = useState("");
   const [month, setMonth] = useState(CURRENT_MONTH);
-  const [leaves, setLeaves] = useState({}); // key: `${personId}_${month}` -> hours, read-only mirror of Capacity Planning's
+  const [leaves, setLeaves] = useState({}); // key: `${personId}_${month}` -> hours, shared with Capacity Planning's cap_leaves
   const ownWrite = useRef(false); // suppress reloading our own save's echoed PG_DATA_EVENT
+  const ownWriteLeaves = useRef(false);
 
-  // Leaves are edited in Capacity Planning (they're tied to its month picker), but the
-  // Availability list below needs the same numbers Capacity Planning uses, so it mirrors
-  // that key here read-only, refreshing whenever Capacity Planning saves an edit.
+  // Leaves are month-specific (tied to whichever month is selected here or in Capacity
+  // Planning) and now editable from both places — same "cap_leaves" key, same shared
+  // PG_DATA_EVENT, so a leave entered here updates Capacity Planning's numbers immediately
+  // and vice versa.
   useEffect(() => {
     let cancelled = false;
     const load = () => loadKey("cap_leaves", {}).then((v) => { if (!cancelled) setLeaves(v); });
     load();
-    const onUpdate = (e) => { if (!e.detail || e.detail.key === "cap_leaves") load(); };
+    const onUpdate = (e) => {
+      if (e.detail && e.detail.key !== "cap_leaves") return;
+      if (ownWriteLeaves.current) { ownWriteLeaves.current = false; return; }
+      load();
+    };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);
+  const leaveFor = useCallback((personId) => Number(leaves[`${personId}_${month}`] || 0), [leaves, month]);
+  const setLeaveFor = useCallback((personId, hrs) => {
+    setLeaves((prev) => {
+      const next = { ...prev, [`${personId}_${month}`]: hrs === "" ? 0 : Number(hrs) };
+      ownWriteLeaves.current = true;
+      saveState("cap_leaves", next);
+      return next;
+    });
+  }, [month]);
 
   // Reads/writes the same "cap_people" key Capacity Planning uses (Supabase-backed via
   // capacityStore.js), so a person added, removed, or edited here is immediately reflected
@@ -362,6 +377,7 @@ function TeamDashboardInner() {
               <th>Name</th><th>Role</th><th>State</th>
               <th className="right num">Contracted Hrs/wk</th>
               <th className="right num">Billable %</th>
+              <th className="right num">Leaves ({MONTH_LABELS[month]})</th>
               <th className="right num">Monthly Hrs</th>
               <th className="right num">Billable Hrs</th>
               <th className="right num">Non-billable Hrs</th>
@@ -370,7 +386,7 @@ function TeamDashboardInner() {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={editing ? 10 : 9} className="empty">No consultants match this search.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={editing ? 11 : 10} className="empty">No consultants match this search.</td></tr>}
             {rows.map(({ person: p, avail }) => (
               <tr key={p.id}>
                 <td>
@@ -409,6 +425,9 @@ function TeamDashboardInner() {
                     ? <input className="pg-input" type="number" min="0" max="100" step="1" style={{ width: 52, padding: "4px 6px" }} value={Math.round(p.rate * 100)} onChange={(e) => updatePerson(p.id, "rate", (e.target.value === "" ? 0 : Number(e.target.value)) / 100)} />
                     : `${(p.rate * 100).toFixed(0)}%`}
                 </td>
+                <td className="right num">
+                  <input className="pg-input" type="number" min="0" step="any" style={{ width: 56, padding: "4px 6px" }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
+                </td>
                 <td className="right num">{avail ? avail.totalMonthlyHours.toFixed(1) : "—"}</td>
                 <td className="right num">{avail ? <b>{avail.billableHours.toFixed(1)}</b> : "—"}</td>
                 <td className="right num">{avail ? avail.nonBillableHours.toFixed(1) : "—"}</td>
@@ -430,7 +449,7 @@ function TeamDashboardInner() {
         </div>
       </div>
       {editing && <AddPersonForm onAdd={addPerson} />}
-      <p className="pg-footnote">This roster is the shared source of truth for Capacity Planning and Performance — changes here take effect immediately in both. Monthly/Billable/Non-billable Hrs are this person's capacity for {MONTH_LABELS[month]} (use the arrows above to move to other months, including future ones), split by their billable % before any client demand or support given/received is applied — shown as "—" for months they weren't active in. A resignation date set via the ⋮ menu prorates that month's capacity to their last working day, and drops them from later months. Leaves are month-specific and stay editable in Capacity Planning.</p>
+      <p className="pg-footnote">This roster is the shared source of truth for Capacity Planning and Performance — changes here take effect immediately in both. Leaves and Monthly/Billable/Non-billable Hrs are all specific to {MONTH_LABELS[month]} (use the arrows above to move to other months, including future ones) — Monthly Hrs already has that month's Leaves subtracted before it's split into Billable/Non-billable by billable %, and editing Leaves here updates Capacity Planning's numbers immediately too, since both read and write the same shared record. Shown as "—" for months a person wasn't active in. A resignation date set via the ⋮ menu prorates that month's capacity to their last working day, and drops them from later months.</p>
     </div>
   );
 }
