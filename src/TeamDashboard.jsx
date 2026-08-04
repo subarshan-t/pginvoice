@@ -426,7 +426,9 @@ function TeamDashboardInner() {
                     : `${(p.rate * 100).toFixed(0)}%`}
                 </td>
                 <td className="right num">
-                  <input className="pg-input" type="number" min="0" step="any" style={{ width: 56, padding: "4px 6px" }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
+                  {editing
+                    ? <input className="pg-input" type="number" min="0" step="any" style={{ width: 56, padding: "4px 6px" }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
+                    : leaveFor(p.id)}
                 </td>
                 <td className="right num">{avail ? avail.totalMonthlyHours.toFixed(1) : "—"}</td>
                 <td className="right num">{avail ? <b>{avail.billableHours.toFixed(1)}</b> : "—"}</td>
