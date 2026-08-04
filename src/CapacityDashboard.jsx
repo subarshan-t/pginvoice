@@ -1182,33 +1182,35 @@ function CapacityDashboardInner({ onNavigateTeam }) {
               const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "under";
               const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-ok)" : "var(--status-warn)";
               return (
-                <div key={p.id} style={{ marginTop: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--font-body)", fontWeight: 600, fontSize: 13, color: "var(--fg-primary)" }}>
-                    <PersonAvatar name={p.name} photo={p.photo} size={22} />
-                    {p.name}
-                    {pm.resigningThisMonth && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} />}
-                  </div>
-                  <div style={{ display: "flex", gap: 16, marginTop: 6, alignItems: "flex-start" }}>
-                    <div style={{ flex: 1 }}>
-                      <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
-                        <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
-                      </div>
-                      {editRoster ? (
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 4 }}>
-                          <span className="pg-footnote" style={{ margin: 0 }}>Leaves</span>
-                          <input className="pg-input" type="number" min="0" step="any" style={{ width: 52, padding: "2px 5px", fontSize: 11 }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
-                        </div>
-                      ) : (
-                        <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center" }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</p>
-                      )}
+                <div key={p.id} style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+                  <PersonAvatar name={p.name} photo={p.photo} size={34} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "var(--font-body)", fontWeight: 600, fontSize: 13, color: "var(--fg-primary)" }}>
+                      {p.name}
+                      {pm.resigningThisMonth && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} />}
                     </div>
-                    <div style={{ width: 92, flex: "none" }} title={overflow > 0 ? `${overflow.toFixed(1)} hrs of billable overflow eating into non-billable time` : undefined}>
-                      <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
-                        <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
+                    <div style={{ display: "flex", gap: 16, marginTop: 4, alignItems: "flex-start" }}>
+                      <div style={{ flex: 1 }}>
+                        <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
+                          <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
+                        </div>
+                        {editRoster ? (
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 4 }}>
+                            <span className="pg-footnote" style={{ margin: 0 }}>Leaves</span>
+                            <input className="pg-input" type="number" min="0" step="any" style={{ width: 52, padding: "2px 5px", fontSize: 11 }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
+                          </div>
+                        ) : (
+                          <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center" }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</p>
+                        )}
                       </div>
-                      <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center", color: overflow > 0 ? "var(--status-over)" : undefined }}>
-                        {overflow.toFixed(1)} / {unbillableCapacity.toFixed(1)} hrs
-                      </p>
+                      <div style={{ width: 92, flex: "none" }} title={overflow > 0 ? `${overflow.toFixed(1)} hrs of billable overflow eating into non-billable time` : undefined}>
+                        <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
+                          <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
+                        </div>
+                        <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center", color: overflow > 0 ? "var(--status-over)" : undefined }}>
+                          {overflow.toFixed(1)} / {unbillableCapacity.toFixed(1)} hrs
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
