@@ -1606,6 +1606,7 @@ export default function PGReconciliation({ onNavigateClients }) {
           accruedNames={accruedNames}
           usedAccruedNames={usedAccruedNames}
           syncMeta={syncMeta}
+          capPeople={capPeople}
           onClose={() => setDrawerClientName(null)}
           onSetMatch={(v) => setManualMatch(drawerClient.name, v)}
           onCopy={() => copySummary(drawerClient)}
@@ -1950,7 +1951,7 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
 // Full client detail — right-side drawer, opened by clicking a row. Reuses exactly
 // the same computed fields the row above reads from (client.*), just laid out for
 // a deeper single-client view: reconciliation bar, consultant contributions, tasks.
-function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress, hasUser, consultantFilter, accruedNames, usedAccruedNames, syncMeta, onClose, onSetMatch, onCopy, onPdf, onViewProfile, copied }) {
+function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress, hasUser, consultantFilter, accruedNames, usedAccruedNames, syncMeta, capPeople, onClose, onSetMatch, onCopy, onPdf, onViewProfile, copied }) {
   const isPackage = c.type === "package";
   const isQld = c.type === "queensland";
   const [drillConsultant, setDrillConsultant] = useState(null);
