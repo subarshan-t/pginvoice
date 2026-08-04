@@ -1162,16 +1162,22 @@ function CapacityDashboardInner({ onNavigateTeam }) {
             {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
               const pc = personCalc[p.name];
               const pm = peopleMap[p.name];
-              const capacity = pm.billableHours;        // her own individual billable capacity — same number as the Consultants module's Billable Hrs, not netted against support given/received
-              const allocated = pc.demand;              // client work actually assigned to her (agreed package hours / trailing ClickUp average per client) — moves the instant she's assigned to or removed from a client
+              // Capacity = everything actually assembled to cover her client list: her own
+              // billable hours, plus whatever other consultants are supporting her with —
+              // exactly the "Total capacity assembled for <name>" figure in the Capacity
+              // Planning card above (pc.pool). Adding or removing a support entry there
+              // changes this instantly. Her raw individual billable hours alone (pm.billableHours)
+              // is NOT what's being checked here — the question is whether the whole team's
+              // assembled effort covers her demand, not just her own slice of it.
+              const capacity = pc.pool;
+              const allocated = pc.demand;              // total demand from every client assigned to her
               const overflow = Math.max(0, allocated - capacity);
               const unbillableCapacity = pm.nonBillableHours;
               const billablePct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : (allocated > 0 ? 100 : 0);
               const unbillablePct = unbillableCapacity > 0 ? Math.min(100, (overflow / unbillableCapacity) * 100) : (overflow > 0 ? 100 : 0);
-              // Green = fully (100%) allocated to her billable capacity — the target. Yellow =
-              // under-allocated, she has spare availability management could assign more work
-              // to. Red = over-allocated — demand has spilled past her billable hours into the
-              // non-billable bar on the right.
+              // Green = fully (100%) allocated against assembled capacity — the target. Yellow =
+              // under-allocated, spare capacity available. Red = over-allocated — demand has
+              // outrun everything assembled to cover it, spilling into the non-billable bar.
               const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "under";
               const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-ok)" : "var(--status-warn)";
               return (
@@ -1207,7 +1213,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
               );
             })}
           </div>
-          <p className="pg-footnote" style={{ maxWidth: 460 }}>Bars track how much client work is assigned to each consultant against their billable capacity from the Consultants module (contracted hrs/wk, billable %, leaves, resignation date) — assign or remove a client here or on the left and the bar moves immediately. Yellow = under-allocated, she has spare availability to take on more. Green = fully allocated to her billable capacity — the target. Red = over-allocated — the excess spills into and eats away at her non-billable hours; all-red means demand has blown through both. Roster details (role, state, billable %, resignation dates, ClickUp aliases) live in the Team module.</p>
+          <p className="pg-footnote" style={{ maxWidth: 460 }}>Bars compare total client demand against total capacity assembled to cover it — that consultant's own billable hours plus whatever support other consultants are giving her, exactly the "Total capacity assembled" figure in her Capacity Planning card. Adding, removing, or resizing a support entry there moves the bar immediately. Yellow = under-allocated, spare capacity available. Green = fully allocated to capacity — the target. Red = over-allocated — demand has outrun the assembled capacity and spills into non-billable hours; all-red means it's blown through both. Roster details (role, state, billable %, resignation dates, ClickUp aliases) live in the Team module.</p>
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
