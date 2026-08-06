@@ -1,11 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Publishable/anon key — safe to ship to the browser. Row-level security on
-// pginvoice_clickup_entries/pginvoice_sync_meta restricts this key to
-// read-only there (writes happen from the clickup-sync Edge Function's own
-// service-role key). pginvoice_app_state is the one exception: this is an
-// internal, no-auth tool, so that table's RLS policy lets the anon key read
-// AND write directly, the same trust model the rest of the app already uses.
+// Publishable/anon key — safe to ship to the browser. On its own it grants
+// nothing: every pginvoice_* table's RLS policy requires the `authenticated`
+// role, not `anon` (see Shell.jsx's real Supabase Auth login). Once signed
+// in, supabase-js attaches the session's JWT to every request automatically,
+// which is what actually unlocks read/write access — the anon key here is
+// just the client's project identifier, not a credential by itself.
 const SUPABASE_URL = "https://fzvlnzlecchsubkpsmew.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6dmxuemxlY2Noc3Via3BzbWV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2ODIyODMsImV4cCI6MjA5NzI1ODI4M30.UDQFf4X43i7nriZntWoIIwV1KbgCR1wHdPF5MghWMAQ";
 

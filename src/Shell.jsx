@@ -10,6 +10,7 @@ import ClientAccruals from "./ClientAccruals.jsx";
 import Clients from "./Clients.jsx";
 import TeamDashboard from "./TeamDashboard.jsx";
 import SettingsPage from "./Settings.jsx";
+import { supabase } from "./supabaseClient.js";
 
 // Nav order/labels follow the approved Purple Giraffe Design OS mockup.
 const MODULES = [
@@ -31,28 +32,27 @@ const SECONDARY_MODULES = [
 ];
 
 const THEME_KEY = "pg-theme";
-const AUTH_KEY = "pg-auth";
-// Front-door deterrent only, not real security: a hardcoded check in shipped
-// client JS is visible to anyone who opens dev tools or views the bundle.
-// Fine for keeping casual visitors out of an internal tool; not a substitute
-// for real auth if this ever needs to resist a determined bypass attempt.
-const VALID_USERNAME = "Kelly";
-const VALID_PASSWORD = "Kelly";
 
+// Real Supabase Auth — checked server-side. Every pginvoice_* table's RLS
+// policy requires the `authenticated` role, so signing in here is what
+// actually unlocks data access, not just a client-side gate on the UI.
 function LoginGate({ onSuccess }) {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    if (username === VALID_USERNAME && password === VALID_PASSWORD) {
-      try { window.sessionStorage.setItem(AUTH_KEY, "1"); } catch (e) {}
-      setError("");
-      onSuccess(username);
-    } else {
-      setError("Incorrect username or password.");
+    setSubmitting(true);
+    setError("");
+    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    setSubmitting(false);
+    if (authError) {
+      setError("Incorrect email or password.");
+      return;
     }
+    onSuccess(data.session);
   };
 
   return (
@@ -63,15 +63,15 @@ function LoginGate({ onSuccess }) {
           <span className="pg-eyebrow">Purple Giraffe</span>
         </div>
         <label className="pg-field">
-          <span className="pg-field__label">Username</span>
-          <input className="pg-input" autoFocus value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+          <span className="pg-field__label">Email</span>
+          <input className="pg-input" type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" />
         </label>
         <label className="pg-field">
           <span className="pg-field__label">Password</span>
           <input className="pg-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
         </label>
         {error && <p className="pg-footnote" style={{ color: "var(--status-over)" }}>{error}</p>}
-        <button className="pg-btn" type="submit" style={{ justifyContent: "center" }}>Sign in</button>
+        <button className="pg-btn" type="submit" disabled={submitting} style={{ justifyContent: "center" }}>{submitting ? "Signing in…" : "Sign in"}</button>
       </form>
     </div>
   );
@@ -80,10 +80,9 @@ function LoginGate({ onSuccess }) {
 const COLLAPSE_KEY = "pg-sidebar-collapsed";
 
 export default function Shell() {
-  const [authed, setAuthed] = useState(() => {
-    try { return window.sessionStorage.getItem(AUTH_KEY) === "1"; } catch (e) { return false; }
-  });
-  const [username, setUsername] = useState(VALID_USERNAME);
+  // null = still checking for an existing session (avoids a login-screen flash
+  // for someone who's already signed in); false/session once known.
+  const [session, setSession] = useState(null);
   const [active, setActive] = useState("overview");
   const [theme, setTheme] = useState(() => {
     try { return window.localStorage.getItem(THEME_KEY) || "light"; } catch (e) { return "light"; }
@@ -110,12 +109,20 @@ export default function Shell() {
     try { window.localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0"); } catch (e) {}
   }, [collapsed]);
 
-  if (!authed) return <LoginGate onSuccess={(u) => { setUsername(u); setAuthed(true); }} />;
+  // supabase-js persists the session in localStorage and auto-refreshes the
+  // token, so this also covers "already signed in from a previous visit"
+  // and "signed out in another tab" without extra plumbing.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? false));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => setSession(newSession ?? false));
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
-  const logOut = () => {
-    try { window.sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
-    setAuthed(false);
-  };
+  if (session === null) return null; // brief check, avoids a login-screen flash
+  if (!session) return <LoginGate onSuccess={setSession} />;
+
+  const username = session.user?.email?.split("@")[0] || "Account";
+  const logOut = () => { supabase.auth.signOut(); };
 
   return (
     <div className="pg-shell">
