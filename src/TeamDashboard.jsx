@@ -16,8 +16,10 @@ function Picker({ value, options, onChange }) {
   const ref = useRef(null);
   useEffect(() => {
     function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    function onKey(e) { if (e.key === "Escape") setOpen(false); }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
   }, []);
   const current = options.find((o) => o.value === value);
   return (
@@ -104,11 +106,14 @@ function RosterMenu({ person, onUpdate, aliasConflict }) {
       setOpen(false);
     }
     function onScrollOrResize() { setOpen(false); }
+    function onKey(e) { if (e.key === "Escape") setOpen(false); }
     document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
     window.addEventListener("scroll", onScrollOrResize, true);
     window.addEventListener("resize", onScrollOrResize);
     return () => {
       document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
       window.removeEventListener("scroll", onScrollOrResize, true);
       window.removeEventListener("resize", onScrollOrResize);
     };
@@ -216,6 +221,13 @@ function TeamDashboardInner() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [saveError, setSaveError] = useState(null);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const savedFlashTimer = useRef(null);
+  const flashSaved = useCallback(() => {
+    setSavedFlash(true);
+    if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
+    savedFlashTimer.current = setTimeout(() => setSavedFlash(false), 1800);
+  }, []);
   const [people, setPeople] = useState(SEED_PEOPLE);
   const [editing, setEditing] = useState(false);
   const [qRoster, setQRoster] = useState("");
@@ -245,7 +257,7 @@ function TeamDashboardInner() {
     setLeaves((prev) => {
       const next = { ...prev, [`${personId}_${month}`]: hrs === "" ? 0 : Number(hrs) };
       ownWriteLeaves.current = true;
-      saveState("cap_leaves", next).catch((e) => setSaveError(`Couldn't save leave hours: ${e.message || e}`));
+      saveState("cap_leaves", next).then(flashSaved).catch((e) => setSaveError(`Couldn't save leave hours: ${e.message || e}`));
       return next;
     });
   }, [month]);
@@ -272,14 +284,18 @@ function TeamDashboardInner() {
   useEffect(() => {
     if (!loaded) return;
     ownWrite.current = true;
-    saveState("cap_people", people).then(() => setSaveError(null)).catch((e) => setSaveError(`Couldn't save: ${e.message || e}`));
-  }, [people, loaded]);
+    saveState("cap_people", people).then(() => { setSaveError(null); flashSaved(); }).catch((e) => setSaveError(`Couldn't save: ${e.message || e}`));
+  }, [people, loaded, flashSaved]);
 
   const updatePerson = useCallback((id, field, value) => {
     setPeople((ps) => ps.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
   }, []);
   const removePerson = useCallback((id) => {
-    setPeople((ps) => ps.filter((p) => p.id !== id));
+    setPeople((ps) => {
+      const person = ps.find((p) => p.id === id);
+      if (!window.confirm(`Remove ${person?.name || "this person"} from the roster? This cannot be undone.`)) return ps;
+      return ps.filter((p) => p.id !== id);
+    });
   }, []);
   const addPerson = useCallback((form) => {
     const name = (form.name || "").trim();
@@ -356,6 +372,11 @@ function TeamDashboardInner() {
           <span className="pg-eyebrow">Purple Giraffe · Internal</span>
           <h1 className="pg-app-header__title">Team — the roster that drives Capacity Planning &amp; Performance.</h1>
         </div>
+        {savedFlash && !saveError && (
+          <span className="pg-status-pill" style={{ color: "var(--status-ok)", background: "var(--status-ok-soft)" }}>
+            <Check size={11} style={{ marginRight: 3, verticalAlign: -1 }} />Saved
+          </span>
+        )}
       </div>
 
       {saveError && (

@@ -587,6 +587,7 @@ button { font: inherit; }
 .pg-row__chevron {
   flex: none; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
   border-radius: var(--app-radius-pill); color: var(--fg-tertiary); cursor: pointer;
+  background: none; border: none; font: inherit; padding: 0;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .pg-row__chevron:hover { background: var(--bg-elevated); color: var(--fg-primary); }

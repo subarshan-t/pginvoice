@@ -22,8 +22,10 @@ function Picker({ value, label, options, onChange }) {
   const ref = useRef(null);
   useEffect(() => {
     function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    function onKey(e) { if (e.key === "Escape") setOpen(false); }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
   }, []);
   const current = options.find((o) => o.value === value);
   return (
@@ -113,6 +115,8 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [saveError, setSaveError] = useState(null);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const savedFlashTimer = useRef(null);
   const [people, setPeople] = useState(SEED_PEOPLE);
   const [clients, setClients] = useState(SEED_CLIENTS);
   const [support, setSupport] = useState(SEED_SUPPORT);
@@ -217,7 +221,15 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   // reports a failure instead of silently pretending the edit persisted -- a save
   // that didn't actually reach Supabase is worse to hide than to show.
   const guardedSave = useCallback((key, value) => {
-    saveKey(key, value).then(() => setSaveError(null)).catch((e) => setSaveError(`Couldn't save (${key.replace("cap_", "")}): ${e.message || e}`));
+    saveKey(key, value).then(() => {
+      setSaveError(null);
+      // Brief, unobtrusive "Saved" confirmation -- the only feedback these edits
+      // otherwise get is that they stay on screen, which looks identical to a
+      // save that silently failed to persist.
+      setSavedFlash(true);
+      if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
+      savedFlashTimer.current = setTimeout(() => setSavedFlash(false), 1800);
+    }).catch((e) => setSaveError(`Couldn't save (${key.replace("cap_", "")}): ${e.message || e}`));
   }, []);
   useEffect(() => { if (loaded) guardedSave("cap_people", people); }, [people, loaded, guardedSave]);
   useEffect(() => { if (loaded) guardedSave("cap_clients", clients); }, [clients, loaded, guardedSave]);
@@ -226,13 +238,19 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   useEffect(() => { if (loaded) guardedSave("cap_leaves", leaves); }, [leaves, loaded, guardedSave]);
   useEffect(() => { if (loaded) guardedSave("cap_overrides", overrides); }, [overrides, loaded, guardedSave]);
 
-  const resetSample = useCallback(() => { setPeople(SEED_PEOPLE); setClients(SEED_CLIENTS); setSupport(SEED_SUPPORT); setNotes([]); setLeaves({}); setOverrides({}); }, []);
+  const resetSample = useCallback(() => {
+    if (!window.confirm("Reset to sample data? This replaces every current person, client, support allocation, note, leave entry, and override with the seed data — this cannot be undone.")) return;
+    setPeople(SEED_PEOPLE); setClients(SEED_CLIENTS); setSupport(SEED_SUPPORT); setNotes([]); setLeaves({}); setOverrides({});
+  }, []);
   const addNote = () => {
     if (!noteDraft.trim()) return;
     setNotes((ns) => [{ id: uid("n"), text: noteDraft.trim(), ts: Date.now() }, ...ns]);
     setNoteDraft("");
   };
-  const removeNote = (id) => setNotes((ns) => ns.filter((n) => n.id !== id));
+  const removeNote = (id) => {
+    if (!window.confirm("Delete this note? This cannot be undone.")) return;
+    setNotes((ns) => ns.filter((n) => n.id !== id));
+  };
   const leaveFor = (personId) => Number(leaves[`${personId}_${month}`] || 0);
   const setLeaveFor = (personId, hrs) => setLeaves((prev) => ({ ...prev, [`${personId}_${month}`]: hrs === "" ? 0 : Number(hrs) }));
 
@@ -556,7 +574,10 @@ function CapacityDashboardInner({ onNavigateTeam }) {
 
   const allocatableNames = ["DMA (external)", ...people.filter((p) => peopleMap[p.name]).map((p) => p.name)];
 
-  const removeSupport = (id) => setSupport((ss) => ss.filter((s) => s.id !== id));
+  const removeSupport = (id) => {
+    if (!window.confirm("Remove this support allocation? This cannot be undone.")) return;
+    setSupport((ss) => ss.filter((s) => s.id !== id));
+  };
   // Whichever field the person actually edited (% or fixed hrs) becomes the stored
   // definition going forward -- a %-based allocation scales with the supporter's future
   // capacity changes, a fixed-hrs one doesn't, so only one can be canonical at a time.
@@ -671,6 +692,11 @@ function CapacityDashboardInner({ onNavigateTeam }) {
           <span className="pg-eyebrow">Purple Giraffe · Internal</span>
           <h1 className="pg-app-header__title">Capacity ledger: team hours vs. client demand, by month.</h1>
         </div>
+        {savedFlash && !saveError && (
+          <span className="pg-status-pill" style={{ color: "var(--status-ok)", background: "var(--status-ok-soft)" }}>
+            <Check size={11} style={{ marginRight: 3, verticalAlign: -1 }} />Saved
+          </span>
+        )}
       </div>
 
       {saveError && (

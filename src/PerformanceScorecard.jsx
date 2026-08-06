@@ -27,8 +27,10 @@ function Picker({ value, options, onChange, placeholder }) {
   const ref = useRef(null);
   useEffect(() => {
     function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    function onKey(e) { if (e.key === "Escape") setOpen(false); }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
   }, []);
   const current = options.find((o) => o.value === value);
   return (
@@ -54,8 +56,10 @@ function SearchBox({ label, value, onChange, options, onSelect }) {
   const ref = useRef(null);
   useEffect(() => {
     function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    function onKey(e) { if (e.key === "Escape") setOpen(false); }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
   }, []);
   const matches = useMemo(() => {
     if (!options) return [];
@@ -256,6 +260,7 @@ function PerformanceInner() {
     setNoteDraft("");
   };
   const removeNote = (id) => {
+    if (!window.confirm("Delete this note? This cannot be undone.")) return;
     setNotes((ns) => {
       const next = ns.filter((n) => n.id !== id);
       try { window.localStorage.setItem(NOTES_KEY, JSON.stringify(next)); } catch (e) {}

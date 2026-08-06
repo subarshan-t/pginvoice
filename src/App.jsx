@@ -1470,9 +1470,12 @@ export default function PGReconciliation({ onNavigateClients }) {
           </div>
         </div>
 
-        {/* config row */}
+        {/* config + filter row, combined into one panel (previously two stacked
+            panels) so there's one less thing to scroll past before reaching the
+            client list — a divider keeps the two groups visually distinct. */}
         {ready && (
-          <div className="pg-panel">
+          <div className="pg-panel" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 14 }}>
             {availableMonths.length > 1 && (
               <label className="pg-field pg-field--emphasis">
                 <span className="pg-field__label">Reporting period</span>
@@ -1511,11 +1514,10 @@ export default function PGReconciliation({ onNavigateClients }) {
               </label>
             )}
           </div>
-        )}
 
-        {/* filter row: type, consultant, sort */}
-        {ready && (
-          <div className="pg-panel">
+          <div style={{ borderTop: "1px solid var(--border-subtle)" }} />
+
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 14 }}>
             <label className="pg-field pg-field--emphasis">
               <span className="pg-field__label">Client type</span>
               <select value={clientTypeFilter} onChange={(e) => setClientTypeFilter(e.target.value)}
@@ -1549,9 +1551,10 @@ export default function PGReconciliation({ onNavigateClients }) {
               </select>
             </label>
             <label className="pg-field" style={{ flex: 1, minWidth: 180 }}>
-              <span className="pg-field__label"><Search size={11} /> Search</span>
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a client" className="pg-input" />
+              <span className="pg-field__label"><Search size={11} /> Filter this list</span>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter the list below by name…" className="pg-input" title="Filters the currently visible, already-filtered client list below. To jump straight to any client regardless of filters, use the search bar in the header (⌘K)." />
             </label>
+          </div>
           </div>
         )}
 
@@ -1696,8 +1699,10 @@ function WarningIcon({ title, warnings }) {
   const ref = useRef(null);
   useEffect(() => {
     const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
   }, []);
   if (!warnings || warnings.length === 0) return null;
   return (
@@ -1758,7 +1763,7 @@ function CommandSearch({ clients, onSelect }) {
       <input
         ref={inputRef}
         className="pg-cmdsearch__input"
-        placeholder="Search or run a command…"
+        placeholder="Jump to a client…"
         value={query}
         onFocus={() => setOpen(true)}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
@@ -1808,8 +1813,10 @@ function ImportButton({ clickup, accrued, clickupErr, accruedErr, onPickClickup,
   const ref = useRef(null);
   useEffect(() => {
     const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
   }, []);
   return (
     <div style={{ position: "relative" }} ref={ref}>
@@ -1876,7 +1883,12 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
 
   return (
     <div className={"pg-row-wrap" + (nested ? " pg-row--nested" : "")}>
-      <button type="button" className={"pg-row" + (active ? " pg-row--active" : "")} onClick={onOpen}>
+      <div
+        role="button" tabIndex={0}
+        className={"pg-row" + (active ? " pg-row--active" : "")}
+        onClick={onOpen}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
+      >
         {!nested && <span className="pg-row__index">{index}</span>}
         <span className="pg-row__name">
           <span className="pg-row__name-main">
@@ -1900,15 +1912,14 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
         <span className="pg-row__status" style={statusTone ? { color: statusTone } : undefined}>
           {statusText || (isPackage ? "no package on file" : "—")}
         </span>
-        <span
-          role="button" tabIndex={0} aria-label={inlineOpen ? "Collapse" : "Expand"}
+        <button
+          type="button" aria-label={inlineOpen ? "Collapse" : "Expand"}
           className="pg-row__chevron"
           onClick={(e) => { e.stopPropagation(); setInlineOpen((o) => !o); }}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); setInlineOpen((o) => !o); } }}
         >
           <ChevronDown size={16} style={{ transform: inlineOpen ? "rotate(180deg)" : undefined, transition: "transform 0.15s var(--ease)" }} />
-        </span>
-      </button>
+        </button>
+      </div>
 
       {inlineOpen && (
         <div className="pg-row-inline">
@@ -1987,6 +1998,12 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
   // Reset local drill/expand state whenever a different client is opened, so the
   // drawer never opens already scrolled into a previous client's drill-down.
   useEffect(() => { setDrillConsultant(null); setTasksOpen(false); setConsultantsOpen(false); }, [c.name]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const drillTasks = drillConsultant ? (c.tasksByUser.get(drillConsultant) || new Map()) : null;
   const tasksShown = drillTasks ?? c.tasksFiltered;
