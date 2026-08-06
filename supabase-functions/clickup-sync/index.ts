@@ -135,13 +135,18 @@ Deno.serve(async (req: Request) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-  const token = Deno.env.get("CLICKUP_API_TOKEN");
+  // A key saved from Settings (pginvoice_secrets, written by the clickup-key
+  // function) takes priority over the CLICKUP_API_TOKEN Edge Function secret --
+  // that's the whole point of letting it be set from the UI: it's how someone
+  // rotates a key without a Supabase dashboard visit, so it should win once set.
+  const { data: storedSecret } = await supabase.from("pginvoice_secrets").select("value").eq("key", "clickup_api_token").maybeSingle();
+  const token = storedSecret?.value || Deno.env.get("CLICKUP_API_TOKEN");
   if (!token) {
     await supabase.from("pginvoice_sync_meta").update({
       last_synced_at: new Date().toISOString(), last_sync_status: "error",
-      last_sync_message: "CLICKUP_API_TOKEN secret is not set.",
+      last_sync_message: "No ClickUp API key set. Add one in Settings.",
     }).eq("id", 1);
-    return new Response(JSON.stringify({ ok: false, error: "CLICKUP_API_TOKEN secret is not set." }), { status: 400, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: false, error: "No ClickUp API key set. Add one in Settings." }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
 
   let monthOffset = 0;

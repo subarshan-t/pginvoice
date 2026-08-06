@@ -63,3 +63,21 @@ export async function triggerManualSync() {
   if (error) throw error;
   return data;
 }
+
+// Settings' ClickUp connection card — status check never sees the raw token
+// (it's stored service-role-only in pginvoice_secrets), just whether one is
+// saved and what workspace it validated against.
+export async function fetchClickupKeyStatus() {
+  const { data, error } = await supabase.functions.invoke("clickup-key", { body: { action: "status" } });
+  if (error) throw error;
+  return data;
+}
+
+// Validates the key against ClickUp's own API before saving it — a bad key
+// never gets persisted, so clickup-sync can't silently start failing on it.
+export async function saveClickupApiKey(token) {
+  const { data, error } = await supabase.functions.invoke("clickup-key", { body: { action: "set", token } });
+  if (error) throw error;
+  if (!data?.ok) throw new Error(data?.error || "Couldn't validate that ClickUp API key.");
+  return data;
+}

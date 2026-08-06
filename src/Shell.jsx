@@ -9,6 +9,7 @@ import TimesheetSummary from "./TimesheetSummary.jsx";
 import ClientAccruals from "./ClientAccruals.jsx";
 import Clients from "./Clients.jsx";
 import TeamDashboard from "./TeamDashboard.jsx";
+import SettingsPage from "./Settings.jsx";
 
 // Nav order/labels follow the approved Purple Giraffe Design OS mockup.
 const MODULES = [
@@ -210,9 +211,7 @@ export default function Shell() {
         <div style={{ display: active === "timesheet" ? "block" : "none" }}><TimesheetSummary /></div>
         <div style={{ display: active === "accruals" ? "block" : "none" }}><ClientAccruals /></div>
         <div style={{ display: active === "clients" ? "block" : "none" }}><Clients /></div>
-        <div style={{ display: active === "settings" ? "block" : "none" }}>
-          <PlaceholderPage title="Settings." subtitle="Account, workspace and preference settings aren't built yet." icon={Settings} empty="Settings module coming soon." />
-        </div>
+        <div style={{ display: active === "settings" ? "block" : "none" }}><SettingsPage /></div>
         <div style={{ display: active === "integrations" ? "block" : "none" }}>
           <PlaceholderPage title="Integrations." subtitle="Connected apps and sync configuration aren't built yet." icon={Plug} empty="Integrations module coming soon." />
         </div>
