@@ -422,14 +422,44 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   }, [addClientForm, fullConsultantName, loadPgClients, pgClients]);
 
   const pgClientNames = useMemo(() => pgClients.map((p) => p.client), [pgClients]);
+  // A confirmed link (c.pgLink, persisted below) takes priority over re-running fuzzy
+  // matching every render -- once a client has been matched with high confidence, the
+  // pairing is locked in so it can't silently flip if the roster grows and a
+  // coincidentally-closer-scoring name shows up. If the linked row no longer exists
+  // (renamed/deleted in the Clients module), falls through to fuzzy matching below so
+  // the client isn't left orphaned until someone notices.
   const matchPgClient = useCallback((c) => {
     if (!pgClients.length) return null;
+    if (c.pgLink) {
+      const linked = pgClients.find((p) => p.client === c.pgLink);
+      if (linked) return linked;
+    }
     const byClient = findMatch(c.client, pgClientNames);
     if (byClient && byClient.confidence >= 0.8) return pgClients.find((p) => p.client === byClient.name) || null;
     const byGroup = findMatch(c.group, pgClientNames);
     if (byGroup && byGroup.confidence >= 0.8) return pgClients.find((p) => p.client === byGroup.name) || null;
     return byClient ? pgClients.find((p) => p.client === byClient.name) || null : null;
   }, [pgClients, pgClientNames]);
+
+  // Persists a confident match onto the cap_clients record itself (see matchPgClient
+  // above) instead of leaving every module to silently re-derive the same pairing via
+  // fuzzy string matching on every render -- this is the only place c.pgLink is ever
+  // written, so a link, once established, is stable until the linked row disappears.
+  useEffect(() => {
+    if (!loaded || !pgClients.length) return;
+    const pgByName = new Set(pgClientNames);
+    setClients((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        if (c.pgLink && pgByName.has(c.pgLink)) return c;
+        const pg = matchPgClient(c);
+        if (!pg || pg.client === c.pgLink) return c;
+        changed = true;
+        return { ...c, pgLink: pg.client };
+      });
+      return changed ? next : prev;
+    });
+  }, [loaded, pgClients, pgClientNames, matchPgClient]);
 
   // The list actually used for the owner-grouped ledger: each row's status and lead come
   // from the matched pginvoice_clients record when one exists (so a status/consultant change
