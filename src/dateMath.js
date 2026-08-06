@@ -1,0 +1,28 @@
+// Pure date/timezone math mirrored from supabase-functions/clickup-sync/index.ts.
+// The edge function runs on Deno and isn't part of this npm build, so its logic
+// can't be imported directly -- this is a deliberate copy, kept here so the
+// month-boundary math that broke ClickUp sync once already (off-by-one-day
+// due to UTC-vs-Adelaide midnight) has a test harness. If you change the
+// algorithm in the edge function, update this copy and its tests too.
+
+export const TIMEZONE = "Australia/Adelaide";
+
+// Returns the UTC epoch ms corresponding to local midnight in `TIMEZONE` on
+// the given date. Adelaide observes DST (UTC+9:30 / UTC+10:30), so this can't
+// be a fixed offset -- it converges by re-measuring the actual local time at
+// its own guess, which self-corrects for the DST transition in one extra pass.
+export function adelaideLocalMidnightUtcMs(year, month1to12, day) {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: TIMEZONE, hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const desiredAsUtcMs = Date.UTC(year, month1to12 - 1, day, 0, 0, 0);
+  let guessMs = desiredAsUtcMs;
+  for (let i = 0; i < 2; i++) {
+    const parts = fmt.formatToParts(new Date(guessMs));
+    const get = (t) => Number(parts.find((p) => p.type === t).value);
+    const localAsUtcMs = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+    guessMs += desiredAsUtcMs - localAsUtcMs;
+  }
+  return guessMs;
+}

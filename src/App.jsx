@@ -603,7 +603,15 @@ export default function PGReconciliation({ onNavigateClients }) {
   useEffect(() => {
     (async () => {
       const [savedClickup, savedAccrued] = await Promise.all([idbGet(CLICKUP_DB_KEY), idbGet(ACCRUED_DB_KEY)]);
-      if (savedClickup) { setClickup(savedClickup); justHydratedClickupRef.current = savedClickup; }
+      if (savedClickup) {
+        setClickup(savedClickup);
+        justHydratedClickupRef.current = savedClickup;
+        // Whatever's in IndexedDB is, by definition, not this page load's live sync --
+        // mark it "manual" immediately so the stale-data banner shows right away instead
+        // of staying blank until (or unless) the live fetch below resolves and overrides it.
+        manualOverrideRef.current = true;
+        setClickupSource("manual");
+      }
       if (savedAccrued) { setAccrued(savedAccrued); justHydratedAccruedRef.current = savedAccrued; }
       try {
         const raw = window.localStorage.getItem(VIEWSTATE_KEY);
@@ -737,7 +745,7 @@ export default function PGReconciliation({ onNavigateClients }) {
     manualOverrideRef.current = true; // wins over live sync until the next reload
     setClickupSource("manual");
     parseClickupCsv(file,
-      (r) => setClickup({ ...r, fileName: file.name }),
+      (r) => setClickup({ ...r, fileName: file.name, uploadedAt: Date.now() }),
       (msg) => { setClickupErr(msg); setClickup(null); });
   };
   const handleAccrued = (file) => {
@@ -1420,8 +1428,13 @@ export default function PGReconciliation({ onNavigateClients }) {
         <div className="pg-panel" style={{ alignItems: "center" }}>
           {clickupSource === "manual" ? (
             <>
-              <WifiOff size={14} style={{ color: "var(--fg-tertiary)" }} />
-              <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Showing a manually uploaded file, overrides live sync until the next reload.</span>
+              <WifiOff size={14} style={{ color: "var(--status-warn)" }} />
+              <span style={{ fontSize: 13, color: "var(--status-warn)" }}>
+                {clickup?.uploadedAt
+                  ? `Showing a manually uploaded file (${clickup.fileName || "no name"}), uploaded ${timeAgo(new Date(clickup.uploadedAt).toISOString())} — not the live sync.`
+                  : "Showing a manually uploaded file from a previous session — not the live sync."}
+                {" "}Overrides live sync until the next reload.
+              </span>
             </>
           ) : syncMeta?.last_sync_status === "error" ? (
             <>
