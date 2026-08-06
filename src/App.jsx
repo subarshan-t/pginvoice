@@ -11,7 +11,7 @@ import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
 import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, findPersonMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, dominantClientType, basisToClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync } from "./clickupSync.js";
-import { SEED_CLIENTS as CAP_SEED_CLIENTS, SEED_PEOPLE, loadKey as loadCapKey } from "./CapacityDashboard.jsx";
+import { SEED_CLIENTS as CAP_SEED_CLIENTS, SEED_PEOPLE, loadKey as loadCapKey } from "./capacityData.js";
 import { fetchClients as fetchPgClients, fetchClientEvents, applyDueClientEvents, typeForMonth } from "./clientsSync.js";
 import { PersonAvatar } from "./avatar.jsx";
 

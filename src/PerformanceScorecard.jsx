@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, multiFolderMatchesFor, findPersonMatch, isInternalFolder, basisToClientType, dominantClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
-import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey, agreedAt } from "./CapacityDashboard.jsx";
+import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey, agreedAt } from "./capacityData.js";
 
 const CLICKUP_DB_KEY = "clickup";
 const NOTES_KEY = "perf_notes_v1";

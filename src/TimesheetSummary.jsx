@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Search, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findPersonMatch } from "./nameMatch.js";
-import { SEED_PEOPLE, loadKey } from "./CapacityDashboard.jsx";
+import { SEED_PEOPLE, loadKey } from "./capacityData.js";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
 

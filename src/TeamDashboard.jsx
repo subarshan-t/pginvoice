@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Check, Pencil, Plus, X, MoreVertical, AlertTriangle, Search, ChevronLeft, ChevronRight } from "lucide-react";
-import { SEED_PEOPLE, loadKey, MONTHS, CURRENT_MONTH, MONTH_LABELS, computeMonthlyAvailability } from "./CapacityDashboard.jsx";
+import { SEED_PEOPLE, loadKey, MONTHS, CURRENT_MONTH, MONTH_LABELS, computeMonthlyAvailability } from "./capacityData.js";
 import { normalizeName } from "./nameMatch.js";
 import { saveState } from "./capacityStore.js";
 import { PG_DATA_EVENT } from "./idbStore.js";
