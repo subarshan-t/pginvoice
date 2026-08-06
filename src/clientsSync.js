@@ -85,7 +85,13 @@ export async function applyDueClientEvents() {
     .select("*")
     .eq("applied", false)
     .lte("effective_date", todayKey)
-    .order("effective_date", { ascending: true });
+    // Secondary sort by id (insertion order) breaks ties deterministically when two
+    // events on the same client share an effective_date -- e.g. an offboarding and a
+    // later-created reactivation both dated today. Without this, Postgres's return
+    // order for equal effective_date values isn't guaranteed, so which patch "wins"
+    // (applied last) could vary run to run.
+    .order("effective_date", { ascending: true })
+    .order("id", { ascending: true });
   if (error) throw error;
   if (!due || !due.length) return 0;
 

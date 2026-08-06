@@ -39,6 +39,13 @@ function ModifyPanel({ client, onClose, onSaved }) {
   const isActive = client.status === "active";
 
   async function save() {
+    // A blank hours field on a Package transition used to silently submit 0 -- a real,
+    // billable "0 hrs/month" package, indistinguishable from someone just not having
+    // filled the field in yet. Block the save and say so instead of guessing.
+    if (action === "transition" && newType === "package" && newHours.trim() === "") {
+      setErr("Enter the agreed hours for this package (or choose a different type).");
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -142,6 +149,11 @@ function ModifyPanel({ client, onClose, onSaved }) {
             <input className="pg-input" type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
           </label>
           <p className="pg-footnote">Clears the end date and sets status back to active. Type, agreed hours, and consultant stay as they were — use Transitioning/Consultant Update afterward if those need to change too.</p>
+          {client.status === "archived" && (
+            <p className="pg-footnote" style={{ color: "var(--status-warn)" }}>
+              This client was marked "Archived (unverified)" by a bulk data cleanup, not through a real offboarding event — there's no record of it ever actually being offboarded. Reactivating it is a guess that it should be active, not a confirmed correction. Double-check this is the right call before saving.
+            </p>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <button className="pg-btn" disabled={saving} onClick={save}>Save</button>
             <button className="pg-btn-ghost" onClick={() => setAction(null)}>Back</button>

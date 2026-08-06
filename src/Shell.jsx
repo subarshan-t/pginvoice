@@ -46,13 +46,22 @@ function LoginGate({ onSuccess }) {
     e.preventDefault();
     setSubmitting(true);
     setError("");
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    setSubmitting(false);
-    if (authError) {
-      setError("Incorrect email or password.");
-      return;
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      setSubmitting(false);
+      if (authError) {
+        // Wrong credentials come back as a 400 with this exact reason -- everything
+        // else (outage, rate limit, network hiccup) gets its real message instead of
+        // being flattened to "wrong password", which just told a user hitting a real
+        // outage to keep retrying the same credentials forever.
+        setError(authError.status === 400 ? "Incorrect email or password." : (authError.message || "Sign-in failed. Please try again."));
+        return;
+      }
+      onSuccess(data.session);
+    } catch (e) {
+      setSubmitting(false);
+      setError("Couldn't reach the server. Check your connection and try again.");
     }
-    onSuccess(data.session);
   };
 
   return (

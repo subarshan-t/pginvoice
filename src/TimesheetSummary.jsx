@@ -202,7 +202,13 @@ function TimesheetInner() {
       const cu = await idbGet(CLICKUP_DB_KEY);
       if (cancelled) return;
       setClickup(cu || null);
-      setPeople(await loadKey("cap_people", SEED_PEOPLE));
+      // Read-only here (this module never writes cap_people) -- a failed load just
+      // means this render keeps whatever people data it already had.
+      try {
+        setPeople(await loadKey("cap_people", SEED_PEOPLE));
+      } catch (e) {
+        console.error("Timesheet Summary: couldn't load people data:", e);
+      }
       setLoaded(true);
     };
     load();

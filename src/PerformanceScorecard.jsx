@@ -223,8 +223,15 @@ function PerformanceInner() {
       const cu = await idbGet(CLICKUP_DB_KEY);
       if (cancelled) return;
       setClickup(cu || null);
-      setClients(await loadKey("cap_clients", SEED_CLIENTS));
-      setPeople(await loadKey("cap_people", SEED_PEOPLE));
+      // Read-only here (this module never writes cap_clients/cap_people), so a failed
+      // load just means this render stays on whatever it had before -- log it rather
+      // than let it become an unhandled rejection that blanks the module.
+      try {
+        setClients(await loadKey("cap_clients", SEED_CLIENTS));
+        setPeople(await loadKey("cap_people", SEED_PEOPLE));
+      } catch (e) {
+        console.error("Performance: couldn't load client/people data:", e);
+      }
       // This module's own notes are plain localStorage (see addNote/removeNote below),
       // never part of the Capacity Planning data now backed by Supabase — read it the
       // same way it's written, not via the shared (Supabase-backed) loadKey.

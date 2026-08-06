@@ -214,6 +214,8 @@ class ErrorBoundary extends React.Component {
 
 function TeamDashboardInner() {
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [saveError, setSaveError] = useState(null);
   const [people, setPeople] = useState(SEED_PEOPLE);
   const [editing, setEditing] = useState(false);
   const [qRoster, setQRoster] = useState("");
@@ -228,7 +230,7 @@ function TeamDashboardInner() {
   // and vice versa.
   useEffect(() => {
     let cancelled = false;
-    const load = () => loadKey("cap_leaves", {}).then((v) => { if (!cancelled) setLeaves(v); });
+    const load = () => loadKey("cap_leaves", {}).then((v) => { if (!cancelled) setLeaves(v); }).catch((e) => { if (!cancelled) console.error("Couldn't load leaves:", e); });
     load();
     const onUpdate = (e) => {
       if (e.detail && e.detail.key !== "cap_leaves") return;
@@ -243,7 +245,7 @@ function TeamDashboardInner() {
     setLeaves((prev) => {
       const next = { ...prev, [`${personId}_${month}`]: hrs === "" ? 0 : Number(hrs) };
       ownWriteLeaves.current = true;
-      saveState("cap_leaves", next);
+      saveState("cap_leaves", next).catch((e) => setSaveError(`Couldn't save leave hours: ${e.message || e}`));
       return next;
     });
   }, [month]);
@@ -254,16 +256,24 @@ function TeamDashboardInner() {
   useEffect(() => {
     let cancelled = false;
     const load = () => loadKey("cap_people", SEED_PEOPLE).then((v) => { if (!cancelled) setPeople(v); });
-    load().then(() => { if (!cancelled) setLoaded(true); });
+    // `loaded` (which gates the save-effect below) is only set true on a confirmed
+    // successful load -- a failed load leaves it false, so the save-effect never runs
+    // and this component's still-SEED_PEOPLE in-memory state never gets written back
+    // over real Supabase data (see capacityStore.js for why that matters).
+    load().then(() => { if (!cancelled) setLoaded(true); }).catch((e) => { if (!cancelled) setLoadError(e.message || String(e)); });
     const onUpdate = (e) => {
       if (e.detail && e.detail.key !== "cap_people") return;
       if (ownWrite.current) { ownWrite.current = false; return; }
-      load();
+      load().catch((e) => console.error("Couldn't reload people:", e));
     };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);
-  useEffect(() => { if (loaded) { ownWrite.current = true; saveState("cap_people", people); } }, [people, loaded]);
+  useEffect(() => {
+    if (!loaded) return;
+    ownWrite.current = true;
+    saveState("cap_people", people).then(() => setSaveError(null)).catch((e) => setSaveError(`Couldn't save: ${e.message || e}`));
+  }, [people, loaded]);
 
   const updatePerson = useCallback((id, field, value) => {
     setPeople((ps) => ps.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
@@ -325,6 +335,16 @@ function TeamDashboardInner() {
   const monthIdx = MONTHS.indexOf(month);
   const shiftMonth = (d) => setMonth(MONTHS[Math.max(0, Math.min(MONTHS.length - 1, monthIdx + d))]);
 
+  if (loadError) {
+    return (
+      <div className="pg-cap-container">
+        <div className="pg-empty" style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
+          <p>Couldn't load the team roster: {loadError}</p>
+          <button className="pg-btn" onClick={() => window.location.reload()}>Retry</button>
+        </div>
+      </div>
+    );
+  }
   if (!loaded) {
     return <div className="pg-cap-container"><div className="pg-empty">Loading…</div></div>;
   }
@@ -337,6 +357,14 @@ function TeamDashboardInner() {
           <h1 className="pg-app-header__title">Team — the roster that drives Capacity Planning &amp; Performance.</h1>
         </div>
       </div>
+
+      {saveError && (
+        <div className="pg-alertbar" style={{ background: "var(--status-over-soft)", color: "var(--status-over)" }}>
+          <AlertTriangle size={13} />
+          <span className="pg-alertbar__text">{saveError} — your edit is only held in this browser tab until this is resolved.</span>
+          <button className="pg-btn-ghost" style={{ marginLeft: "auto" }} onClick={() => setSaveError(null)}>Dismiss</button>
+        </div>
+      )}
 
       {aliasConflicts.size > 0 && (
         <div className="pg-banner-warn" style={{ marginTop: 14 }}>

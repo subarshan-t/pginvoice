@@ -169,7 +169,12 @@ export function agreedAt(client, monthKey) {
   if (client.offboardedFrom && monthKey >= client.offboardedFrom) return 0;
   if (!client.history || !client.history.length) return client.agreed;
   let value = client.agreed;
-  for (const h of client.history) { if (h.from <= monthKey) value = h.agreed; }
+  // Skips any malformed entry instead of throwing -- a bad write (manual SQL edit,
+  // a bug elsewhere) putting a null/non-object into this array previously crashed
+  // this on `h.from`, taking down the whole dashboard via the ErrorBoundary rather
+  // than just the one bad client. Better to render this client's own hours slightly
+  // wrong than to blank the entire page for everyone.
+  for (const h of client.history) { if (h && typeof h.from === "string" && h.from <= monthKey) value = h.agreed; }
   return value;
 }
 
@@ -363,11 +368,18 @@ function round1(n) { return Math.round(n * 10) / 10; }
 function DualAllocationInput({ type, value, baseHours, onChange, width = 60 }) {
   const pct = type === "pct" ? Number(value || 0) * 100 : (baseHours > 0 ? (Number(value || 0) / baseHours) * 100 : 0);
   const hrs = type === "pct" ? Number(value || 0) * baseHours : Number(value || 0);
+  // A supporter with zero recognized capacity this month (e.g. resigned before this
+  // month, or DMA external) has no "% of their time" to speak of -- a % entered
+  // against a zero base silently computes to 0 hrs everywhere with no indication why.
+  // Disabling it here, rather than letting it accept a number that means nothing,
+  // is the difference between an obviously-inert field and a confusing dead end.
+  const pctDisabled = baseHours <= 0;
   return (
     <span style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
       <input
         className="pg-input" type="number" step="any" style={{ width, padding: "4px 6px" }}
-        value={round1(pct)} title="% of their time"
+        value={round1(pct)} disabled={pctDisabled}
+        title={pctDisabled ? "No recognized capacity this month for this person -- use fixed hours instead" : "% of their time"}
         onChange={(e) => { const v = e.target.value === "" ? 0 : Number(e.target.value); onChange("pct", v / 100); }}
       />
       <span style={{ fontSize: 11, color: "var(--fg-tertiary)" }}>%</span>
@@ -413,6 +425,8 @@ class ErrorBoundary extends React.Component {
 ============================================================ */
 function CapacityDashboardInner({ onNavigateTeam }) {
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [saveError, setSaveError] = useState(null);
   const [people, setPeople] = useState(SEED_PEOPLE);
   const [clients, setClients] = useState(SEED_CLIENTS);
   const [support, setSupport] = useState(SEED_SUPPORT);
@@ -460,6 +474,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
       await applyDueClientEvents();
       const data = await fetchPgClients();
       setPgClients(data);
+      return data;
     } catch (e) { /* best-effort -- local SEED/cap_clients data still renders on its own */ }
     finally { setPgLoaded(true); }
   }, []);
@@ -476,39 +491,54 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [ppl, clis, supp, loadedNotes, lvs, ovr] = await Promise.all([
-        loadKey("cap_people", SEED_PEOPLE),
-        loadKey("cap_clients", SEED_CLIENTS),
-        loadKey("cap_support", SEED_SUPPORT),
-        loadKey("cap_notes", []),
-        loadKey("cap_leaves", {}),
-        loadKey("cap_overrides", {}),
-      ]);
-      if (cancelled) return;
-      setPeople(ppl);
-      setClients(clis);
-      setSupport(supp);
+      try {
+        const [ppl, clis, supp, loadedNotes, lvs, ovr] = await Promise.all([
+          loadKey("cap_people", SEED_PEOPLE),
+          loadKey("cap_clients", SEED_CLIENTS),
+          loadKey("cap_support", SEED_SUPPORT),
+          loadKey("cap_notes", []),
+          loadKey("cap_leaves", {}),
+          loadKey("cap_overrides", {}),
+        ]);
+        if (cancelled) return;
+        setPeople(ppl);
+        setClients(clis);
+        setSupport(supp);
 
-      if (Array.isArray(loadedNotes)) {
-        setNotes(loadedNotes.every((n) => n && typeof n.text === "string") ? loadedNotes : []);
-      } else if (typeof loadedNotes === "string" && loadedNotes.trim()) {
-        setNotes([{ id: uid("n"), text: loadedNotes.trim(), ts: Date.now() }]);
-      } else {
-        setNotes([]);
+        if (Array.isArray(loadedNotes)) {
+          setNotes(loadedNotes.every((n) => n && typeof n.text === "string") ? loadedNotes : []);
+        } else if (typeof loadedNotes === "string" && loadedNotes.trim()) {
+          setNotes([{ id: uid("n"), text: loadedNotes.trim(), ts: Date.now() }]);
+        } else {
+          setNotes([]);
+        }
+
+        setLeaves(lvs);
+        setOverrides(ovr);
+        // Only now -- on confirmed success -- is it safe to mark this loaded and let
+        // the save-effects below start running. If any load above failed, `loaded`
+        // stays false: the save-effects never fire, so the in-memory SEED_* fallback
+        // this component still holds never gets written back over real Supabase data.
+        setLoaded(true);
+      } catch (e) {
+        if (!cancelled) setLoadError(e.message || String(e));
       }
-
-      setLeaves(lvs);
-      setOverrides(ovr);
-      setLoaded(true);
     })();
     return () => { cancelled = true; };
   }, []);
-  useEffect(() => { if (loaded) saveKey("cap_people", people); }, [people, loaded]);
-  useEffect(() => { if (loaded) saveKey("cap_clients", clients); }, [clients, loaded]);
-  useEffect(() => { if (loaded) saveKey("cap_support", support); }, [support, loaded]);
-  useEffect(() => { if (loaded) saveKey("cap_notes", notes); }, [notes, loaded]);
-  useEffect(() => { if (loaded) saveKey("cap_leaves", leaves); }, [leaves, loaded]);
-  useEffect(() => { if (loaded) saveKey("cap_overrides", overrides); }, [overrides, loaded]);
+
+  // Every save-effect below fires only once `loaded` is true (see above), and each
+  // reports a failure instead of silently pretending the edit persisted -- a save
+  // that didn't actually reach Supabase is worse to hide than to show.
+  const guardedSave = useCallback((key, value) => {
+    saveKey(key, value).then(() => setSaveError(null)).catch((e) => setSaveError(`Couldn't save (${key.replace("cap_", "")}): ${e.message || e}`));
+  }, []);
+  useEffect(() => { if (loaded) guardedSave("cap_people", people); }, [people, loaded, guardedSave]);
+  useEffect(() => { if (loaded) guardedSave("cap_clients", clients); }, [clients, loaded, guardedSave]);
+  useEffect(() => { if (loaded) guardedSave("cap_support", support); }, [support, loaded, guardedSave]);
+  useEffect(() => { if (loaded) guardedSave("cap_notes", notes); }, [notes, loaded, guardedSave]);
+  useEffect(() => { if (loaded) guardedSave("cap_leaves", leaves); }, [leaves, loaded, guardedSave]);
+  useEffect(() => { if (loaded) guardedSave("cap_overrides", overrides); }, [overrides, loaded, guardedSave]);
 
   const resetSample = useCallback(() => { setPeople(SEED_PEOPLE); setClients(SEED_CLIENTS); setSupport(SEED_SUPPORT); setNotes([]); setLeaves({}); setOverrides({}); }, []);
   const addNote = () => {
@@ -679,17 +709,31 @@ function CapacityDashboardInner({ onNavigateTeam }) {
     if (!name) return;
     const typeMap = { Package: "package", Project: "quoted", Quoted: "quoted", MAP: "quoted", Strategy: "package", Hourly: "hourly", "Ad hoc": "hourly" };
     const agreedNum = addClientForm.agreed === "" ? null : Number(addClientForm.agreed);
+    let freshPgClients = pgClients;
     try {
       await createPgClient(name, { type: typeMap[addClientForm.basis] || "hourly", agreedHours: agreedNum, consultant: fullConsultantName(addClientForm.lead) });
-      await loadPgClients();
+      freshPgClients = await loadPgClients();
     } catch (e) { alert("Couldn't create the client in the Clients module: " + (e.message || e)); return; }
     setClients((prev) => [...prev, {
       id: uid("c"), client: name, group: name, lead: addClientForm.lead, basis: addClientForm.basis,
       agreed: agreedNum, actuals: null, note: "", status: "active", offboardedFrom: null, offboardNote: "", history: null,
     }]);
+    // The Clients-module write above succeeded, but this dashboard only ever links the
+    // two records by fuzzy name matching (see matchPgClient, confidence >= 0.8) -- if that
+    // wouldn't actually match this exact name, the client now exists in two disconnected
+    // places (a real pginvoice_clients row, and this local Capacity Planning entry) with no
+    // link between them. Better to say so now than let it look like a duplicate later with
+    // no explanation.
+    const wouldLink = (freshPgClients || []).some((p) => {
+      const m = findMatch(name, [p.client]);
+      return m && m.confidence >= 0.8;
+    });
+    if (!wouldLink) {
+      alert(`"${name}" was created in the Clients module, but its name doesn't closely match anything Capacity Planning can auto-link. It'll show here as a separate, disconnected entry until the names match -- consider renaming one to match the other.`);
+    }
     setShowAddClient(false);
     setAddClientForm({ name: "", lead: OWNERS[0], basis: "Package", agreed: "" });
-  }, [addClientForm, fullConsultantName, loadPgClients]);
+  }, [addClientForm, fullConsultantName, loadPgClients, pgClients]);
 
   const pgClientNames = useMemo(() => pgClients.map((p) => p.client), [pgClients]);
   const matchPgClient = useCallback((c) => {
@@ -887,6 +931,19 @@ function CapacityDashboardInner({ onNavigateTeam }) {
     URL.revokeObjectURL(url);
   }
 
+  // A failed load must never fall through to "Loading…" forever, and must never
+  // silently render on SEED_* data as if it were real -- that's exactly the state
+  // that used to get written back to Supabase over real data (see capacityStore.js).
+  if (loadError) {
+    return (
+      <div className="pg-cap-container">
+        <div className="pg-empty" style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
+          <p>Couldn't load Capacity Planning data: {loadError}</p>
+          <button className="pg-btn" onClick={() => window.location.reload()}>Retry</button>
+        </div>
+      </div>
+    );
+  }
   if (!loaded) {
     return <div className="pg-cap-container"><div className="pg-empty">Loading…</div></div>;
   }
@@ -899,6 +956,14 @@ function CapacityDashboardInner({ onNavigateTeam }) {
           <h1 className="pg-app-header__title">Capacity ledger: team hours vs. client demand, by month.</h1>
         </div>
       </div>
+
+      {saveError && (
+        <div className="pg-alertbar" style={{ background: "var(--status-over-soft)", color: "var(--status-over)" }}>
+          <AlertTriangle size={13} />
+          <span className="pg-alertbar__text">{saveError} — your edit is only held in this browser tab until this is resolved.</span>
+          <button className="pg-btn-ghost" style={{ marginLeft: "auto" }} onClick={() => setSaveError(null)}>Dismiss</button>
+        </div>
+      )}
 
       <div className="pg-panel" style={{ alignItems: "center" }}>
         <span className="pg-field__label">Month</span>
