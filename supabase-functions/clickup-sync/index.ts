@@ -64,6 +64,33 @@ function monthLabelOf(year: number, month: number) {
   return new Date(Date.UTC(year, month - 1, 1)).toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
+// The ClickUp API's start_date/end_date fetch window must bound a calendar
+// month in *Adelaide* local time, not naive UTC -- Adelaide is UTC+9:30/+10:30
+// depending on DST, so a naive `Date.UTC(year, month, 1)` boundary sits up to
+// ~9.5 hours into the wrong side of the month from ClickUp's (and the user's)
+// perspective. A real gap this caused: an entry logged at 2026-06-30 23:45:58
+// UTC -- 2026-07-01 09:15:58 AM ACST, unambiguously "July 1st" in ClickUp's
+// own UI/export -- fell 14 minutes before a naive UTC "July 1 00:00" boundary
+// and was silently excluded from the July fetch entirely, undercounting a
+// consultant's hours for that month. Iterating twice (rather than assuming a
+// fixed offset) means this self-corrects across the October/April DST
+// transition instead of drifting by an hour near those boundaries.
+function adelaideLocalMidnightUtcMs(year: number, month1to12: number, day: number): number {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: TIMEZONE, hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const desiredAsUtcMs = Date.UTC(year, month1to12 - 1, day, 0, 0, 0);
+  let guessMs = desiredAsUtcMs;
+  for (let i = 0; i < 2; i++) {
+    const parts = fmt.formatToParts(new Date(guessMs));
+    const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
+    const localAsUtcMs = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+    guessMs += desiredAsUtcMs - localAsUtcMs;
+  }
+  return guessMs;
+}
+
 async function clickupFetch(path: string, token: string) {
   const res = await fetch(`${CLICKUP_BASE}${path}`, { headers: { Authorization: token } });
   if (!res.ok) {
@@ -179,9 +206,22 @@ Deno.serve(async (req: Request) => {
     const memberIds = await unionKnownUserIds(supabase, currentMemberIds);
     const assignee = memberIds.join(",");
 
-    const now = new Date();
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthOffset, 1));
-    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthOffset + 1, 1));
+    // "Now" and the target month must also be figured in Adelaide local time --
+    // using the UTC calendar date near a month boundary could pick the wrong
+    // target month entirely (e.g. late in the evening Adelaide time is already
+    // past midnight UTC into the next day).
+    const nowParts = new Intl.DateTimeFormat("en-US", { timeZone: TIMEZONE, year: "numeric", month: "numeric" }).formatToParts(new Date());
+    const nowYear = Number(nowParts.find((p) => p.type === "year")!.value);
+    const nowMonth = Number(nowParts.find((p) => p.type === "month")!.value); // 1-12
+    const targetMonthIndex0 = nowMonth - 1 - monthOffset; // 0-based, can go negative/over 11
+    const targetYear = nowYear + Math.floor(targetMonthIndex0 / 12);
+    const targetMonth1to12 = ((targetMonthIndex0 % 12) + 12) % 12 + 1;
+    const nextMonthIndex0 = targetMonthIndex0 + 1;
+    const nextYear = nowYear + Math.floor(nextMonthIndex0 / 12);
+    const nextMonth1to12 = ((nextMonthIndex0 % 12) + 12) % 12 + 1;
+
+    const start = new Date(adelaideLocalMidnightUtcMs(targetYear, targetMonth1to12, 1));
+    const end = new Date(adelaideLocalMidnightUtcMs(nextYear, nextMonth1to12, 1));
 
     const qs = new URLSearchParams({
       start_date: String(start.getTime()),
@@ -241,7 +281,11 @@ Deno.serve(async (req: Request) => {
       if (deleteError) throw deleteError;
     }
 
-    const monthLabel = start.toISOString().slice(0, 7);
+    // Not start.toISOString() -- that's a UTC instant which, for a target month's
+    // Adelaide-local midnight, can land on the previous UTC calendar date/month
+    // entirely (e.g. Jan 1 00:00 ACDT is Dec 31 13:30 UTC), which would mislabel
+    // the very month this function just correctly fetched.
+    const monthLabel = monthKeyOf(targetYear, targetMonth1to12);
     await supabase.from("pginvoice_sync_meta").update({
       last_synced_at: new Date().toISOString(), last_sync_status: "ok",
       last_sync_message: `Synced ${monthRows.length} entries for ${monthLabel} (monthOffset=${monthOffset}).`,
