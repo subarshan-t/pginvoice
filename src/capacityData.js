@@ -9,6 +9,7 @@
 // Extracted here so the page and its consumers are peers, both importing
 // from a real shared module, instead of one secretly depending on the other.
 import { loadState, saveState } from "./capacityStore.js";
+import { findMatch, multiFolderMatchesFor, isInternalFolder } from "./nameMatch.js";
 
 /* ============================================================
    MONTHS / CONSTANTS
@@ -329,3 +330,104 @@ export const OWNERS = ["Holly", "Shreya", "Chloe", "Alice", "Amanda", "Lucy", "V
 ============================================================ */
 export const loadKey = loadState;
 export const saveKey = saveState;
+
+/* ============================================================
+   DEMAND — real billable-hours averages per client group (from ClickUp) and the
+   per-client/per-group monthly demand derived from them, an override, or the
+   seed actuals. Extracted out of CapacityDashboard.jsx (which used to be the
+   only place these lived, closing over its own component state) so they're
+   plain, testable functions instead.
+============================================================ */
+
+// Real billable-hours average per client GROUP, from whatever ClickUp export Client
+// Invoicing currently has loaded — trailing 6 real calendar months, billable only,
+// internal folders excluded, averaged only over the months that actually have data
+// (not padded to 6 with zeros). Matched to a group by fuzzy folder-name match, same
+// logic Client Invoicing uses to match ClickUp folders to the accrued sheet. Per-group
+// only (not split across a combined client's sub-projects) — see demandForGroup below.
+export function computeDynamicAverages(clickupData, clients) {
+  const result = new Map();
+  if (!clickupData || !clickupData.rows || !clickupData.rows.length) return result;
+  const monthSet = new Set(last6MonthKeys());
+  const perFolderMonth = new Map();
+  const folders = new Set();
+  for (const r of clickupData.rows) {
+    if (isInternalFolder(r.folder)) continue;
+    if (clickupData.hasBillable && !r.billable) continue;
+    folders.add(r.folder);
+    if (!r.monthKey || !monthSet.has(r.monthKey)) continue;
+    if (!perFolderMonth.has(r.folder)) perFolderMonth.set(r.folder, new Map());
+    const byMonth = perFolderMonth.get(r.folder);
+    byMonth.set(r.monthKey, (byMonth.get(r.monthKey) || 0) + r.minutes);
+  }
+  const folderList = [...folders];
+  const groups = [...new Set(clients.map((c) => c.group))];
+  for (const group of groups) {
+    // Some clients run their real work across several sibling ClickUp folders (Aus3C's
+    // training programs, Magain's ~20 individual-agent folders, etc.) rather than one
+    // umbrella folder -- sum minutes across all of them per month instead of picking a
+    // single best-match folder, which was silently undercounting these clients' actuals.
+    const multi = multiFolderMatchesFor(group, folderList);
+    if (multi && multi.length) {
+      const byMonth = new Map();
+      for (const f of multi) {
+        const fm = perFolderMonth.get(f);
+        if (!fm) continue;
+        for (const [mk, min] of fm) byMonth.set(mk, (byMonth.get(mk) || 0) + min);
+      }
+      if (byMonth.size === 0) continue;
+      const totalMin = [...byMonth.values()].reduce((a, b) => a + b, 0);
+      result.set(group, { avgHours: (totalMin / 60) / byMonth.size, matchedFolder: `${multi.length} folders`, monthsCounted: byMonth.size, confidence: 1 });
+      continue;
+    }
+    const match = findMatch(group, folderList);
+    if (!match) continue;
+    const byMonth = perFolderMonth.get(match.name);
+    if (!byMonth || byMonth.size === 0) continue;
+    const totalMin = [...byMonth.values()].reduce((a, b) => a + b, 0);
+    result.set(group, { avgHours: (totalMin / 60) / byMonth.size, matchedFolder: match.name, monthsCounted: byMonth.size, confidence: match.confidence });
+  }
+  return result;
+}
+
+export function trailingAverage(actuals, m) {
+  if (!actuals) return null;
+  const vals = Object.keys(actuals).filter((k) => k < m).sort().map((k) => actuals[k]);
+  if (vals.length === 0) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+export function demandFor(c, m, overrides, avgOverride) {
+  const avg = avgOverride !== undefined ? avgOverride : trailingAverage(c.actuals, m);
+  const isFixed = FIXED_BASES.includes(c.basis);
+  const agreed = agreedAt(c, m);
+  let demand;
+  if (c.offboardedFrom && m >= c.offboardedFrom) { demand = 0; }
+  else if (isFixed) { demand = (agreed !== null && agreed !== undefined) ? agreed : (avg !== null ? avg : 0); }
+  else { demand = avg !== null ? avg : (agreed !== null ? agreed : 0); }
+  const overrideKey = `${c.id}_${m}`;
+  const overridden = overrides[overrideKey];
+  if (overridden !== undefined && overridden !== null && overridden !== "") { demand = Number(overridden); }
+  return { demand, avg, isOverridden: overridden !== undefined && overridden !== null && overridden !== "" };
+}
+
+// One client (single-row group): the real average, if matched, replaces the seed
+// actuals average entirely (still subject to a manual override, same as before).
+// Combined client (several sub-projects): as long as none of the sub-projects has
+// been manually overridden, the GROUP TOTAL becomes the real average directly rather
+// than a sum of the sub-projects' own (still seed-sourced) figures — per the client's
+// call, ClickUp hours aren't split across sub-projects. But once any sub-project IS
+// manually edited, the total has to track that edit like a normal total row, so it
+// falls back to summing the (possibly-overridden) sub-project figures.
+export function demandForGroup(group, rows, m, overrides, dynamicAverages) {
+  const dyn = dynamicAverages.get(group);
+  if (rows.length === 1) {
+    const { demand, avg, isOverridden } = demandFor(rows[0], m, overrides, dyn?.avgHours);
+    return { demand, avg, isOverridden, isDynamic: !!dyn && !isOverridden, dyn };
+  }
+  const rowResults = rows.map((r) => demandFor(r, m, overrides));
+  const anyOverridden = rowResults.some((x) => x.isOverridden);
+  if (dyn && !anyOverridden) return { demand: dyn.avgHours, avg: dyn.avgHours, isOverridden: false, isDynamic: true, dyn };
+  const demand = rowResults.reduce((s, x) => s + x.demand, 0);
+  return { demand, avg: null, isOverridden: anyOverridden, isDynamic: false, dyn: null };
+}

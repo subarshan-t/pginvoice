@@ -6,6 +6,8 @@ import { normalizeName } from "./nameMatch.js";
 import { saveState } from "./capacityStore.js";
 import { PG_DATA_EVENT } from "./idbStore.js";
 import { PersonAvatar, resizePhotoFile } from "./avatar.jsx";
+import { useDismissable } from "./useDismissable.js";
+import { CAP_PEOPLE_KEY, CAP_LEAVES_KEY } from "./storageKeys.js";
 
 const uid = (p) => p + Math.random().toString(36).slice(2, 9);
 const ROLES = ["Consultant", "Coordinator"];
@@ -13,14 +15,7 @@ const STATES = ["SA", "WA", "QLD"];
 
 function Picker({ value, options, onChange }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    function onKey(e) { if (e.key === "Escape") setOpen(false); }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, []);
+  const ref = useDismissable(() => setOpen(false));
   const current = options.find((o) => o.value === value);
   return (
     <div style={{ position: "relative" }} ref={ref}>
@@ -84,7 +79,6 @@ function RosterMenu({ person, onUpdate, aliasConflict }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const btnRef = useRef(null);
-  const menuRef = useRef(null);
 
   const openMenu = () => {
     const r = btnRef.current.getBoundingClientRect();
@@ -98,26 +92,8 @@ function RosterMenu({ person, onUpdate, aliasConflict }) {
     setOpen(true);
   };
 
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e) {
-      if (menuRef.current && menuRef.current.contains(e.target)) return;
-      if (btnRef.current && btnRef.current.contains(e.target)) return;
-      setOpen(false);
-    }
-    function onScrollOrResize() { setOpen(false); }
-    function onKey(e) { if (e.key === "Escape") setOpen(false); }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", onScrollOrResize, true);
-    window.addEventListener("resize", onScrollOrResize);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", onScrollOrResize, true);
-      window.removeEventListener("resize", onScrollOrResize);
-    };
-  }, [open]);
+  const dismiss = useCallback(() => setOpen(false), []);
+  const menuRef = useDismissable(dismiss, { extraRef: btnRef, onReposition: dismiss });
 
   return (
     <>
@@ -242,10 +218,10 @@ function TeamDashboardInner() {
   // and vice versa.
   useEffect(() => {
     let cancelled = false;
-    const load = () => loadKey("cap_leaves", {}).then((v) => { if (!cancelled) setLeaves(v); }).catch((e) => { if (!cancelled) console.error("Couldn't load leaves:", e); });
+    const load = () => loadKey(CAP_LEAVES_KEY, {}).then((v) => { if (!cancelled) setLeaves(v); }).catch((e) => { if (!cancelled) console.error("Couldn't load leaves:", e); });
     load();
     const onUpdate = (e) => {
-      if (e.detail && e.detail.key !== "cap_leaves") return;
+      if (e.detail && e.detail.key !== CAP_LEAVES_KEY) return;
       if (ownWriteLeaves.current) { ownWriteLeaves.current = false; return; }
       load();
     };
@@ -257,7 +233,7 @@ function TeamDashboardInner() {
     setLeaves((prev) => {
       const next = { ...prev, [`${personId}_${month}`]: hrs === "" ? 0 : Number(hrs) };
       ownWriteLeaves.current = true;
-      saveState("cap_leaves", next).then(flashSaved).catch((e) => setSaveError(`Couldn't save leave hours: ${e.message || e}`));
+      saveState(CAP_LEAVES_KEY, next).then(flashSaved).catch((e) => setSaveError(`Couldn't save leave hours: ${e.message || e}`));
       return next;
     });
   }, [month]);
@@ -267,14 +243,14 @@ function TeamDashboardInner() {
   // there — and vice versa — via the shared PG_DATA_EVENT both modules listen for.
   useEffect(() => {
     let cancelled = false;
-    const load = () => loadKey("cap_people", SEED_PEOPLE).then((v) => { if (!cancelled) setPeople(v); });
+    const load = () => loadKey(CAP_PEOPLE_KEY, SEED_PEOPLE).then((v) => { if (!cancelled) setPeople(v); });
     // `loaded` (which gates the save-effect below) is only set true on a confirmed
     // successful load -- a failed load leaves it false, so the save-effect never runs
     // and this component's still-SEED_PEOPLE in-memory state never gets written back
     // over real Supabase data (see capacityStore.js for why that matters).
     load().then(() => { if (!cancelled) setLoaded(true); }).catch((e) => { if (!cancelled) setLoadError(e.message || String(e)); });
     const onUpdate = (e) => {
-      if (e.detail && e.detail.key !== "cap_people") return;
+      if (e.detail && e.detail.key !== CAP_PEOPLE_KEY) return;
       if (ownWrite.current) { ownWrite.current = false; return; }
       load().catch((e) => console.error("Couldn't reload people:", e));
     };
@@ -284,7 +260,7 @@ function TeamDashboardInner() {
   useEffect(() => {
     if (!loaded) return;
     ownWrite.current = true;
-    saveState("cap_people", people).then(() => { setSaveError(null); flashSaved(); }).catch((e) => setSaveError(`Couldn't save: ${e.message || e}`));
+    saveState(CAP_PEOPLE_KEY, people).then(() => { setSaveError(null); flashSaved(); }).catch((e) => setSaveError(`Couldn't save: ${e.message || e}`));
   }, [people, loaded, flashSaved]);
 
   const updatePerson = useCallback((id, field, value) => {

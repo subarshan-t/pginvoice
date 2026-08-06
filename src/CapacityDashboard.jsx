@@ -4,14 +4,20 @@ import {
   ChevronDown, ChevronRight, ChevronLeft, ChevronsDown, ChevronsUp, Check, X, Plus, Pencil, Search, Download, AlertTriangle, Zap,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, multiFolderMatchesFor, isInternalFolder, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
+import { findMatch, multiFolderMatchesFor, basisToClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
 import { PersonAvatar } from "./avatar.jsx";
 import { fetchClients as fetchPgClients, createClient as createPgClient, createClientEvent, applyDueClientEvents } from "./clientsSync.js";
 import {
   MONTHS, CURRENT_MONTH, MONTH_LABELS, resignationStatus, computeMonthlyAvailability,
-  last6MonthKeys, holidaysInMonthGrouped, uid, FIXED_BASES, agreedAt,
+  holidaysInMonthGrouped, uid, FIXED_BASES, agreedAt,
   SEED_PEOPLE, SEED_CLIENTS, SEED_SUPPORT, OWNERS, loadKey, saveKey,
+  computeDynamicAverages, demandFor, demandForGroup,
 } from "./capacityData.js";
+import { useDismissable } from "./useDismissable.js";
+import {
+  CLICKUP_DB_KEY, CAP_CLIENTS_KEY, CAP_PEOPLE_KEY, CAP_SUPPORT_KEY,
+  CAP_NOTES_KEY, CAP_LEAVES_KEY, CAP_OVERRIDES_KEY, PG_CLIENTS_KEY,
+} from "./storageKeys.js";
 
 
 /* ============================================================
@@ -19,14 +25,7 @@ import {
 ============================================================ */
 function Picker({ value, label, options, onChange }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    function onKey(e) { if (e.key === "Escape") setOpen(false); }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, []);
+  const ref = useDismissable(() => setOpen(false));
   const current = options.find((o) => o.value === value);
   return (
     <div style={{ position: "relative" }} ref={ref}>
@@ -145,9 +144,9 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   const [clickupData, setClickupData] = useState(null);
   useEffect(() => {
     let cancelled = false;
-    const load = () => idbGet("clickup").then((v) => { if (!cancelled) setClickupData(v || null); });
+    const load = () => idbGet(CLICKUP_DB_KEY).then((v) => { if (!cancelled) setClickupData(v || null); });
     load();
-    const onUpdate = (e) => { if (!e.detail || e.detail.key === "clickup") load(); };
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === CLICKUP_DB_KEY) load(); };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);
@@ -173,7 +172,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
     // Every module reading pginvoice_clients stays mounted for the session (no remount on
     // tab switch), so a change made in the Clients module needs this explicit signal to be
     // picked up here without a full page reload.
-    const onUpdate = (e) => { if (!e.detail || e.detail.key === "pg_clients") loadPgClients(); };
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === PG_CLIENTS_KEY) loadPgClients(); };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => window.removeEventListener(PG_DATA_EVENT, onUpdate);
   }, [loadPgClients]);
@@ -183,12 +182,12 @@ function CapacityDashboardInner({ onNavigateTeam }) {
     (async () => {
       try {
         const [ppl, clis, supp, loadedNotes, lvs, ovr] = await Promise.all([
-          loadKey("cap_people", SEED_PEOPLE),
-          loadKey("cap_clients", SEED_CLIENTS),
-          loadKey("cap_support", SEED_SUPPORT),
-          loadKey("cap_notes", []),
-          loadKey("cap_leaves", {}),
-          loadKey("cap_overrides", {}),
+          loadKey(CAP_PEOPLE_KEY, SEED_PEOPLE),
+          loadKey(CAP_CLIENTS_KEY, SEED_CLIENTS),
+          loadKey(CAP_SUPPORT_KEY, SEED_SUPPORT),
+          loadKey(CAP_NOTES_KEY, []),
+          loadKey(CAP_LEAVES_KEY, {}),
+          loadKey(CAP_OVERRIDES_KEY, {}),
         ]);
         if (cancelled) return;
         setPeople(ppl);
@@ -231,12 +230,12 @@ function CapacityDashboardInner({ onNavigateTeam }) {
       savedFlashTimer.current = setTimeout(() => setSavedFlash(false), 1800);
     }).catch((e) => setSaveError(`Couldn't save (${key.replace("cap_", "")}): ${e.message || e}`));
   }, []);
-  useEffect(() => { if (loaded) guardedSave("cap_people", people); }, [people, loaded, guardedSave]);
-  useEffect(() => { if (loaded) guardedSave("cap_clients", clients); }, [clients, loaded, guardedSave]);
-  useEffect(() => { if (loaded) guardedSave("cap_support", support); }, [support, loaded, guardedSave]);
-  useEffect(() => { if (loaded) guardedSave("cap_notes", notes); }, [notes, loaded, guardedSave]);
-  useEffect(() => { if (loaded) guardedSave("cap_leaves", leaves); }, [leaves, loaded, guardedSave]);
-  useEffect(() => { if (loaded) guardedSave("cap_overrides", overrides); }, [overrides, loaded, guardedSave]);
+  useEffect(() => { if (loaded) guardedSave(CAP_PEOPLE_KEY, people); }, [people, loaded, guardedSave]);
+  useEffect(() => { if (loaded) guardedSave(CAP_CLIENTS_KEY, clients); }, [clients, loaded, guardedSave]);
+  useEffect(() => { if (loaded) guardedSave(CAP_SUPPORT_KEY, support); }, [support, loaded, guardedSave]);
+  useEffect(() => { if (loaded) guardedSave(CAP_NOTES_KEY, notes); }, [notes, loaded, guardedSave]);
+  useEffect(() => { if (loaded) guardedSave(CAP_LEAVES_KEY, leaves); }, [leaves, loaded, guardedSave]);
+  useEffect(() => { if (loaded) guardedSave(CAP_OVERRIDES_KEY, overrides); }, [overrides, loaded, guardedSave]);
 
   const resetSample = useCallback(() => {
     if (!window.confirm("Reset to sample data? This replaces every current person, client, support allocation, note, leave entry, and override with the seed data — this cannot be undone.")) return;
@@ -292,90 +291,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   // (not padded to 6 with zeros). Matched to a group by fuzzy folder-name match, same
   // logic Client Invoicing uses to match ClickUp folders to the accrued sheet. Per-group
   // only (not split across a combined client's sub-projects) — see demandForGroup below.
-  const dynamicAverages = useMemo(() => {
-    const result = new Map();
-    if (!clickupData || !clickupData.rows || !clickupData.rows.length) return result;
-    const monthSet = new Set(last6MonthKeys());
-    const perFolderMonth = new Map();
-    const folders = new Set();
-    for (const r of clickupData.rows) {
-      if (isInternalFolder(r.folder)) continue;
-      if (clickupData.hasBillable && !r.billable) continue;
-      folders.add(r.folder);
-      if (!r.monthKey || !monthSet.has(r.monthKey)) continue;
-      if (!perFolderMonth.has(r.folder)) perFolderMonth.set(r.folder, new Map());
-      const byMonth = perFolderMonth.get(r.folder);
-      byMonth.set(r.monthKey, (byMonth.get(r.monthKey) || 0) + r.minutes);
-    }
-    const folderList = [...folders];
-    const groups = [...new Set(clients.map((c) => c.group))];
-    for (const group of groups) {
-      // Some clients run their real work across several sibling ClickUp folders (Aus3C's
-      // training programs, Magain's ~20 individual-agent folders, etc.) rather than one
-      // umbrella folder -- sum minutes across all of them per month instead of picking a
-      // single best-match folder, which was silently undercounting these clients' actuals.
-      const multi = multiFolderMatchesFor(group, folderList);
-      if (multi && multi.length) {
-        const byMonth = new Map();
-        for (const f of multi) {
-          const fm = perFolderMonth.get(f);
-          if (!fm) continue;
-          for (const [mk, min] of fm) byMonth.set(mk, (byMonth.get(mk) || 0) + min);
-        }
-        if (byMonth.size === 0) continue;
-        const totalMin = [...byMonth.values()].reduce((a, b) => a + b, 0);
-        result.set(group, { avgHours: (totalMin / 60) / byMonth.size, matchedFolder: `${multi.length} folders`, monthsCounted: byMonth.size, confidence: 1 });
-        continue;
-      }
-      const match = findMatch(group, folderList);
-      if (!match) continue;
-      const byMonth = perFolderMonth.get(match.name);
-      if (!byMonth || byMonth.size === 0) continue;
-      const totalMin = [...byMonth.values()].reduce((a, b) => a + b, 0);
-      result.set(group, { avgHours: (totalMin / 60) / byMonth.size, matchedFolder: match.name, monthsCounted: byMonth.size, confidence: match.confidence });
-    }
-    return result;
-  }, [clickupData, clients]);
-
-  function trailingAverage(actuals, m) {
-    if (!actuals) return null;
-    const vals = Object.keys(actuals).filter((k) => k < m).sort().map((k) => actuals[k]);
-    if (vals.length === 0) return null;
-    return vals.reduce((a, b) => a + b, 0) / vals.length;
-  }
-  function demandFor(c, m, avgOverride) {
-    const avg = avgOverride !== undefined ? avgOverride : trailingAverage(c.actuals, m);
-    const isFixed = FIXED_BASES.includes(c.basis);
-    const agreed = agreedAt(c, m);
-    let demand;
-    if (c.offboardedFrom && m >= c.offboardedFrom) { demand = 0; }
-    else if (isFixed) { demand = (agreed !== null && agreed !== undefined) ? agreed : (avg !== null ? avg : 0); }
-    else { demand = avg !== null ? avg : (agreed !== null ? agreed : 0); }
-    const overrideKey = `${c.id}_${m}`;
-    const overridden = overrides[overrideKey];
-    if (overridden !== undefined && overridden !== null && overridden !== "") { demand = Number(overridden); }
-    return { demand, avg, isOverridden: overridden !== undefined && overridden !== null && overridden !== "" };
-  }
-  // One client (single-row group): the real average, if matched, replaces the seed
-  // actuals average entirely (still subject to a manual override, same as before).
-  // Combined client (several sub-projects): as long as none of the sub-projects has
-  // been manually overridden, the GROUP TOTAL becomes the real average directly rather
-  // than a sum of the sub-projects' own (still seed-sourced) figures — per the client's
-  // call, ClickUp hours aren't split across sub-projects. But once any sub-project IS
-  // manually edited, the total has to track that edit like a normal total row, so it
-  // falls back to summing the (possibly-overridden) sub-project figures.
-  function demandForGroup(group, rows, m) {
-    const dyn = dynamicAverages.get(group);
-    if (rows.length === 1) {
-      const { demand, avg, isOverridden } = demandFor(rows[0], m, dyn?.avgHours);
-      return { demand, avg, isOverridden, isDynamic: !!dyn && !isOverridden, dyn };
-    }
-    const rowResults = rows.map((r) => demandFor(r, m));
-    const anyOverridden = rowResults.some((x) => x.isOverridden);
-    if (dyn && !anyOverridden) return { demand: dyn.avgHours, avg: dyn.avgHours, isOverridden: false, isDynamic: true, dyn };
-    const demand = rowResults.reduce((s, x) => s + x.demand, 0);
-    return { demand, avg: null, isOverridden: anyOverridden, isDynamic: false, dyn: null };
-  }
+  const dynamicAverages = useMemo(() => computeDynamicAverages(clickupData, clients), [clickupData, clients]);
   const setOverride = (clientId, m, value) => setOverrides((prev) => ({ ...prev, [`${clientId}_${m}`]: value === "" ? null : Number(value) }));
   const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -513,7 +429,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   const demandByOwner = useMemo(() => {
     const m = {};
     Object.entries(groupedByOwner).forEach(([owner, groups]) => {
-      groups.forEach((g) => { m[owner] = (m[owner] || 0) + demandForGroup(g.group, g.rows, month).demand; });
+      groups.forEach((g) => { m[owner] = (m[owner] || 0) + demandForGroup(g.group, g.rows, month, overrides, dynamicAverages).demand; });
     });
     return m;
   }, [groupedByOwner, month, overrides, dynamicAverages]);
@@ -543,7 +459,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
 
   const totalDemand = useMemo(() => {
     let s = 0;
-    Object.values(groupedByOwner).forEach((groups) => groups.forEach((g) => { s += demandForGroup(g.group, g.rows, month).demand; }));
+    Object.values(groupedByOwner).forEach((groups) => groups.forEach((g) => { s += demandForGroup(g.group, g.rows, month, overrides, dynamicAverages).demand; }));
     return s;
   }, [groupedByOwner, month, overrides, dynamicAverages]);
   const totalCapacity = useMemo(() => people.reduce((s, p) => s + (peopleMap[p.name] ? peopleMap[p.name].monthly : 0), 0), [people, peopleMap]);
@@ -638,7 +554,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
     const demandHeader = ["Consultant", "Client", "Client Group", "Basis", "Agreed Hrs", "Average Hrs (trailing)", "Projected Hrs", "Manually Overridden?"];
     const demandRows = [demandHeader];
     syncedClients.filter((c) => c._effectiveStatus === "active").forEach((c) => {
-      const { demand, avg, isOverridden } = demandFor(c, month);
+      const { demand, avg, isOverridden } = demandFor(c, month, overrides);
       demandRows.push([c.lead, c.client, c.group, c.basis, agreedAt(c, month) ?? "", avg !== null ? Number(avg.toFixed(1)) : "", Number(demand.toFixed(1)), isOverridden ? "Yes" : "No"]);
     });
     const wsDemand = XLSX.utils.aoa_to_sheet(demandRows);
@@ -802,7 +718,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                           const isMulti = g.rows.length > 1;
                           if (!isMulti) {
                             const r = g.rows[0];
-                            const { demand, avg, isOverridden, isDynamic, dyn } = demandForGroup(g.group, g.rows, month);
+                            const { demand, avg, isOverridden, isDynamic, dyn } = demandForGroup(g.group, g.rows, month, overrides, dynamicAverages);
                             return (
                               <tr key={g.group}>
                                 <td>
@@ -839,7 +755,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                           }
                           const groupKey = `${owner}::${g.group}`;
                           const groupOpen = !!expandedGroups[groupKey];
-                          const { demand: gDemand, isDynamic: gIsDynamic, dyn: gDyn } = demandForGroup(g.group, g.rows, month);
+                          const { demand: gDemand, isDynamic: gIsDynamic, dyn: gDyn } = demandForGroup(g.group, g.rows, month, overrides, dynamicAverages);
                           return (
                             <React.Fragment key={g.group}>
                               <tr>
@@ -860,7 +776,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                                 <td className="right num"><b>{gDemand.toFixed(1)}</b></td>
                               </tr>
                               {groupOpen && g.rows.map((r) => {
-                                const { demand, avg, isOverridden } = demandFor(r, month);
+                                const { demand, avg, isOverridden } = demandFor(r, month, overrides);
                                 return (
                                   <tr key={r.id}>
                                     <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !multiFolderMatchesFor(r.group, [...realFolderSet])?.length && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}</td>

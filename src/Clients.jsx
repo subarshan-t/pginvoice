@@ -2,8 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Search, ArrowRight, Pencil, Check, AlertTriangle } from "lucide-react";
 import { fetchClients, fetchClientEvents, createClientEvent, applyDueClientEvents, updateClickupFolder } from "./clientsSync.js";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-
-const CLICKUP_DB_KEY = "clickup";
+import { CLICKUP_DB_KEY, PG_CLIENTS_KEY } from "./storageKeys.js";
 
 const TYPE_LABEL = {
   package: "Package", hourly: "Hourly", quoted: "Quoted", queensland: "Queensland",
@@ -212,10 +211,10 @@ export default function Clients() {
     load();
     loadFolders();
     const onUpdate = (e) => {
-      if (!e.detail || e.detail.key === "clickup") loadFolders();
+      if (!e.detail || e.detail.key === CLICKUP_DB_KEY) loadFolders();
       // A consultant/status/new-client change made from Capacity Planning writes to the same
       // pginvoice_clients table -- refresh so it shows here without a full page reload.
-      if (!e.detail || e.detail.key === "pg_clients") load();
+      if (!e.detail || e.detail.key === PG_CLIENTS_KEY) load();
     };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => window.removeEventListener(PG_DATA_EVENT, onUpdate);

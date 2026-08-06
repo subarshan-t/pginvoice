@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Search, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findPersonMatch } from "./nameMatch.js";
 import { SEED_PEOPLE, loadKey } from "./capacityData.js";
 import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
+import { SearchBox } from "./SearchBox.jsx";
+import { CLICKUP_DB_KEY, CAP_PEOPLE_KEY } from "./storageKeys.js";
 
-const CLICKUP_DB_KEY = "clickup";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 // The browser's "Save as PDF" dialog suggests <title> as the default filename —
 // strip characters illegal in filenames on Windows/macOS.
@@ -42,37 +43,6 @@ function computeWeeks(monthKeyStr) {
     weeks.push({ start, end, days: daysArr });
   }
   return weeks;
-}
-
-function SearchBox({ label, value, onChange, options, onSelect }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    function onKey(e) { if (e.key === "Escape") setOpen(false); }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, []);
-  const matches = useMemo(() => {
-    if (!options) return [];
-    const q = (value || "").trim().toLowerCase();
-    const pool = q ? options.filter((o) => o.toLowerCase().includes(q)) : options;
-    return pool.slice(0, 8);
-  }, [options, value]);
-  return (
-    <label className="pg-field" style={{ position: "relative", width: 240 }} ref={ref}>
-      <span className="pg-field__label"><Search size={11} /> {label}</span>
-      <input className="pg-input" value={value} onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder={`Search ${label.toLowerCase()}…`} autoComplete="off" />
-      {open && options && matches.length > 0 && (
-        <div className="pg-menu" style={{ width: "100%", top: "calc(100% + 2px)" }}>
-          {matches.map((m) => (
-            <button key={m} type="button" className="pg-menu-item" onClick={() => { onChange(m); if (onSelect) onSelect(m); setOpen(false); }}>{m}</button>
-          ))}
-        </div>
-      )}
-    </label>
-  );
 }
 
 class ErrorBoundary extends React.Component {
@@ -207,14 +177,14 @@ function TimesheetInner() {
       // Read-only here (this module never writes cap_people) -- a failed load just
       // means this render keeps whatever people data it already had.
       try {
-        setPeople(await loadKey("cap_people", SEED_PEOPLE));
+        setPeople(await loadKey(CAP_PEOPLE_KEY, SEED_PEOPLE));
       } catch (e) {
         console.error("Timesheet Summary: couldn't load people data:", e);
       }
       setLoaded(true);
     };
     load();
-    const onUpdate = (e) => { if (!e.detail || ["clickup", "cap_people"].includes(e.detail.key)) load(); };
+    const onUpdate = (e) => { if (!e.detail || [CLICKUP_DB_KEY, CAP_PEOPLE_KEY].includes(e.detail.key)) load(); };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);

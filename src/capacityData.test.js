@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { agreedAt, computeMonthlyAvailability, resignationStatus } from "./capacityData.js";
+import {
+  agreedAt, computeMonthlyAvailability, resignationStatus,
+  demandFor, demandForGroup, computeDynamicAverages,
+} from "./capacityData.js";
 import { adelaideLocalMidnightUtcMs } from "./dateMath.js";
 
 describe("agreedAt", () => {
@@ -72,6 +75,111 @@ describe("computeMonthlyAvailability", () => {
     const result = computeMonthlyAvailability(person, "2026-05", 0);
     expect(result.billableHours).toBeCloseTo(result.totalMonthlyHours * person.rate, 5);
     expect(result.billableHours + result.nonBillableHours).toBeCloseTo(result.totalMonthlyHours, 5);
+  });
+});
+
+describe("demandFor", () => {
+  const fixedClient = { id: "c1", basis: "Package", agreed: 20, actuals: { "2026-03": 10, "2026-04": 12 } };
+  const variableClient = { id: "c2", basis: "Hourly", agreed: 0, actuals: { "2026-03": 8, "2026-04": 10 } };
+
+  it("a fixed-basis client demands its agreed hours, not its actuals average", () => {
+    const { demand, isOverridden } = demandFor(fixedClient, "2026-05", {});
+    expect(demand).toBe(20);
+    expect(isOverridden).toBe(false);
+  });
+
+  it("a variable-basis client demands its trailing actuals average", () => {
+    const { demand } = demandFor(variableClient, "2026-05", {});
+    expect(demand).toBeCloseTo(9, 5); // average of 8 and 10
+  });
+
+  it("an override value wins over the computed default", () => {
+    const overrides = { "c1_2026-05": 33 };
+    const { demand, isOverridden } = demandFor(fixedClient, "2026-05", overrides);
+    expect(demand).toBe(33);
+    expect(isOverridden).toBe(true);
+  });
+
+  it("an offboarded client's demand goes to zero once offboarded", () => {
+    const offboarded = { ...fixedClient, offboardedFrom: "2026-05" };
+    expect(demandFor(offboarded, "2026-04", {}).demand).toBe(20);
+    expect(demandFor(offboarded, "2026-05", {}).demand).toBe(0);
+    expect(demandFor(offboarded, "2026-06", {}).demand).toBe(0);
+  });
+});
+
+describe("demandForGroup", () => {
+  const rowA = { id: "a1", basis: "Package", agreed: 15, actuals: {} };
+  const rowB = { id: "a2", basis: "Project", agreed: 5, actuals: {} };
+
+  it("a single-row group behaves the same as demandFor on that row", () => {
+    const result = demandForGroup("Solo Client", [rowA], "2026-05", {}, new Map());
+    expect(result.demand).toBe(15);
+  });
+
+  it("a multi-row Combined group sums each sub-row's demand when nothing is overridden and there's no dynamic average", () => {
+    const result = demandForGroup("Combined Client", [rowA, rowB], "2026-05", {}, new Map());
+    expect(result.demand).toBe(20);
+    expect(result.isDynamic).toBe(false);
+  });
+
+  it("a multi-row group with a matched dynamic average uses the group total directly instead of summing sub-rows", () => {
+    const dyn = new Map([["Combined Client", { avgHours: 42, matchedFolder: "2 folders", monthsCounted: 3, confidence: 1 }]]);
+    const result = demandForGroup("Combined Client", [rowA, rowB], "2026-05", {}, dyn);
+    expect(result.demand).toBe(42);
+    expect(result.isDynamic).toBe(true);
+  });
+});
+
+describe("computeDynamicAverages", () => {
+  const clients = [{ group: "Aus3C" }, { group: "Solo Client" }];
+
+  it("returns an empty map when there's no ClickUp data", () => {
+    expect(computeDynamicAverages(null, clients).size).toBe(0);
+    expect(computeDynamicAverages({ rows: [] }, clients).size).toBe(0);
+  });
+
+  it("sums minutes across all of a multi-folder client's real folders, per month", () => {
+    const clickupData = {
+      hasBillable: false,
+      rows: [
+        { folder: "Aus3C Cyber Battle", monthKey: "2026-06", minutes: 60, billable: true },
+        { folder: "Aus3C IRAP", monthKey: "2026-06", minutes: 120, billable: true },
+        { folder: "Aus3C Cyber Battle", monthKey: "2026-05", minutes: 60, billable: true },
+        { folder: "Aus3C IRAP", monthKey: "2026-05", minutes: 60, billable: true },
+      ],
+    };
+    const result = computeDynamicAverages(clickupData, clients);
+    const aus3c = result.get("Aus3C");
+    expect(aus3c).toBeDefined();
+    expect(aus3c.monthsCounted).toBe(2);
+    // (180 min + 120 min) / 60 / 2 months = 2.5h avg
+    expect(aus3c.avgHours).toBeCloseTo(2.5, 5);
+  });
+
+  it("uses a single best-match folder (not multi-folder summing) for an ordinary client", () => {
+    const clickupData = {
+      hasBillable: false,
+      rows: [
+        { folder: "Solo Client", monthKey: "2026-06", minutes: 120, billable: true },
+        { folder: "Unrelated Folder", monthKey: "2026-06", minutes: 999, billable: true },
+      ],
+    };
+    const result = computeDynamicAverages(clickupData, clients);
+    const solo = result.get("Solo Client");
+    expect(solo).toBeDefined();
+    expect(solo.matchedFolder).toBe("Solo Client");
+    expect(solo.avgHours).toBeCloseTo(2, 5);
+  });
+
+  it("a client with no months of matching actuals data is skipped entirely (not present in the result)", () => {
+    const clickupData = {
+      hasBillable: false,
+      rows: [{ folder: "Totally Unrelated", monthKey: "2026-06", minutes: 60, billable: true }],
+    };
+    const result = computeDynamicAverages(clickupData, clients);
+    expect(result.has("Solo Client")).toBe(false);
+    expect(result.has("Aus3C")).toBe(false);
   });
 });
 

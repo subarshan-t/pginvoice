@@ -6,8 +6,10 @@ import {
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, multiFolderMatchesFor, findPersonMatch, isInternalFolder, basisToClientType, dominantClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
 import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey, agreedAt } from "./capacityData.js";
+import { useDismissable } from "./useDismissable.js";
+import { SearchBox } from "./SearchBox.jsx";
+import { CLICKUP_DB_KEY, CAP_CLIENTS_KEY, CAP_PEOPLE_KEY } from "./storageKeys.js";
 
-const CLICKUP_DB_KEY = "clickup";
 const NOTES_KEY = "perf_notes_v1";
 
 function monthLabelShort(key) {
@@ -19,19 +21,12 @@ const fmt1 = (n) => (n === null || n === undefined || isNaN(n)) ? "—" : n.toFi
 const fmt0 = (n) => (n === null || n === undefined || isNaN(n)) ? "—" : n.toFixed(0);
 
 /* ============================================================
-   PICKER / SEARCHBOX — same pattern as Capacity Planning's, kept
-   local since it's a small dumb dropdown, not worth sharing.
+   PICKER — same pattern as Capacity Planning's, kept local since
+   it's a small dumb dropdown, not worth sharing.
 ============================================================ */
 function Picker({ value, options, onChange, placeholder }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    function onKey(e) { if (e.key === "Escape") setOpen(false); }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, []);
+  const ref = useDismissable(() => setOpen(false));
   const current = options.find((o) => o.value === value);
   return (
     <div style={{ position: "relative" }} ref={ref}>
@@ -49,36 +44,6 @@ function Picker({ value, options, onChange, placeholder }) {
         </div>
       )}
     </div>
-  );
-}
-function SearchBox({ label, value, onChange, options, onSelect }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    function onKey(e) { if (e.key === "Escape") setOpen(false); }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, []);
-  const matches = useMemo(() => {
-    if (!options) return [];
-    const q = (value || "").trim().toLowerCase();
-    const pool = q ? options.filter((o) => o.toLowerCase().includes(q)) : options;
-    return pool.slice(0, 8);
-  }, [options, value]);
-  return (
-    <label className="pg-field" style={{ position: "relative", width: 220 }} ref={ref}>
-      <span className="pg-field__label"><Search size={11} /> {label}</span>
-      <input className="pg-input" value={value} onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder={`Search ${label.toLowerCase()}…`} autoComplete="off" />
-      {open && options && matches.length > 0 && (
-        <div className="pg-menu" style={{ width: "100%", top: "calc(100% + 2px)" }}>
-          {matches.map((m) => (
-            <button key={m} type="button" className="pg-menu-item" onClick={() => { onChange(m); if (onSelect) onSelect(m); setOpen(false); }}>{m}</button>
-          ))}
-        </div>
-      )}
-    </label>
   );
 }
 
@@ -231,8 +196,8 @@ function PerformanceInner() {
       // load just means this render stays on whatever it had before -- log it rather
       // than let it become an unhandled rejection that blanks the module.
       try {
-        setClients(await loadKey("cap_clients", SEED_CLIENTS));
-        setPeople(await loadKey("cap_people", SEED_PEOPLE));
+        setClients(await loadKey(CAP_CLIENTS_KEY, SEED_CLIENTS));
+        setPeople(await loadKey(CAP_PEOPLE_KEY, SEED_PEOPLE));
       } catch (e) {
         console.error("Performance: couldn't load client/people data:", e);
       }
@@ -245,7 +210,7 @@ function PerformanceInner() {
       setLoaded(true);
     };
     load();
-    const onUpdate = (e) => { if (!e.detail || ["clickup", "cap_clients", "cap_people"].includes(e.detail.key)) load(); };
+    const onUpdate = (e) => { if (!e.detail || [CLICKUP_DB_KEY, CAP_CLIENTS_KEY, CAP_PEOPLE_KEY].includes(e.detail.key)) load(); };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);
@@ -764,7 +729,7 @@ function PerformanceInner() {
       {tab === "client" && (
         <>
           <div className="pg-panel">
-            <SearchBox label="Client" value={qClient} onChange={setQClient} options={groups.map((g) => g.group)} onSelect={(name) => setSelectedClient(name)} />
+            <SearchBox label="Client" value={qClient} onChange={setQClient} options={groups.map((g) => g.group)} onSelect={(name) => setSelectedClient(name)} width={220} />
             <label className="pg-field">
               <span className="pg-field__label">Type</span>
               <div style={{ width: 170 }}><Picker value={qBasis} options={basisOptions} onChange={setQBasis} /></div>
@@ -845,7 +810,7 @@ function PerformanceInner() {
       {tab === "team" && (
         <>
           <div className="pg-panel">
-            <SearchBox label="Consultant" value={qConsultant} onChange={setQConsultant} options={teamRoster.map((t) => t.name)} onSelect={(name) => setSelectedConsultant(name)} />
+            <SearchBox label="Consultant" value={qConsultant} onChange={setQConsultant} options={teamRoster.map((t) => t.name)} onSelect={(name) => setSelectedConsultant(name)} width={220} />
             <button className="pg-btn" style={{ marginLeft: "auto" }} onClick={exportXlsx}><Download size={14} /> Export</button>
           </div>
 

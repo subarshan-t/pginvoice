@@ -5,13 +5,14 @@
 // math stays correct across a client's package changing mid-year.
 import { supabase } from "./supabaseClient.js";
 import { PG_DATA_EVENT } from "./idbStore.js";
+import { PG_CLIENTS_KEY } from "./storageKeys.js";
 
 // Every module (Clients, Capacity Planning) that reads pginvoice_clients stays mounted for
 // the whole session rather than remounting on tab switch, so a change made in one won't be
 // picked up by the other without an explicit signal -- broadcast the same event the rest of
 // the app already uses for cross-module refresh whenever this table changes.
 function notifyClientsChanged() {
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PG_DATA_EVENT, { detail: { key: "pg_clients" } }));
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PG_DATA_EVENT, { detail: { key: PG_CLIENTS_KEY } }));
 }
 
 export async function fetchClients() {

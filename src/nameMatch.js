@@ -99,6 +99,9 @@ export function basisToClientType(basis) {
   if (b === "Quoted") return "quoted";
   if (b === "Project") return "project";
   if (b === "Ad hoc") return "ad_hoc";
+  if (b !== "" && b !== "Hourly") {
+    console.warn(`basisToClientType: unrecognized basis "${basis}", defaulting to "hourly"`);
+  }
   return "hourly"; // Hourly or unrecognised
 }
 

@@ -6,75 +6,20 @@ import {
   AlertTriangle, Link2, FileSpreadsheet, FileText, Printer, Users, ArrowUpDown, BarChart3, Clock,
   RefreshCw, Wifi, WifiOff, X, ArrowLeft, MoreVertical, TrendingUp, TrendingDown,
 } from "lucide-react";
-import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
-import { NORDIQUE_FONT_FACE_CSS } from "./nordiqueFont.js";
 import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, findPersonMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, dominantClientType, basisToClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync } from "./clickupSync.js";
 import { SEED_CLIENTS as CAP_SEED_CLIENTS, SEED_PEOPLE, loadKey as loadCapKey } from "./capacityData.js";
 import { fetchClients as fetchPgClients, fetchClientEvents, applyDueClientEvents, typeForMonth } from "./clientsSync.js";
 import { PersonAvatar } from "./avatar.jsx";
-
-// ---------------------------- time text → minutes ----------------------------
-function parseTimeTextToMinutes(raw) {
-  if (raw === null || raw === undefined) return 0;
-  const s = String(raw).trim().toLowerCase();
-  if (!s || s === "-" || s === "--") return 0;
-  const colon = s.match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
-  if (colon) return parseInt(colon[1], 10) * 60 + parseInt(colon[2], 10) + (colon[3] ? parseInt(colon[3], 10) / 60 : 0);
-  if (/[hms]/.test(s)) {
-    const h = s.match(/(\d+(?:\.\d+)?)\s*h/);
-    const m = s.match(/(\d+(?:\.\d+)?)\s*m/);
-    const sec = s.match(/(\d+(?:\.\d+)?)\s*s(?!\w)/);
-    if (h || m || sec) return (h ? parseFloat(h[1]) * 60 : 0) + (m ? parseFloat(m[1]) : 0) + (sec ? parseFloat(sec[1]) / 60 : 0);
-  }
-  const n = parseFloat(s.replace(/,/g, ""));
-  if (isNaN(n)) return 0;
-  if (n > 0 && n < 1) return n * 24 * 60;
-  return n;
-}
-function msToMinutes(raw) {
-  const n = parseFloat(String(raw).replace(/,/g, ""));
-  if (isNaN(n) || n <= 0) return 0;
-  return n / 60000;
-}
-const fmt = (hrs, dec = 2) =>
-  Number.isFinite(hrs)
-    ? (Math.round(hrs * Math.pow(10, dec)) / Math.pow(10, dec)).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec })
-    : "—";
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-// The browser's "Save as PDF" dialog suggests <title> as the default filename —
-// strip characters that are illegal in filenames on Windows/macOS (some client
-// names contain "/", e.g. "BAMSS / Childcare Sec Services") so that suggestion
-// doesn't get silently mangled or rejected.
-const filenameSafe = (s) => String(s ?? "").replace(/[\\/:*?"<>|]/g, "-").trim();
-function timeAgo(iso) {
-  if (!iso) return null;
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const mins = Math.round(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
-  const days = Math.round(hrs / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
-}
-// "Priya" for a single contributor; "Priya (18.00h), Suba (4.00h)" when more than one logged
-// time against the same task — hours already shown in the Hours column, so only spelled out
-// per-person when there's more than one name to disambiguate.
-function formatTaskUsers(userMinutesMap) {
-  if (!userMinutesMap || userMinutesMap.size === 0) return "—";
-  const entries = [...userMinutesMap.entries()].sort((a, b) => b[1] - a[1]);
-  if (entries.length === 1) return entries[0][0] || "—";
-  return entries.map(([u, min]) => `${u || "—"} (${fmt(min / 60)}h)`).join(", ");
-}
-// Only ever a real link when every row logged under this task name shares the exact same
-// ClickUp task id -- an ambiguous name (two different real tasks, or two task-less rows,
-// that happen to share text) deliberately gets no link rather than a guess.
-function clickupTaskUrl(taskIdSet) {
-  if (!taskIdSet || taskIdSet.size !== 1) return null;
-  return `https://app.clickup.com/t/${[...taskIdSet][0]}`;
-}
+import { useDismissable, useEscape } from "./useDismissable.js";
+import { fmt, esc, filenameSafe, timeAgo, formatTaskUsers, clickupTaskUrl, isPackageLikeType } from "./format.js";
+import {
+  parseTimeTextToMinutes, msToMinutes, parseHeaderToMonth, monthLabel, monthKey, prevMonthKeyStr,
+  parseAccruedWorkbook, findHeader, SKIP_FOLDERS, parseStartTextMonth, dateKeyStr, parseClickupCsv,
+} from "./parsers.js";
+import { buildPrintHtml, printClientPdf } from "./printTemplate.js";
+import { CLICKUP_DB_KEY, ACCRUED_DB_KEY, CAP_CLIENTS_KEY, CAP_PEOPLE_KEY, PG_CLIENTS_KEY } from "./storageKeys.js";
 // Same link as the task itself (see clickupTaskUrl's note above) -- ClickUp doesn't expose
 // a way to deep-link to one specific person's time entry within a task, only the task page
 // itself (where the Time Tracked panel shows everyone who logged against it).
@@ -99,200 +44,6 @@ function TaskUsersCell({ userMinutesMap, taskUrl }) {
   );
 }
 
-// ------------------------------ name matching --------------------------------
-// normalizeName / tokenSim / findMatch / isInternalFolder now live in ./nameMatch.js,
-// shared with Capacity Planning so the two never quietly drift apart.
-
-// ------------------- header parsing for the accrued sheet --------------------
-const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec"];
-const MONTH_INDEX = { jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3, may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11 };
-
-function parseHeaderToMonth(cell, contextYear) {
-  if (cell === null || cell === undefined || cell === "") return null;
-  if (cell instanceof Date && !isNaN(cell.getTime()))
-    return { year: cell.getFullYear(), month: cell.getMonth(), label: monthLabel(cell.getFullYear(), cell.getMonth()) };
-  const s = String(cell).trim();
-  const lower = s.toLowerCase();
-  if (lower.includes("%") || lower.includes("comment")) return null;
-  const dmy = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-  if (dmy) {
-    let year = parseInt(dmy[3], 10);
-    if (year < 100) year += 2000;
-    const month = parseInt(dmy[2], 10) - 1;
-    if (month >= 0 && month <= 11) return { year, month, label: monthLabel(year, month) };
-  }
-  for (const m of MONTH_NAMES) {
-    const re = new RegExp(`\\b${m}\\w*\\b`, "i");
-    if (re.test(lower)) {
-      const yearMatch = s.match(/\b(20\d{2}|\d{2})\b/);
-      let year = null;
-      if (yearMatch) { year = parseInt(yearMatch[1], 10); if (year < 100) year += 2000; }
-      else if (contextYear) year = contextYear;
-      else return null;
-      return { year, month: MONTH_INDEX[m], label: monthLabel(year, MONTH_INDEX[m]) };
-    }
-  }
-  return null;
-}
-function monthLabel(year, month) { return new Date(year, month, 1).toLocaleString(undefined, { month: "long", year: "numeric" }); }
-function monthKey(year, month) { return `${year}-${String(month + 1).padStart(2, "0")}`; }
-function prevMonthKeyStr(key) {
-  const [y, m] = key.split("-").map(Number); // m is 1-12
-  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
-}
-
-// ------------------------------ accrued parser -------------------------------
-function parseAccruedWorkbook(buffer) {
-  const wb = XLSX.read(buffer, { type: "array", cellDates: true });
-  const sheetName = wb.SheetNames.find((n) => /accrued/i.test(n)) || wb.SheetNames[0];
-  const ws = wb.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
-  let headerIdx = rows.findIndex((r) => r && ((r[0] && /client/i.test(String(r[0]))) || (r[1] && /agreed/i.test(String(r[1])))));
-  if (headerIdx < 0) headerIdx = 2;
-  const header = rows[headerIdx] || [];
-
-  const warnings = [];
-  const maxSaneYear = new Date().getFullYear() + 1;
-  const rawCols = [];
-  let contextYear = null;
-  for (let c = 2; c < header.length; c++) {
-    const m = parseHeaderToMonth(header[c], contextYear);
-    if (!m) continue;
-    if (m.year > maxSaneYear) {
-      warnings.push(`Column "${String(header[c])}" parsed as ${m.label}, which looks like a typo in the source sheet (year is well in the future). It's still included, but check it.`);
-    } else {
-      contextYear = m.year; // don't let a bad year poison inference for later month-only headers
-    }
-    rawCols.push({ col: c, ...m });
-  }
-  // real spreadsheets accumulate repeated/duplicate month columns over time (copy-paste,
-  // corrections); keep one per month — the rightmost (latest-entered) column wins — and
-  // present them in chronological order rather than raw column order.
-  const byMonth = new Map();
-  for (const bc of rawCols) byMonth.set(monthKey(bc.year, bc.month), bc);
-  if (byMonth.size < rawCols.length) {
-    warnings.push(`Found ${rawCols.length - byMonth.size} duplicate month column(s) in the accrued sheet, using the rightmost (latest) one for each month.`);
-  }
-  const balanceCols = [...byMonth.values()].sort((a, b) => (a.year - b.year) || (a.month - b.month));
-
-  const clients = [];
-  for (let r = headerIdx + 1; r < rows.length; r++) {
-    const row = rows[r] || [];
-    const name = row[0];
-    const pkgRaw = row[1];
-    if (!name || typeof name !== "string") continue;
-    const nameTrim = name.trim();
-    if (!nameTrim) continue;
-    if (typeof pkgRaw === "string" && /agreed\s*h\.?p\.?m/i.test(pkgRaw)) continue;
-
-    let pkg = null;
-    if (typeof pkgRaw === "number") pkg = pkgRaw;
-    else if (typeof pkgRaw === "string") {
-      const m = pkgRaw.match(/(-?\d+(?:\.\d+)?)/);
-      if (m) pkg = parseFloat(m[1]);
-    }
-
-    const balances = {};
-    for (const bc of balanceCols) {
-      const v = row[bc.col];
-      if (typeof v === "number") balances[monthKey(bc.year, bc.month)] = v;
-    }
-    if (pkg === null && Object.keys(balances).length === 0) continue;
-    clients.push({ name: nameTrim, package: pkg, balances });
-  }
-
-  // real client lists accumulate exact-name duplicates (re-added rows, copy-paste) — not
-  // a parsing error, but worth surfacing since only the first match is ever used for lookups
-  const nameCounts = new Map();
-  for (const c of clients) nameCounts.set(c.name, (nameCounts.get(c.name) || 0) + 1);
-  const dupNames = [...nameCounts.entries()].filter(([, n]) => n > 1).map(([n]) => n);
-  if (dupNames.length) warnings.push(`${dupNames.length} client name${dupNames.length === 1 ? "" : "s"} appear more than once in the accrued sheet (${dupNames.slice(0, 5).join(", ")}${dupNames.length > 5 ? ", …" : ""}); only the first row for each is used.`);
-
-  return { clients, balanceCols, sheetName, warnings };
-}
-
-// ------------------------------- clickup parser -------------------------------
-function findHeader(headers, wanted) {
-  const norm = (x) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const w = norm(wanted);
-  let hit = headers.find((h) => norm(h) === w);
-  if (!hit) hit = headers.find((h) => norm(h).startsWith(w));
-  return hit || null;
-}
-const SKIP_FOLDERS = new Set(["", "grand total", "(blank)", "blank"]);
-
-// "Start Text" is already localised to the business timezone (ACST), e.g.
-// "05/19/2026, 6:49:33 AM ACST" — parse the date directly from it rather
-// than converting the raw epoch "Start" value, which can misfile
-// near-midnight sessions into the wrong month across a UTC boundary.
-function parseStartTextMonth(raw) {
-  if (!raw) return null;
-  const datePart = String(raw).split(",")[0].trim();
-  const m = datePart.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!m) return null;
-  const month = parseInt(m[1], 10) - 1;
-  const day = parseInt(m[2], 10);
-  const year = parseInt(m[3], 10);
-  if (month < 0 || month > 11) return null;
-  return { year, month, day };
-}
-function dateKeyStr(year, month, day) { return `${monthKey(year, month)}-${String(day).padStart(2, "0")}`; }
-
-function parseClickupCsv(file, onDone, onErr) {
-  Papa.parse(file, {
-    header: true,
-    skipEmptyLines: "greedy",
-    complete: (result) => {
-      const headers = result.meta.fields || [];
-      const warnings = [];
-      const hFolder = findHeader(headers, "Folder Name");
-      const hTask = findHeader(headers, "Task Name");
-      const hTimeText = findHeader(headers, "Time Tracked Text");
-      // Exact match only — "Time Tracked" must not fall back to matching
-      // "Time Tracked Text" via findHeader's startsWith rule when there's no
-      // separate numeric column.
-      const hTimeMs = headers.find((h) => h.toLowerCase().replace(/[^a-z0-9]/g, "") === "timetracked") || null;
-      const hBillable = findHeader(headers, "Billable");
-      const hUser = findHeader(headers, "Username");
-      const hStart = findHeader(headers, "Start Text");
-      // Optional — only some ClickUp export presets include it. When present, lets task
-      // rows link straight to the task in ClickUp, same as the live Supabase sync does.
-      const hTaskId = findHeader(headers, "Task ID");
-      if (!hFolder) { onErr("Couldn't find a \"Folder Name\" column. This should be a ClickUp time-tracking export."); return; }
-      let zeroCount = 0;
-      const rows = [];
-      for (const r of result.data) {
-        const folder = String(r[hFolder] || "").trim();
-        if (SKIP_FOLDERS.has(folder.toLowerCase())) continue;
-        let minutes = 0;
-        // "Time Tracked" (ms) is the authoritative numeric duration; "Time Tracked
-        // Text" is a display string and only used as a fallback for older,
-        // pre-aggregated exports that don't carry the numeric column at all.
-        if (hTimeMs && r[hTimeMs] !== undefined && String(r[hTimeMs]).trim() !== "") minutes = msToMinutes(r[hTimeMs]);
-        else if (hTimeText) minutes = parseTimeTextToMinutes(r[hTimeText]);
-        if (minutes === 0) zeroCount++;
-        const billableRaw = hBillable ? String(r[hBillable] || "").trim().toLowerCase() : "";
-        const billable = ["true", "yes", "1", "billable"].includes(billableRaw);
-        const startMonth = hStart ? parseStartTextMonth(r[hStart]) : null;
-        rows.push({
-          folder,
-          task: hTask ? String(r[hTask] || "").trim() || "Untitled" : "Untitled",
-          taskId: hTaskId ? (String(r[hTaskId] || "").trim() || null) : null,
-          minutes, billable, hasBillableCol: !!hBillable,
-          user: hUser ? String(r[hUser] || "").trim() : "",
-          isInternal: isInternalFolder(folder),
-          monthKey: startMonth ? monthKey(startMonth.year, startMonth.month) : null,
-          monthLabel: startMonth ? monthLabel(startMonth.year, startMonth.month) : null,
-          dateKey: startMonth ? dateKeyStr(startMonth.year, startMonth.month, startMonth.day) : null,
-        });
-      }
-      if (rows.length && zeroCount === rows.length) warnings.push("Every row parsed to zero hours; the ClickUp export format may have changed.");
-      onDone({ rows, hasBillable: !!hBillable, hasUser: !!hUser, hasStartDate: !!hStart, warnings });
-    },
-    error: (e) => onErr("Couldn't read the CSV: " + e.message),
-  });
-}
-
 // ------------------------------ classification ------------------------------
 function classifyClient(c) {
   if (c.matched && c.pkg != null) return "package";
@@ -312,11 +63,7 @@ const TYPE_LABELS = {
   queensland: "Queensland Clients (prv)",
 };
 
-// Strategy is an ongoing engagement with agreed recurring hours -- the same fixed-hours
-// accrual shape as Package (see accrualsSync.js/ClientAccruals.jsx) -- so anywhere the
-// package/reconciliation UI decides "does the accrued-balance math apply", Strategy is
-// treated identically to Package.
-const isPackageLikeType = (t) => t === "package" || t === "strategy";
+// isPackageLikeType now lives in ./format.js, shared with the print template.
 
 // Short canonical name for each client type — the shared vocabulary (nameMatch.js)
 // Capacity Planning and Performance also fold their finer-grained "basis" categories
@@ -328,141 +75,8 @@ const TYPE_LABELS_SHORT = { all: "All", ...CLIENT_TYPE_LABELS };
 // legacy bucket) is the one deliberate step outside it.
 const TYPE_TONES = CLIENT_TYPE_TONES;
 
-// ------------------------------- PDF (print) --------------------------------
-const PRINT = { ink: "#000000", inkSoft: "#000000", brand: "#3F008E", line: "#E7E1F0", brandSoft: "#F1EAFB" };
-
-function buildPrintHtml(c, monthText, priorMonthText) {
-  const type = c.type;
-  const isPkg = isPackageLikeType(type);
-  const taskRows = [...c.tasksFiltered.entries()].sort((a, b) => b[1] - a[1])
-    .map(([task, min]) => `<tr class="datarow"><td>${esc(task)}</td><td class="right">${fmt(min / 60)}</td></tr>`).join("");
-  const workedRounded = Math.round(c.workedFiltered * 100) / 100;
-  const priorSigned = c.priorBalance ?? 0;
-  const priorLabel = priorSigned < 0 ? "Carried in from previous month"
-                    : priorSigned > 0 ? "Over-used in previous month"
-                    : "Prior month balance";
-  const priorAbs = Math.abs(priorSigned);
-  const totalAccrued = workedRounded + priorSigned; // as spec'd: current spent + prior signed
-
-  const reconciliation = isPkg ? `
-    <tr class="noborder"><td colspan="2" class="section-heading">Reconciliation</td></tr>
-    <tr class="datarow"><td class="label">Package</td><td class="right">${fmt(c.pkg)} h / month</td></tr>
-    <tr class="datarow"><td class="label">${priorLabel}${priorMonthText ? ` (${esc(priorMonthText)})` : ""}</td><td class="right">${fmt(priorAbs)} h</td></tr>
-    <tr class="datarow"><td class="label">Time tracked this month</td><td class="right">${fmt(workedRounded)} h</td></tr>
-    <tr class="total"><td>Total accrued time</td><td class="right">${fmt(totalAccrued)} h</td></tr>
-    <tr class="datarow"><td class="label">New balance going forward</td><td class="right">${fmt(c.newBalance)} h ${c.newBalance > 0 ? "over" : c.newBalance < 0 ? "credit" : ""}</td></tr>
-    <tr class="datarow"><td class="label">Remaining this month</td><td class="right">${c.remaining >= 0 ? fmt(c.remaining) + " h left" : fmt(Math.abs(c.remaining)) + " h over"}</td></tr>
-    <tr class="noborder"><td colspan="2" class="note-cell">Total accrued time = time tracked this month + prior balance (signed). Negative prior = client credit carried in; positive prior = over-served last month.</td></tr>` : `
-    <tr class="noborder"><td colspan="2" class="section-heading">Summary</td></tr>
-    <tr class="datarow"><td class="label">Time tracked this month</td><td class="right">${fmt(workedRounded)} h</td></tr>
-    <tr class="noborder"><td colspan="2" class="note-cell">${type === "hourly" ? "Hourly-rate client: invoice at the agreed hourly rate for these hours." : "Queensland (previously) client: no accrued balance on record."}</td></tr>`;
-
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<title>${esc(filenameSafe(c.displayName))} ${esc(filenameSafe(monthText))}</title>
-<style>
-  ${NORDIQUE_FONT_FACE_CSS}
-  @page { margin: 15mm; size: A4; }
-  * { box-sizing: border-box; }
-  body { font-family: 'Nordique Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-weight: 600; color: ${PRINT.ink}; margin: 0; }
-  /* The letterhead footer repeats on every printed page via a <tfoot> with
-     display:table-footer-group — the one CSS mechanism Chromium actually
-     reserves per-page space for correctly. A position:fixed footer (the
-     previous approach) hits a longstanding Chromium print bug: the last
-     row before a page break bleeds a few mm into a fixed element regardless
-     of how much @page margin is reserved for it — reproduces even in a
-     bare table with zero custom CSS, so it isn't a tuning problem. Hence
-     the whole page being one table: everything that needs to flow across
-     pages safely (header, tasks, reconciliation) lives in its tbody. */
-  table.doc { width: 100%; border-collapse: collapse; font-size: 13px; }
-  td { padding: 8px 10px; text-align: left; }
-  .header-cell { border-bottom: 2px solid ${PRINT.ink}; padding-bottom: 14px; }
-  .brand { font-family: 'Nordique Pro', sans-serif; color: ${PRINT.brand}; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
-  h1 { font-family: 'Nordique Pro', sans-serif; font-weight: 700; font-size: 26px; margin: 6px 0 0; letter-spacing: -0.01em; }
-  .subtitle { color: ${PRINT.inkSoft}; font-size: 14px; margin-top: 4px; }
-  .section-heading { font-family: 'Nordique Pro', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: ${PRINT.brand}; font-weight: 600; padding-top: 22px; }
-  .noborder td, tr.noborder { border: none; }
-  .datarow { border-bottom: 1px solid ${PRINT.line}; page-break-inside: avoid; break-inside: avoid; font-weight: 300; }
-  .right { text-align: right; font-variant-numeric: tabular-nums; font-family: Arial, "Segoe UI", sans-serif; }
-  .total td { font-weight: 700; border-top: 2px solid ${PRINT.ink}; border-bottom: none; padding-top: 12px; }
-  .label { color: ${PRINT.inkSoft}; }
-  .note-cell { font-size: 11px; color: ${PRINT.inkSoft}; font-style: italic; padding-top: 4px; }
-  .generated-note-cell { font-size: 9px; color: ${PRINT.inkSoft}; text-align: right; font-style: italic; padding-top: 24px; }
-  .letterhead-footer-cell {
-    height: 15mm; /* the footer image is cropped to fit exactly within a 15mm margin at full page width */
-    padding: 0;
-    border: none;
-    background-image: url('data:image/png;base64,${LETTERHEAD_FOOTER_B64}');
-    background-repeat: no-repeat;
-    background-position: bottom center;
-    background-size: 100% auto;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  @media print { .noprint { display: none; } }
-</style>
-</head><body>
-  <table class="doc">
-    <tfoot>
-      <tr><td colspan="2" class="letterhead-footer-cell"></td></tr>
-    </tfoot>
-    <tbody>
-      <tr class="noborder"><td colspan="2" class="header-cell">
-        <div class="brand">Purple Giraffe · client hours report</div>
-        <h1>${esc(c.displayName)}</h1>
-        <div class="subtitle">${esc(monthText)}</div>
-      </td></tr>
-
-      <tr class="noborder"><td colspan="2" class="section-heading">Tasks worked this month</td></tr>
-      ${taskRows || `<tr class="datarow"><td colspan="2" class="label">No tasks in this filter.</td></tr>`}
-      <tr class="total"><td>Total</td><td class="right">${fmt(workedRounded)} h</td></tr>
-
-      ${reconciliation}
-
-      <tr class="noborder"><td colspan="2" class="generated-note-cell">Generated ${esc(new Date().toLocaleString())}</td></tr>
-    </tbody>
-  </table>
-
-  <script>
-    window.addEventListener('load', function() {
-      // Print as soon as fonts are ready, but never wait more than 1.5s for
-      // them — a hung font-loading promise should never be able to silently
-      // stop the print dialog (and the "download") from happening at all.
-      var printed = false;
-      function go() { if (!printed) { printed = true; window.print(); } }
-      document.fonts.ready.then(go, go);
-      setTimeout(go, 1500);
-    });
-  </script>
-</body></html>`;
-}
-
-function printClientPdf(c, monthText, priorMonthText) {
-  const html = buildPrintHtml(c, monthText, priorMonthText);
-  const w = window.open("", "_blank", "width=900,height=1100");
-  if (!w) {
-    // popup blocked — fall back to blob URL in the current tab
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.target = "_blank";
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    return;
-  }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-}
-
 // ------------------------------- storage keys --------------------------------
 const NAMEMAP_KEY = "pg-name-map-v1";
-const CLICKUP_DB_KEY = "clickup";
-const ACCRUED_DB_KEY = "accrued";
 const VIEWSTATE_KEY = "pg-view-state-v1";
 // Below this many hours of disagreement between the accrued sheet's recorded prior-month
 // balance and what it recalculates to from current ClickUp data, treat it as rounding noise
@@ -516,9 +130,9 @@ export default function PGReconciliation({ onNavigateClients }) {
   const [capClients, setCapClients] = useState(CAP_SEED_CLIENTS);
   useEffect(() => {
     let cancelled = false;
-    const load = () => loadCapKey("cap_clients", CAP_SEED_CLIENTS).then((v) => { if (!cancelled) setCapClients(v || CAP_SEED_CLIENTS); });
+    const load = () => loadCapKey(CAP_CLIENTS_KEY, CAP_SEED_CLIENTS).then((v) => { if (!cancelled) setCapClients(v || CAP_SEED_CLIENTS); });
     load();
-    const onUpdate = (e) => { if (!e.detail || e.detail.key === "cap_clients") load(); };
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === CAP_CLIENTS_KEY) load(); };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);
@@ -529,9 +143,9 @@ export default function PGReconciliation({ onNavigateClients }) {
   const [capPeople, setCapPeople] = useState(SEED_PEOPLE);
   useEffect(() => {
     let cancelled = false;
-    const load = () => loadCapKey("cap_people", SEED_PEOPLE).then((v) => { if (!cancelled) setCapPeople(v || SEED_PEOPLE); });
+    const load = () => loadCapKey(CAP_PEOPLE_KEY, SEED_PEOPLE).then((v) => { if (!cancelled) setCapPeople(v || SEED_PEOPLE); });
     load();
-    const onUpdate = (e) => { if (!e.detail || e.detail.key === "cap_people") load(); };
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === CAP_PEOPLE_KEY) load(); };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);
@@ -588,7 +202,7 @@ export default function PGReconciliation({ onNavigateClients }) {
       if (!cancelled) { setPgClients(profiles); setPgClientEvents(events); }
     };
     load();
-    const onUpdate = (e) => { if (!e.detail || e.detail.key === "pg_clients") load(); };
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === PG_CLIENTS_KEY) load(); };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
   }, []);
@@ -1696,14 +1310,7 @@ function KpiCard({ label, value, sub, tone, icon, delta, spark }) {
 // over a whole row.
 function WarningIcon({ title, warnings }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, []);
+  const ref = useDismissable(() => setOpen(false));
   if (!warnings || warnings.length === 0) return null;
   return (
     <div className="pg-warn-icon-wrap" ref={ref}>
@@ -1731,7 +1338,6 @@ function CommandSearch({ clients, onSelect }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const inputRef = useRef(null);
-  const wrapRef = useRef(null);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -1746,11 +1352,7 @@ function CommandSearch({ clients, onSelect }) {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  useEffect(() => {
-    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
+  const wrapRef = useDismissable(() => setOpen(false));
 
   const q = query.trim().toLowerCase();
   const matches = q
@@ -1810,14 +1412,7 @@ function StatusDot({ tone, size = 8 }) {
 // instead of leading with upload prompts once files are already connected.
 function ImportButton({ clickup, accrued, clickupErr, accruedErr, onPickClickup, onPickAccrued }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, []);
+  const ref = useDismissable(() => setOpen(false));
   return (
     <div style={{ position: "relative" }} ref={ref}>
       <button className="pg-btn-ghost" onClick={() => setOpen((o) => !o)}>
@@ -1999,11 +1594,7 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
   // drawer never opens already scrolled into a previous client's drill-down.
   useEffect(() => { setDrillConsultant(null); setTasksOpen(false); setConsultantsOpen(false); }, [c.name]);
 
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   const drillTasks = drillConsultant ? (c.tasksByUser.get(drillConsultant) || new Map()) : null;
   const tasksShown = drillTasks ?? c.tasksFiltered;
