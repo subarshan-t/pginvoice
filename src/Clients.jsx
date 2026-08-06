@@ -36,6 +36,8 @@ function ModifyPanel({ client, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
 
+  const isActive = client.status === "active";
+
   async function save() {
     setSaving(true);
     setErr(null);
@@ -47,6 +49,8 @@ function ModifyPanel({ client, onClose, onSaved }) {
         await createClientEvent(client.client, "consultant", effectiveDate, { new_consultant: newConsultant || null });
       } else if (action === "offboarding") {
         await createClientEvent(client.client, "offboarding", effectiveDate, {});
+      } else if (action === "reactivate") {
+        await createClientEvent(client.client, "reactivation", effectiveDate, {});
       }
       await applyDueClientEvents();
       onSaved();
@@ -63,7 +67,11 @@ function ModifyPanel({ client, onClose, onSaved }) {
         <div style={{ display: "flex", gap: 8 }}>
           <button className="pg-btn-ghost" onClick={() => setAction("transition")}>Transitioning</button>
           <button className="pg-btn-ghost" onClick={() => setAction("consultant")}>Consultant Update</button>
-          <button className="pg-btn-ghost" onClick={() => setAction("offboarding")}>Offboarding</button>
+          {isActive ? (
+            <button className="pg-btn-ghost" onClick={() => setAction("offboarding")}>Offboarding</button>
+          ) : (
+            <button className="pg-btn-ghost" onClick={() => setAction("reactivate")}>Reactivate</button>
+          )}
           <button className="pg-btn-ghost" style={{ marginLeft: "auto" }} onClick={onClose}>Cancel</button>
         </div>
       )}
@@ -115,6 +123,25 @@ function ModifyPanel({ client, onClose, onSaved }) {
             <span className="pg-field__label">Offboarding date</span>
             <input className="pg-input" type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
           </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="pg-btn" disabled={saving} onClick={save}>Save</button>
+            <button className="pg-btn-ghost" onClick={() => setAction(null)}>Back</button>
+          </div>
+        </div>
+      )}
+
+      {action === "reactivate" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="pg-tag pg-tag--muted">{client.status === "archived" ? "Archived (unverified)" : "Offboarded"}</span>
+            <ArrowRight size={14} />
+            <span className="pg-tag">Active</span>
+          </div>
+          <label className="pg-field">
+            <span className="pg-field__label">Reactivation date</span>
+            <input className="pg-input" type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
+          </label>
+          <p className="pg-footnote">Clears the end date and sets status back to active. Type, agreed hours, and consultant stay as they were — use Transitioning/Consultant Update afterward if those need to change too.</p>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="pg-btn" disabled={saving} onClick={save}>Save</button>
             <button className="pg-btn-ghost" onClick={() => setAction(null)}>Back</button>

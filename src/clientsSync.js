@@ -94,6 +94,7 @@ export async function applyDueClientEvents() {
     if (ev.kind === "type") { patch.type = ev.new_type; patch.agreed_hours = ev.new_agreed_hours; }
     else if (ev.kind === "consultant") { patch.consultant = ev.new_consultant; }
     else if (ev.kind === "offboarding") { patch.status = "offboarded"; patch.end_date = ev.effective_date; }
+    else if (ev.kind === "reactivation") { patch.status = "active"; patch.end_date = null; }
     const { error: updErr } = await supabase.from("pginvoice_clients").update(patch).eq("client", ev.client);
     if (updErr) throw updErr;
     const { error: markErr } = await supabase.from("pginvoice_client_events").update({ applied: true }).eq("id", ev.id);
