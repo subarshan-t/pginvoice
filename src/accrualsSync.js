@@ -159,7 +159,10 @@ export async function recomputeAccruals(clients) {
     while (mk <= cur && guard++ < 240) {
       const seg = typeForMonth(profile, events, mk);
       const existing = c.months[mk];
-      if (seg.type !== "package" || seg.agreedHours === null) {
+      // Strategy is an ongoing engagement with agreed recurring hours -- the same fixed-
+      // hours accrual shape as a Package -- so it accrues the same way; every other type
+      // (Quoted, Project, MAP, Hourly, Ad hoc, Queensland) has no monthly accrual.
+      if ((seg.type !== "package" && seg.type !== "strategy") || seg.agreedHours === null) {
         // Not on a package this month -- no accrual applies. A month that WAS package before
         // (e.g. Baintech before June, GPEx before it briefly switched to hourly) can still have
         // a stale computed row sitting in the table from back when it did apply; clear it so it

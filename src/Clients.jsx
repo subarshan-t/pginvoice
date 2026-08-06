@@ -5,8 +5,15 @@ import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 
 const CLICKUP_DB_KEY = "clickup";
 
-const TYPE_LABEL = { package: "Package", hourly: "Hourly", quoted: "Quoted", queensland: "Queensland" };
+const TYPE_LABEL = {
+  package: "Package", hourly: "Hourly", quoted: "Quoted", queensland: "Queensland",
+  map: "MAP", project: "Project", strategy: "Strategy", ad_hoc: "Ad hoc",
+};
 const TYPES = Object.keys(TYPE_LABEL);
+// Strategy is an ongoing engagement with agreed recurring hours -- same fixed-hours
+// accrual shape as Package (see accrualsSync.js) -- so it needs the same "agreed hours"
+// field wherever the UI asks for a Package's monthly commitment.
+const isPackageLikeType = (t) => t === "package" || t === "strategy";
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
 // Client names carry their state as a "(Qld)"/"(WA)" suffix rather than a dedicated
@@ -42,7 +49,7 @@ function ModifyPanel({ client, onClose, onSaved }) {
     // A blank hours field on a Package transition used to silently submit 0 -- a real,
     // billable "0 hrs/month" package, indistinguishable from someone just not having
     // filled the field in yet. Block the save and say so instead of guessing.
-    if (action === "transition" && newType === "package" && newHours.trim() === "") {
+    if (action === "transition" && isPackageLikeType(newType) && newHours.trim() === "") {
       setErr("Enter the agreed hours for this package (or choose a different type).");
       return;
     }
@@ -50,7 +57,7 @@ function ModifyPanel({ client, onClose, onSaved }) {
     setErr(null);
     try {
       if (action === "transition") {
-        const fields = { new_type: newType, new_agreed_hours: newType === "package" ? Number(newHours) || 0 : null };
+        const fields = { new_type: newType, new_agreed_hours: isPackageLikeType(newType) ? Number(newHours) || 0 : null };
         await createClientEvent(client.client, "type", effectiveDate, fields);
       } else if (action === "consultant") {
         await createClientEvent(client.client, "consultant", effectiveDate, { new_consultant: newConsultant || null });
@@ -86,12 +93,12 @@ function ModifyPanel({ client, onClose, onSaved }) {
       {action === "transition" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="pg-tag">{TYPE_LABEL[client.type]}{client.type === "package" && client.agreedHours != null ? ` (${client.agreedHours} hrs)` : ""}</span>
+            <span className="pg-tag">{TYPE_LABEL[client.type]}{isPackageLikeType(client.type) && client.agreedHours != null ? ` (${client.agreedHours} hrs)` : ""}</span>
             <ArrowRight size={14} />
             <select className="pg-input" value={newType} onChange={(e) => setNewType(e.target.value)}>
               {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
             </select>
-            {newType === "package" && (
+            {isPackageLikeType(newType) && (
               <input className="pg-input" style={{ width: 90 }} type="number" placeholder="hrs" value={newHours} onChange={(e) => setNewHours(e.target.value)} />
             )}
           </div>
@@ -308,7 +315,7 @@ export default function Clients() {
                 <tr>
                   <td style={{ color: "var(--fg-tertiary)", fontFamily: "var(--font-mono)" }}>{i + 1}</td>
                   <td>{c.client}</td>
-                  <td>{TYPE_LABEL[c.type]}{c.type === "package" && c.agreedHours != null ? ` — ${c.agreedHours} hrs` : ""}</td>
+                  <td>{TYPE_LABEL[c.type]}{isPackageLikeType(c.type) && c.agreedHours != null ? ` — ${c.agreedHours} hrs` : ""}</td>
                   <td>{c.consultant || "—"}</td>
                   <td style={{ minWidth: 220 }}>
                     {editingFolder === c.client ? (

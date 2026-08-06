@@ -50,9 +50,12 @@ export async function updateClickupFolder(client, folder) {
 // New client, created from either Capacity Planning or the Clients module -- both write
 // to this same table, so a client added in one place shows up in the other immediately.
 export async function createClient(client, { type, agreedHours, consultant, startDate }) {
+  // Strategy is an ongoing engagement with agreed recurring hours -- the same fixed-hours
+  // accrual shape as Package -- so it carries an agreed-hours figure the same way.
+  const isPackageLike = type === "package" || type === "strategy";
   const row = {
-    client, type, agreed_hours: type === "package" ? (agreedHours ?? null) : null,
-    base_type: type, base_agreed_hours: type === "package" ? (agreedHours ?? null) : null,
+    client, type, agreed_hours: isPackageLike ? (agreedHours ?? null) : null,
+    base_type: type, base_agreed_hours: isPackageLike ? (agreedHours ?? null) : null,
     consultant: consultant || null, start_date: startDate || null, status: "active",
   };
   const { error } = await supabase.from("pginvoice_clients").insert(row);

@@ -306,8 +306,17 @@ const TYPE_LABELS = {
   hourly: "Clients on Hourly rate",
   quoted: "Quoted Clients",
   map: "MAP Clients",
+  project: "Project Clients",
+  strategy: "Strategy Clients",
+  ad_hoc: "Ad hoc Clients",
   queensland: "Queensland Clients (prv)",
 };
+
+// Strategy is an ongoing engagement with agreed recurring hours -- the same fixed-hours
+// accrual shape as Package (see accrualsSync.js/ClientAccruals.jsx) -- so anywhere the
+// package/reconciliation UI decides "does the accrued-balance math apply", Strategy is
+// treated identically to Package.
+const isPackageLikeType = (t) => t === "package" || t === "strategy";
 
 // Short canonical name for each client type — the shared vocabulary (nameMatch.js)
 // Capacity Planning and Performance also fold their finer-grained "basis" categories
@@ -324,7 +333,7 @@ const PRINT = { ink: "#000000", inkSoft: "#000000", brand: "#3F008E", line: "#E7
 
 function buildPrintHtml(c, monthText, priorMonthText) {
   const type = c.type;
-  const isPkg = type === "package";
+  const isPkg = isPackageLikeType(type);
   const taskRows = [...c.tasksFiltered.entries()].sort((a, b) => b[1] - a[1])
     .map(([task, min]) => `<tr class="datarow"><td>${esc(task)}</td><td class="right">${fmt(min / 60)}</td></tr>`).join("");
   const workedRounded = Math.round(c.workedFiltered * 100) / 100;
@@ -929,7 +938,7 @@ export default function PGReconciliation({ onNavigateClients }) {
       const capRow = capRowByClientName.get(c.name);
       if (capRow) {
         const capType = basisToClientType(capRow.basis);
-        if (capType !== "package" && clientObj.type === "package") {
+        if (!isPackageLikeType(capType) && isPackageLikeType(clientObj.type)) {
           clientObj.type = capType;
           clientObj.packageOverriddenBy = capRow.basis;
         }
@@ -971,7 +980,7 @@ export default function PGReconciliation({ onNavigateClients }) {
   // counts by type — "map" counts c.isMap (an overlay tag), not c.type, since a MAP
   // client keeps whatever c.type its own package/hourly classification landed on.
   const typeCounts = useMemo(() => {
-    const counts = { all: clients.length, package: 0, hourly: 0, queensland: 0, quoted: 0, map: 0 };
+    const counts = { all: clients.length, package: 0, hourly: 0, queensland: 0, quoted: 0, map: 0, project: 0, strategy: 0, ad_hoc: 0 };
     for (const c of clients) {
       counts[c.type] = (counts[c.type] || 0) + 1;
       if (c.isMap) counts.map++;
@@ -1030,7 +1039,7 @@ export default function PGReconciliation({ onNavigateClients }) {
     const result = new Map();
     byGroup.forEach((members, group) => {
       if (members.length < 2) return;
-      const primary = members.find((m) => m.type === "package") || [...members].sort((a, b) => b.worked - a.worked)[0];
+      const primary = members.find((m) => isPackageLikeType(m.type)) || [...members].sort((a, b) => b.worked - a.worked)[0];
       result.set(group, primary.name);
     });
     return result;
@@ -1085,7 +1094,7 @@ export default function PGReconciliation({ onNavigateClients }) {
     } else {
       // risk: package by |kpiPct| desc, others by worked desc
       list.sort((a, b) => {
-        if (clientTypeFilter === "package") return Math.abs(b.kpiPct ?? 0) - Math.abs(a.kpiPct ?? 0);
+        if (isPackageLikeType(clientTypeFilter)) return Math.abs(b.kpiPct ?? 0) - Math.abs(a.kpiPct ?? 0);
         return (b.workedFiltered ?? b.worked) - (a.workedFiltered ?? a.worked);
       });
     }
@@ -1113,7 +1122,7 @@ export default function PGReconciliation({ onNavigateClients }) {
     const result = new Map();
     byGroup.forEach((members, group) => {
       if (members.length < 2) return;
-      const primary = members.find((m) => m.type === "package") || [...members].sort((a, b) => b.worked - a.worked)[0];
+      const primary = members.find((m) => isPackageLikeType(m.type)) || [...members].sort((a, b) => b.worked - a.worked)[0];
       result.set(group, primary.name);
     });
     return result;
@@ -1232,7 +1241,7 @@ export default function PGReconciliation({ onNavigateClients }) {
     }));
   const buildPendingRows = () =>
     clients
-      .filter((c) => c.type === "package" && (c.status === "over" || c.status === "under"))
+      .filter((c) => isPackageLikeType(c.type) && (c.status === "over" || c.status === "under"))
       .sort((a, b) => Math.abs(b.newBalance) - Math.abs(a.newBalance))
       .map((c) => ({
         "Client": c.accruedClient?.name ?? c.name,
@@ -1313,7 +1322,7 @@ export default function PGReconciliation({ onNavigateClients }) {
       lines.push("");
     }
     lines.push(`Time tracked this month: ${fmt(c.workedFiltered)} h`);
-    if (c.type === "package" && c.pkg != null) {
+    if (isPackageLikeType(c.type) && c.pkg != null) {
       lines.push(`Package: ${fmt(c.pkg)} h`);
       const p = c.priorBalance ?? 0;
       if (p < 0) lines.push(`Carried in from ${priorMonthPretty}: ${fmt(Math.abs(p))} h`);
@@ -1513,8 +1522,11 @@ export default function PGReconciliation({ onNavigateClients }) {
                 className="pg-select" style={{ minWidth: 260 }}>
                 <option value="all">All Clients ({typeCounts.all})</option>
                 <option value="package">Clients on a Package ({typeCounts.package})</option>
+                <option value="strategy">Strategy Clients ({typeCounts.strategy})</option>
                 <option value="hourly">Clients on Hourly rate ({typeCounts.hourly})</option>
+                <option value="ad_hoc">Ad hoc Clients ({typeCounts.ad_hoc})</option>
                 <option value="quoted" disabled>Quoted Clients ({typeCounts.quoted}), coming later</option>
+                <option value="project" disabled>Project Clients ({typeCounts.project}), coming later</option>
                 <option value="map">MAP Clients ({typeCounts.map})</option>
                 <option value="queensland">Queensland Clients (prv) ({typeCounts.queensland})</option>
               </select>
@@ -1588,8 +1600,8 @@ export default function PGReconciliation({ onNavigateClients }) {
             })}
             {visible.length === 0 && (
               <div className="pg-empty">
-                {clientTypeFilter === "quoted"
-                  ? "Quoted clients aren't tracked here yet, this bucket is a placeholder."
+                {(clientTypeFilter === "quoted" || clientTypeFilter === "project")
+                  ? `${TYPE_LABELS[clientTypeFilter]} aren't tracked here yet, this bucket is a placeholder.`
                   : consultantFilter
                     ? `${consultantFilter} didn't work on any ${TYPE_LABELS[clientTypeFilter].toLowerCase()} this month.`
                     : `No ${TYPE_LABELS[clientTypeFilter].toLowerCase()} in this view.`}
@@ -1840,7 +1852,7 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
   const [inlineOpen, setInlineOpen] = useState(false);
   const [tasksAllShown, setTasksAllShown] = useState(false);
   const [consultantsAllShown, setConsultantsAllShown] = useState(false);
-  const isPackage = c.type === "package";
+  const isPackage = isPackageLikeType(c.type);
   const statusTone = isPackage
     ? (c.status === "over" ? "var(--status-over)" : c.status === "under" ? "var(--status-warn)" : "var(--status-ok)")
     : undefined;
@@ -1965,7 +1977,7 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
 // the same computed fields the row above reads from (client.*), just laid out for
 // a deeper single-client view: reconciliation bar, consultant contributions, tasks.
 function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress, hasUser, consultantFilter, accruedNames, usedAccruedNames, syncMeta, capPeople, onClose, onSetMatch, onCopy, onPdf, onViewProfile, copied }) {
-  const isPackage = c.type === "package";
+  const isPackage = isPackageLikeType(c.type);
   const isQld = c.type === "queensland";
   const [drillConsultant, setDrillConsultant] = useState(null);
   const [tasksOpen, setTasksOpen] = useState(false);

@@ -64,21 +64,21 @@ export function findPersonMatch(name, people) {
   return m ? (owner.get(m.name) || null) : null;
 }
 
-// Canonical client-type vocabulary — Client Invoicing's own 4 categories
-// (package/hourly/quoted/queensland) plus "map" (Marketing Action Plan), which is
-// its own distinct engagement type rather than a plain Quoted project or Package.
-// Capacity Planning and Performance track a finer-grained "basis" per client
-// agreement (Package/Project/Quoted/MAP/Strategy/Hourly/Ad hoc); basisToClientType
-// folds that down to this shared vocabulary so a chip, filter, or export reads the
-// same way in every module instead of surfacing internal-only jargon like
-// "Strategy". Project (bounded, one-off scoped work) maps to Quoted; Strategy (an
-// ongoing engagement with agreed recurring hours, same shape as a Package) maps to
-// Package; MAP keeps its own identity rather than folding into either.
+// Canonical client-type vocabulary — Client Invoicing's own persisted `pginvoice_clients.type`
+// column. Capacity Planning and Performance track the same 7-way "basis" per client agreement
+// (Package/Project/Quoted/MAP/Strategy/Hourly/Ad hoc, see FIXED_BASES/VARIABLE_BASES in
+// capacityData.js); basisToClientType maps each of those 1:1 onto this vocabulary (lower-
+// snake-cased) so a chip, filter, or export reads consistently everywhere, without lossily
+// folding distinct business types (Strategy, Project, MAP, Ad hoc) into one another before
+// they ever reach the client record.
 export const CLIENT_TYPE_LABELS = {
   package: "Package",
   hourly: "Hourly",
   quoted: "Quoted",
   map: "MAP",
+  project: "Project",
+  strategy: "Strategy",
+  ad_hoc: "Ad hoc",
   queensland: "Queensland (prv)",
 };
 export const CLIENT_TYPE_TONES = {
@@ -86,27 +86,36 @@ export const CLIENT_TYPE_TONES = {
   hourly: "var(--accent-orchid)",
   quoted: "var(--fg-tertiary)",
   map: "var(--status-warn)",
+  project: "var(--fg-tertiary)",
+  strategy: "var(--accent)",
+  ad_hoc: "var(--accent-orchid)",
   queensland: "var(--status-info)",
 };
 export function basisToClientType(basis) {
   const b = String(basis || "").trim();
   if (b === "MAP") return "map";
-  if (b === "Package" || b === "Strategy") return "package";
-  if (b === "Quoted" || b === "Project") return "quoted";
-  return "hourly"; // Hourly, Ad hoc, or unrecognised
+  if (b === "Package") return "package";
+  if (b === "Strategy") return "strategy";
+  if (b === "Quoted") return "quoted";
+  if (b === "Project") return "project";
+  if (b === "Ad hoc") return "ad_hoc";
+  return "hourly"; // Hourly or unrecognised
 }
 
 // A client group's canonical type from its Capacity Planning row(s). Almost every
 // group is a single row, so this is just basisToClientType(that row's basis); a
 // "Combined" group (multiple sub-project rows with different bases — e.g. a
-// Package plus a one-off Project) is bucketed under whichever non-Hourly type
+// Package plus a one-off Project) is bucketed under whichever fixed-hours type
 // carries the most agreed hours, since actual hours can't be split back out
-// between the sub-rows once matched to a single ClickUp folder.
+// between the sub-rows once matched to a single ClickUp folder. "Fixed" here
+// mirrors capacityData.js's FIXED_BASES (Package/Project/Quoted/MAP/Strategy) vs
+// VARIABLE_BASES (Hourly/Ad hoc) grouping, not just "not Hourly".
+const VARIABLE_BASIS_NAMES = new Set(["Hourly", "Ad hoc"]);
 export function dominantClientType(rows) {
   const types = rows.map((r) => basisToClientType(r.basis));
   const uniq = [...new Set(types)];
   if (uniq.length === 1) return uniq[0];
-  const fixedRows = rows.filter((r) => basisToClientType(r.basis) !== "hourly");
+  const fixedRows = rows.filter((r) => !VARIABLE_BASIS_NAMES.has(String(r.basis || "").trim()));
   if (!fixedRows.length) return "hourly";
   const dominant = fixedRows.reduce((best, r) => (r.agreed || 0) > (best.agreed || 0) ? r : best, fixedRows[0]);
   return basisToClientType(dominant.basis);

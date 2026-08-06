@@ -393,7 +393,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   const submitAddClient = useCallback(async () => {
     const name = addClientForm.name.trim();
     if (!name) return;
-    const typeMap = { Package: "package", Project: "quoted", Quoted: "quoted", MAP: "quoted", Strategy: "package", Hourly: "hourly", "Ad hoc": "hourly" };
+    const typeMap = { Package: "package", Project: "project", Quoted: "quoted", MAP: "map", Strategy: "strategy", Hourly: "hourly", "Ad hoc": "ad_hoc" };
     const agreedNum = addClientForm.agreed === "" ? null : Number(addClientForm.agreed);
     let freshPgClients = pgClients;
     try {

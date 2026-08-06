@@ -241,8 +241,10 @@ export default function ClientAccruals() {
               // cached on old accrual rows -- that text is a snapshot from whenever it was
               // last written and doesn't update when a client's type/hours change later (e.g.
               // GPEx's rows still said "70" long after it moved off its package to hourly).
-              const isPackageNow = profile ? profile.type === "package" : true;
-              const agreedNum = profile && profile.type === "package" ? profile.agreedHours : (profile ? null : parseAgreedHours(c.agreedHpm));
+              // Strategy is the same fixed-hours accrual shape as Package (see accrualsSync.js),
+              // so it's treated identically here for "does an agreed-hours accrual apply".
+              const isPackageNow = profile ? (profile.type === "package" || profile.type === "strategy") : true;
+              const agreedNum = profile && (profile.type === "package" || profile.type === "strategy") ? profile.agreedHours : (profile ? null : parseAgreedHours(c.agreedHpm));
               return (
                 <tr key={c.client}>
                   <td>
