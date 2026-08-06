@@ -13,6 +13,18 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const CLICKUP_BASE = "https://api.clickup.com/api/v2";
 const SECRET_KEY = "clickup_api_token";
 
+// Called from the browser (Settings), unlike clickup-sync which only ever runs
+// from cron/manual-invoke server-side — so unlike that function, this one needs
+// real CORS headers or the browser silently drops the response before
+// supabase-js ever sees it, surfacing as "Failed to send a request to the Edge
+// Function" with no further detail.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const JSON_HEADERS = { "Content-Type": "application/json", ...CORS_HEADERS };
+
 function maskToken(token: string) {
   if (token.length <= 4) return "****";
   return `••••${token.slice(-4)}`;
@@ -31,6 +43,8 @@ async function validateToken(token: string) {
 }
 
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -42,7 +56,7 @@ Deno.serve(async (req: Request) => {
   try {
     if (action === "set") {
       const token = typeof body.token === "string" ? body.token.trim() : "";
-      if (!token) return new Response(JSON.stringify({ ok: false, error: "No API key provided." }), { status: 400, headers: { "Content-Type": "application/json" } });
+      if (!token) return new Response(JSON.stringify({ ok: false, error: "No API key provided." }), { status: 400, headers: JSON_HEADERS });
 
       const workspaceNames = await validateToken(token);
       const { error } = await supabase.from("pginvoice_secrets").upsert({
@@ -52,23 +66,23 @@ Deno.serve(async (req: Request) => {
       }, { onConflict: "key" });
       if (error) throw error;
 
-      return new Response(JSON.stringify({ ok: true, masked: maskToken(token), workspaces: workspaceNames }), { headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, masked: maskToken(token), workspaces: workspaceNames }), { headers: JSON_HEADERS });
     }
 
     // action === "status" — report whether a key is stored and whether it still
     // validates, without ever returning the token itself.
     const { data, error } = await supabase.from("pginvoice_secrets").select("meta, updated_at").eq("key", SECRET_KEY).maybeSingle();
     if (error) throw error;
-    if (!data) return new Response(JSON.stringify({ ok: true, connected: false }), { headers: { "Content-Type": "application/json" } });
+    if (!data) return new Response(JSON.stringify({ ok: true, connected: false }), { headers: JSON_HEADERS });
 
     return new Response(JSON.stringify({
       ok: true, connected: true,
       masked: data.meta?.masked ?? null,
       workspaces: data.meta?.workspaces ?? [],
       validatedAt: data.meta?.validated_at ?? data.updated_at,
-    }), { headers: { "Content-Type": "application/json" } });
+    }), { headers: JSON_HEADERS });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return new Response(JSON.stringify({ ok: false, error: message }), { status: 400, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: false, error: message }), { status: 400, headers: JSON_HEADERS });
   }
 });

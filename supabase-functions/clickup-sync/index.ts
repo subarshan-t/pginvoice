@@ -26,6 +26,19 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const CLICKUP_BASE = "https://api.clickup.com/api/v2";
 const TIMEZONE = "Australia/Adelaide"; // matches the CSV export's "Start Text" localisation
 
+// The cron trigger never sends an Origin header so this was never noticed, but
+// the "Sync now" button (App.jsx) calls this straight from the browser via
+// supabase.functions.invoke, which preflights with an OPTIONS request. Without
+// these headers the preflight gets no Access-Control-Allow-Origin back and the
+// browser drops the real request before it's even sent — surfaces client-side
+// as "Failed to send a request to the Edge Function", no further detail.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const JSON_HEADERS = { "Content-Type": "application/json", ...CORS_HEADERS };
+
 // Same rule the frontend's nameMatch.js uses — kept in sync manually since this
 // runs in a separate Deno runtime and can't share an import with the Vite app.
 // "Purple Giraffe" (DMA's ClickUp account) is NOT internal — its hours count like
@@ -131,6 +144,8 @@ function resolveTaskId(entry: any): string | null {
 }
 
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -146,7 +161,7 @@ Deno.serve(async (req: Request) => {
       last_synced_at: new Date().toISOString(), last_sync_status: "error",
       last_sync_message: "No ClickUp API key set. Add one in Settings.",
     }).eq("id", 1);
-    return new Response(JSON.stringify({ ok: false, error: "No ClickUp API key set. Add one in Settings." }), { status: 400, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: false, error: "No ClickUp API key set. Add one in Settings." }), { status: 400, headers: JSON_HEADERS });
   }
 
   let monthOffset = 0;
@@ -233,12 +248,12 @@ Deno.serve(async (req: Request) => {
       rows_synced: monthRows.length,
     }).eq("id", 1);
 
-    return new Response(JSON.stringify({ ok: true, rows_synced: monthRows.length, team_id: teamId, month: monthLabel, raw_sample: rawSample }), { headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, rows_synced: monthRows.length, team_id: teamId, month: monthLabel, raw_sample: rawSample }), { headers: JSON_HEADERS });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await supabase.from("pginvoice_sync_meta").update({
       last_synced_at: new Date().toISOString(), last_sync_status: "error", last_sync_message: message,
     }).eq("id", 1);
-    return new Response(JSON.stringify({ ok: false, error: message }), { status: 500, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: false, error: message }), { status: 500, headers: JSON_HEADERS });
   }
 });
