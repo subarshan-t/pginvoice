@@ -355,6 +355,32 @@ function Picker({ value, label, options, onChange }) {
   );
 }
 
+// Lets an allocation be edited as either a percentage of the supporter's capacity or a
+// fixed number of hours -- editing either field recomputes the other for display (from
+// `baseHours`) and calls onChange with whichever the person actually typed into, since
+// that's the one that becomes the stored, canonical definition (see updateSupportAllocation).
+function round1(n) { return Math.round(n * 10) / 10; }
+function DualAllocationInput({ type, value, baseHours, onChange, width = 60 }) {
+  const pct = type === "pct" ? Number(value || 0) * 100 : (baseHours > 0 ? (Number(value || 0) / baseHours) * 100 : 0);
+  const hrs = type === "pct" ? Number(value || 0) * baseHours : Number(value || 0);
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+      <input
+        className="pg-input" type="number" step="any" style={{ width, padding: "4px 6px" }}
+        value={round1(pct)} title="% of their time"
+        onChange={(e) => { const v = e.target.value === "" ? 0 : Number(e.target.value); onChange("pct", v / 100); }}
+      />
+      <span style={{ fontSize: 11, color: "var(--fg-tertiary)" }}>%</span>
+      <input
+        className="pg-input" type="number" step="any" style={{ width, padding: "4px 6px" }}
+        value={round1(hrs)} title="Fixed hours"
+        onChange={(e) => { const v = e.target.value === "" ? 0 : Number(e.target.value); onChange("hours", v); }}
+      />
+      <span style={{ fontSize: 11, color: "var(--fg-tertiary)" }}>hrs</span>
+    </span>
+  );
+}
+
 function SearchBox({ label, value, onChange }) {
   return (
     <label className="pg-field">
@@ -405,8 +431,8 @@ function CapacityDashboardInner({ onNavigateTeam }) {
 
   const [qConsultant, setQConsultant] = useState("");
   const [qClient, setQClient] = useState("");
-  const [qSupport, setQSupport] = useState("");
   const [qRoster, setQRoster] = useState("");
+  const [expandedUtil, setExpandedUtil] = useState({});
 
   // The same parsed ClickUp export Client Invoicing has already loaded (and persisted to
   // IndexedDB) — read here too so "Average Hrs" can be driven from real billable hours
@@ -515,6 +541,10 @@ function CapacityDashboardInner({ onNavigateTeam }) {
 
   const givenAway = useMemo(() => { const m = {}; support.forEach((s) => { m[s.from] = (m[s.from] || 0) + hoursOf(s); }); return m; }, [support, hoursOf]);
   const receivedBy = useMemo(() => { const m = {}; support.forEach((s) => { if (!m[s.to]) m[s.to] = []; m[s.to].push({ ...s, hours: hoursOf(s) }); }); return m; }, [support, hoursOf]);
+  // The reverse of receivedBy — who a consultant is giving hours away to, and how many.
+  // Powers both the "Supporting other consultants" section on each card and the
+  // click-to-expand breakdown under the Capacity Utilization bars.
+  const givenBy = useMemo(() => { const m = {}; support.forEach((s) => { if (!m[s.from]) m[s.from] = []; m[s.from].push({ ...s, hours: hoursOf(s) }); }); return m; }, [support, hoursOf]);
 
   // Every real ClickUp folder name currently synced -- used only to flag a client group
   // whose `group` text (the field findMatch actually matches folders against) doesn't
@@ -720,6 +750,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
       const ownAvailable = Math.max(0, remainderAfterAway);
       const received = receivedBy[p.name] || [];
       const receivedTotal = received.reduce((s, r) => s + r.hours, 0);
+      const given = givenBy[p.name] || [];
       const pool = ownAvailable + receivedTotal;
       const demand = demandByOwner[p.name] || 0;
       const headroom = pool - demand;
@@ -727,10 +758,10 @@ function CapacityDashboardInner({ onNavigateTeam }) {
       const allocatedTotal = away + usedOwnOnClients; // Allocated Hours = given to others + spent on her own clients
       const spare = remainderAfterAway - usedOwnOnClients; // Availability = capacity − Allocated Hours. Never goes negative just because her own client list is bigger than her capacity — only if she's over-promised hours to others.
       const overAllocated = spare < 0;
-      m[p.name] = { base, away, ownAvailable, received, receivedTotal, pool, demand, headroom, spare, overAllocated, usedOwnOnClients, allocatedTotal };
+      m[p.name] = { base, away, ownAvailable, received, receivedTotal, given, pool, demand, headroom, spare, overAllocated, usedOwnOnClients, allocatedTotal };
     });
     return m;
-  }, [people, peopleMap, givenAway, receivedBy, demandByOwner]);
+  }, [people, peopleMap, givenAway, receivedBy, givenBy, demandByOwner]);
 
   const totalDemand = useMemo(() => {
     let s = 0;
@@ -743,13 +774,11 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   const difference = totalBillableAllocation - totalDemand;
 
   /* ---------- filtering ---------- */
-  const supportersOf = (owner) => (personCalc[owner] ? personCalc[owner].received.map((r) => r.from) : []);
   const visibleOwners = OWNERS.filter((owner) => {
     if (!peopleMap[owner]) return false; // resigned as of this month — hide their card entirely
     const okConsultant = !qConsultant || owner.toLowerCase().includes(qConsultant.toLowerCase());
     const okClient = !qClient || (groupedByOwner[owner] || []).some((g) => g.group.toLowerCase().includes(qClient.toLowerCase()) || g.rows.some((r) => r.client.toLowerCase().includes(qClient.toLowerCase())));
-    const okSupport = !qSupport || supportersOf(owner).some((n) => n.toLowerCase().includes(qSupport.toLowerCase()));
-    return okConsultant && okClient && okSupport;
+    return okConsultant && okClient;
   });
 
   const toggleCollapse = (owner) => setCollapsed((prev) => ({ ...prev, [owner]: !prev[owner] }));
@@ -768,7 +797,10 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   const allocatableNames = ["DMA (external)", ...people.filter((p) => peopleMap[p.name]).map((p) => p.name)];
 
   const removeSupport = (id) => setSupport((ss) => ss.filter((s) => s.id !== id));
-  const updateSupportValue = (id, newValue) => setSupport((ss) => ss.map((s) => s.id === id ? { ...s, value: newValue } : s));
+  // Whichever field the person actually edited (% or fixed hrs) becomes the stored
+  // definition going forward -- a %-based allocation scales with the supporter's future
+  // capacity changes, a fixed-hrs one doesn't, so only one can be canonical at a time.
+  const updateSupportAllocation = (id, type, value) => setSupport((ss) => ss.map((s) => s.id === id ? { ...s, type, value } : s));
   function proposedHours(from, type, value) {
     if (type === "pct") { const base = peopleMap[from] ? peopleMap[from].monthly : 0; return base * Number(value || 0); }
     return Number(value || 0);
@@ -913,7 +945,6 @@ function CapacityDashboardInner({ onNavigateTeam }) {
       <div className="pg-panel">
         <SearchBox label="Consultant" value={qConsultant} onChange={setQConsultant} />
         <SearchBox label="Client" value={qClient} onChange={setQClient} />
-        <SearchBox label="Support hrs" value={qSupport} onChange={setQSupport} />
         <button className="pg-btn" style={{ marginLeft: "auto" }} onClick={exportXlsx}><Download size={14} /> Export</button>
       </div>
 
@@ -1075,15 +1106,11 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                                 <td>{r.from} {supporterOver && <span className="pg-tag" style={{ color: "var(--status-over)", marginLeft: 6 }}>[over cap]</span>}</td>
                                 <td>
                                   {isEditing ? (
-                                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                      <input className="pg-input" type="number" step="any" style={{ width: 64, padding: "4px 6px" }}
-                                        value={r.type === "pct" ? Math.round(r.value * 1000) / 10 : r.value}
-                                        onChange={(e) => {
-                                          const v = e.target.value === "" ? 0 : Number(e.target.value);
-                                          updateSupportValue(r.id, r.type === "pct" ? v / 100 : v);
-                                        }} />
-                                      <span style={{ fontSize: 11, color: "var(--fg-tertiary)" }}>{r.type === "pct" ? "% of their time" : "fixed hrs"}</span>
-                                    </span>
+                                    <DualAllocationInput
+                                      type={r.type} value={r.value}
+                                      baseHours={r.from === "DMA (external)" ? 0 : (peopleMap[r.from] ? peopleMap[r.from].monthly : 0)}
+                                      onChange={(type, value) => updateSupportAllocation(r.id, type, value)}
+                                    />
                                   ) : (
                                     r.type === "pct" ? `${(r.value * 100).toFixed(0)}% of their time` : `${r.value} fixed hrs`
                                   )}
@@ -1101,8 +1128,12 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                         <div className="pg-cap-addform">
                           <div className="pg-cap-addform-grid">
                             <div><Picker value={addForm.from} label="Choose person" options={candidateOptions} onChange={(v) => setAddForm((f) => ({ ...f, from: v }))} /></div>
-                            <div><Picker value={addForm.type} options={[{ value: "pct", label: "% of their time" }, { value: "hours", label: "Fixed hours" }]} onChange={(v) => setAddForm((f) => ({ ...f, type: v }))} /></div>
-                            <div><input className="pg-input" type="number" step="any" placeholder={addForm.type === "pct" ? "0.20" : "10"} value={addForm.value} onChange={(e) => setAddForm((f) => ({ ...f, value: e.target.value }))} /></div>
+                            <DualAllocationInput
+                              type={addForm.type} value={addForm.value === "" ? 0 : addForm.value}
+                              baseHours={addForm.from && addForm.from !== "DMA (external)" && peopleMap[addForm.from] ? peopleMap[addForm.from].monthly : 0}
+                              onChange={(type, value) => setAddForm((f) => ({ ...f, type, value }))}
+                              width={68}
+                            />
                             <button className="pg-btn" style={{ padding: "9px 14px" }} onClick={() => submitAllocation(owner)} disabled={!addForm.from || addForm.value === ""}><Plus size={13} /> Add</button>
                           </div>
                           {check && check.over && (
@@ -1116,6 +1147,29 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                         </div>
                       )}
                     </div>
+
+                    {/* Reverse of "Capacity planning" above — hours THIS consultant is giving
+                        away to help other consultants, rather than receiving. Searching for a
+                        consultant by name shows her own card with this section right in it, so
+                        her time-spent and who-she's-supporting are visible together. */}
+                    {pc.given.length > 0 && (
+                      <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed var(--border-soft)" }}>
+                        <span className="pg-field__label">Supporting other consultants</span>
+                        <table className="pg-table" style={{ marginTop: 8 }}>
+                          <thead><tr><th>Consultant</th><th>Allocation</th><th className="right num">Hrs</th></tr></thead>
+                          <tbody>
+                            {pc.given.map((g, i) => (
+                              <tr key={i}>
+                                <td>{g.to}</td>
+                                <td>{g.type === "pct" ? `${(g.value * 100).toFixed(0)}% of ${owner}'s time` : `${g.value} fixed hrs`}</td>
+                                <td className="right num">{g.hours.toFixed(1)}</td>
+                              </tr>
+                            ))}
+                            <tr className="total"><td colSpan={2}>Total given away</td><td className="right num">{pc.away.toFixed(1)}</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -1178,38 +1232,62 @@ function CapacityDashboardInner({ onNavigateTeam }) {
               // spilling into her non-billable hours.
               const status = overflow > 0 ? "over" : (capacity > 0 && allocated >= capacity - 0.05) ? "full" : "under";
               const barColor = status === "over" ? "var(--status-over)" : status === "full" ? "var(--status-ok)" : "var(--status-warn)";
+              const hasGiven = pc.given.length > 0;
+              const isExpanded = hasGiven && !!expandedUtil[p.name];
               return (
-                <div key={p.id} style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
-                  <PersonAvatar name={p.name} photo={p.photo} size={34} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: "var(--font-body)", fontWeight: 600, fontSize: 13, color: "var(--fg-primary)" }}>
-                      {p.name}
-                      {pm.resigningThisMonth && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} />}
-                    </div>
-                    <div style={{ display: "flex", gap: 16, marginTop: 4, alignItems: "flex-start" }}>
-                      <div style={{ flex: 1 }}>
-                        <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
-                          <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
-                        </div>
-                        {editRoster ? (
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 4 }}>
-                            <span className="pg-footnote" style={{ margin: 0 }}>Leaves</span>
-                            <input className="pg-input" type="number" min="0" step="any" style={{ width: 52, padding: "2px 5px", fontSize: 11 }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
-                          </div>
-                        ) : (
-                          <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center" }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</p>
-                        )}
+                <div key={p.id} style={{ marginTop: 10 }}>
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 10, cursor: hasGiven ? "pointer" : "default" }}
+                    onClick={hasGiven ? () => setExpandedUtil((prev) => ({ ...prev, [p.name]: !prev[p.name] })) : undefined}
+                    title={hasGiven ? `${isExpanded ? "Hide" : "Show"} who ${p.name} is supporting` : undefined}
+                  >
+                    <PersonAvatar name={p.name} photo={p.photo} size={34} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: "var(--font-body)", fontWeight: 600, fontSize: 13, color: "var(--fg-primary)", display: "flex", alignItems: "center" }}>
+                        {p.name}
+                        {pm.resigningThisMonth && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} />}
+                        {hasGiven && (isExpanded ? <ChevronDown size={12} style={{ marginLeft: 5, color: "var(--fg-tertiary)" }} /> : <ChevronRight size={12} style={{ marginLeft: 5, color: "var(--fg-tertiary)" }} />)}
                       </div>
-                      <div style={{ width: 92, flex: "none" }} title={overflow > 0 ? `${overflow.toFixed(1)} hrs of billable overflow eating into non-billable time` : undefined}>
-                        <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
-                          <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
+                      <div style={{ display: "flex", gap: 16, marginTop: 4, alignItems: "flex-start" }}>
+                        <div style={{ flex: 1 }}>
+                          <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
+                            <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
+                          </div>
+                          {editRoster ? (
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 4 }}>
+                              <span className="pg-footnote" style={{ margin: 0 }}>Leaves</span>
+                              <input className="pg-input" type="number" min="0" step="any" style={{ width: 52, padding: "2px 5px", fontSize: 11 }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} onClick={(e) => e.stopPropagation()} />
+                            </div>
+                          ) : (
+                            <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center" }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</p>
+                          )}
                         </div>
-                        <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center", color: overflow > 0 ? "var(--status-over)" : undefined }}>
-                          {overflow.toFixed(1)} / {unbillableCapacity.toFixed(1)} hrs
-                        </p>
+                        <div style={{ width: 92, flex: "none" }} title={overflow > 0 ? `${overflow.toFixed(1)} hrs of billable overflow eating into non-billable time` : undefined}>
+                          <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
+                            <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
+                          </div>
+                          <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center", color: overflow > 0 ? "var(--status-over)" : undefined }}>
+                            {overflow.toFixed(1)} / {unbillableCapacity.toFixed(1)} hrs
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
+                  {isExpanded && (
+                    <div style={{ marginLeft: 44, marginTop: 6, padding: "8px 10px", background: "var(--bg-subtle, var(--accent-soft))", borderRadius: "var(--app-radius-sm)" }}>
+                      <p className="pg-footnote" style={{ margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Supporting</p>
+                      {pc.given.map((g, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "2px 0" }}>
+                          <span>{g.to}</span>
+                          <span style={{ fontFamily: "var(--font-mono)", color: "var(--fg-secondary)" }}>{g.hours.toFixed(1)} hrs</span>
+                        </div>
+                      ))}
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0 0", marginTop: 4, borderTop: "1px solid var(--border-soft)", fontWeight: 600 }}>
+                        <span>Total</span>
+                        <span style={{ fontFamily: "var(--font-mono)" }}>{pc.away.toFixed(1)} hrs</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

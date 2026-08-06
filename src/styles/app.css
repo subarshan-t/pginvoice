@@ -478,7 +478,7 @@ button { font: inherit; }
 .pg-cap-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); box-shadow: var(--shadow-sm); padding: 18px 22px; margin-top: 12px; }
 .pg-cap-card:first-child { margin-top: 0; }
 .pg-cap-addform { background: var(--accent-soft); border-radius: var(--app-radius-sm); padding: 12px 14px; margin-top: 10px; }
-.pg-cap-addform-grid { display: grid; grid-template-columns: 1.3fr 1fr 0.8fr auto; gap: 8px; align-items: end; }
+.pg-cap-addform-grid { display: grid; grid-template-columns: 1.3fr 1.7fr auto; gap: 8px; align-items: end; }
 @media (max-width: 640px) { .pg-cap-addform-grid { grid-template-columns: 1fr; } }
 .pg-cap-statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
 @media (max-width: 480px) { .pg-cap-statrow { grid-template-columns: 1fr; } }
