@@ -214,11 +214,10 @@ export const SEED_CLIENTS = [
   C("c8", "Warrina Homes: Package", "Warrina Homes", "Chloe", "Package", 24, { "2026-01": 28.5, "2026-02": 27.8, "2026-03": 7.2, "2026-04": 46.8, "2026-05": 50.0, "2026-06": 44.1 }, { status: "active" }),
   C("c9", "Warrina Homes: Employee Handbook", "Warrina Homes", "Chloe", "Project", null, null, { status: "active" }),
 
-  C("c10", "Australian GW", "Australian GW", "Vinavie", "Hourly", 0, null, { status: "archived", history: [{ from: "2025-07", agreed: 0.0 }], note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified, same standard applied to the Clients module." }),
   C("c11", "Clare Valley Wine & Grape", "Clare Valley Wine & Grape", "Vinavie", "Package", 8, { "2026-01": 17.9, "2026-02": 5.2, "2026-03": 9.0, "2026-04": 7.8, "2026-05": 2.3, "2026-06": 0.8 }, { status: "active", history: [{ from: "2026-01", agreed: 8.0 }] }),
   C("c12", "Coonawarra", "Coonawarra", "Vinavie", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 25.5, "2026-04": 17.7, "2026-05": 21.8, "2026-06": 13.6 }, { status: "active" }),
   C("c13", "Riverland Wine: Package", "Riverland Wine", "Vinavie", "Package", 8, { "2026-01": 9.8, "2026-02": 14.8, "2026-03": 14.2, "2026-04": 11.9, "2026-05": 23.1, "2026-06": 3.2 }, { status: "active", history: [{ from: "2026-04", agreed: 8.0 }] }),
-  C("c14", "Riverland Wine: Melbourne Showcase", "Riverland Wine", "Vinavie", "Quoted", 25, null, { status: "active" }),
+  C("c14", "Riverland Wine: Melbourne Showcase", "Riverland Wine", "Vinavie", "Quoted", 25, null, { status: "inactive", offboardedFrom: "2026-08", offboardNote: "One-time project, completed. Also added to the Clients module as an archived project." }),
   C("c15", "Sevenhill", "Sevenhill", "Vinavie", "Project", 6, null, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Reduced to 'Media Release only' then dropped (source: Inactive Clients list, ~Feb-Jun 2026)" }),
   C("c16", "Vegetation Solutions: MVS", "Vegetation Solutions: MVS", "Vinavie", "Hourly", null, { "2026-01": 3.8, "2026-02": 3.6, "2026-03": 3.5, "2026-04": 1.3, "2026-05": 1.2, "2026-06": 0.4 }, { status: "active" }),
   C("c17", "Vegetation Solutions: Firewood", "Vegetation Solutions: Firewood", "Vinavie", "Hourly", null, { "2026-01": 1.3, "2026-02": 2.5, "2026-03": 22.4, "2026-04": 21.1, "2026-05": 19.3, "2026-06": 13.0 }, { status: "active" }),
@@ -227,7 +226,6 @@ export const SEED_CLIENTS = [
   C("c19", "GPEX", "GPEX", "Shreya", "Package", 70, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 38.6, "2026-05": 105.3, "2026-06": 140.4 }, { status: "active" }),
   C("c20", "BusSA", "BusSA", "Shreya", "Project", 25, { "2026-01": 0, "2026-02": 1.5, "2026-03": 9.0, "2026-04": 18.8, "2026-05": 46.5, "2026-06": 19.0 }, { status: "active", note: "A separate 'BusSA / BusSafe' one-off project ended ~May 2026 per the Inactive Clients list, but this account is the ongoing BusSAFE retainer and remains active." }),
   C("c21", "Magain Real Estate", "Magain Real Estate", "Shreya", "Hourly", null, { "2026-01": 13.1, "2026-02": 8.8, "2026-03": 42.9, "2026-04": 24.0, "2026-05": 10.3, "2026-06": 7.6 }, { status: "active" }),
-  C("c22", "Media Magnetix", "Media Magnetix", "Shreya", "Strategy", 0, null, { status: "archived", note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified, same standard applied to the Clients module." }),
 
   C("c23", "Baintech", "Baintech", "Lucy", "Package", 38, null, { status: "inactive", offboardedFrom: "2026-06", offboardNote: "Zero ClickUp folder activity found across the entire 13-month synced window (Jul 2025-Jul 2026), corroborating the PG Four Lists workbook note \"Offboarding planned for end Jun 2026 -- recommend confirming this went ahead as scheduled\"; mirrors the same status set on this client in the Supabase Clients module.", history: [{ from: "2026-06", agreed: 32.0 }] }),
   C("c24", "BAMSS / Childcare Sec Services", "BAMSS Childcare Security Services (Qld)", "Lucy", "Package", 22, { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 4.7, "2026-05": 5.8, "2026-06": 13.9 }, { status: "active" }),
@@ -256,12 +254,11 @@ export const SEED_CLIENTS = [
 
   C("c46", "Hills Medical (Better Medical)", "Hills Medical", "Alice", "Package", 32, { "2026-01": 48.0, "2026-02": 43.6, "2026-03": 47.6, "2026-04": 32.9, "2026-05": 18.1, "2026-06": 47.7 }, { status: "active" }),
   C("c47", "Duco", "Duco", "Alice", "Package", 24, { "2026-01": 16.2, "2026-02": 34.8, "2026-03": 25.6, "2026-04": 27.2, "2026-05": 3.3, "2026-06": 0.0 }, { status: "active", history: [{ from: "2026-01", agreed: 24.0 }] }),
-  C("c48", "Osteria Polpo", "Osteria Polpo", "Alice", "Package", 16, null, { status: "archived", note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified. Matches the archived status already set on this client in the Supabase Clients module." }),
+  C("c48", "Osteria Polpo", "Osteria Polpo", "Alice", "Package", 16, null, { status: "archived", note: "Archived to match the main Clients module (not found in PG Four Lists / no ClickUp folder)." }),
   C("c49", "Sidewood", "Sidewood", "Alice", "Hourly", null, { "2026-01": 26.6, "2026-02": 32.4, "2026-03": 37.8, "2026-04": 30.0, "2026-05": 31.8, "2026-06": 30.3 }, { status: "active" }),
   C("c50", "Your Success Lab", "Your Success Lab", "Alice", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 33.8, "2026-04": 61.6, "2026-05": 33.2, "2026-06": 35.1 }, { status: "active" }),
 
   C("c51", "Blueforce", "Blueforce", "Amanda", "Package", 40, { "2026-01": 0, "2026-02": 0, "2026-03": 6.4, "2026-04": 27.2, "2026-05": 47.2, "2026-06": 51.4 }, { status: "active" }),
-  C("c52", "CLT Website", "CLT Website", "Amanda", "Package", null, null, { status: "archived", note: "Not found in any of the PG Four Lists sheets and no matching ClickUp folder as of the 31 Jul 2026 refresh -- status unverified, same standard applied to the Clients module." }),
   C("c53", "Filter Supplies (WA)", "Filter Supplies", "Amanda", "Package", 16, { "2026-01": 6.4, "2026-02": 9.8, "2026-03": 14.0, "2026-04": 17.8, "2026-05": 8.1, "2026-06": 15.0 }, { status: "active" }),
   C("c54", "Green Shoots", "Green Shoots", "Amanda", "Package", 16, { "2026-01": 19.2, "2026-02": 6.6, "2026-03": 13.9, "2026-04": 7.5, "2026-05": 19.3, "2026-06": 24.8 }, { status: "active" }),
   C("c55", "Majestic Plumbing", "Majestic Plumbing", "Amanda", "Package", 16, { "2026-01": 0, "2026-02": 0, "2026-03": 4.6, "2026-04": 11.7, "2026-05": 15.9, "2026-06": 32.2 }, { status: "active" }),
