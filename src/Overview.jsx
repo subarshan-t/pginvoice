@@ -194,13 +194,6 @@ export default function Overview() {
                 <div className="ov-trend__title">6-month trend</div>
                 {hasTrend ? (
                   <>
-                    <div style={{ display: "flex", gap: 16, marginBottom: 8, flexWrap: "wrap" }}>
-                      {trendSeries.map((s) => (
-                        <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--fg-tertiary)" }}>
-                          <i style={{ width: 14, height: 3, borderRadius: 2, display: "inline-block", background: s.color }} />{s.label}
-                        </span>
-                      ))}
-                    </div>
                     <LineChart series={trendSeries} months={trend.months} />
                     <p className="pg-footnote" style={{ marginTop: 6 }}>
                       Months with no matching accrual data are omitted rather than shown as a fabricated zero — {trend.months.length} of the trailing {monthKeys.length} months have data.

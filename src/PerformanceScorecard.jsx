@@ -626,13 +626,6 @@ function PerformanceInner() {
           <div className="pg-cap-grid">
             <div>
               <div className="pg-panel" style={{ flexDirection: "column", flexWrap: "nowrap", alignItems: "stretch" }}>
-                <div style={{ display: "flex", gap: 16, marginBottom: 8, flexWrap: "wrap" }}>
-                  {clientChart.series.map((s) => (
-                    <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--fg-tertiary)" }}>
-                      <i style={{ width: 14, height: 3, borderRadius: 2, display: "inline-block", background: s.color }} />{s.label}
-                    </span>
-                  ))}
-                </div>
                 <LineChart series={clientChart.series} months={activeMonths} />
                 {selectedClient && (
                   <p className="pg-footnote" style={{ marginTop: 6 }}>
@@ -703,13 +696,6 @@ function PerformanceInner() {
           <div className="pg-cap-grid">
             <div>
               <div className="pg-panel" style={{ flexDirection: "column", flexWrap: "nowrap", alignItems: "stretch" }}>
-                <div style={{ display: "flex", gap: 16, marginBottom: 8, flexWrap: "wrap" }}>
-                  {teamChart.series.map((s) => (
-                    <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--fg-tertiary)" }}>
-                      <i style={{ width: 14, height: 3, borderRadius: 2, display: "inline-block", background: s.color }} />{s.label}
-                    </span>
-                  ))}
-                </div>
                 <LineChart series={teamChart.series} months={activeMonths} />
                 {selectedConsultant && <p className="pg-footnote" style={{ marginTop: 6 }}>Showing <b>{selectedConsultant}</b>.</p>}
               </div>
