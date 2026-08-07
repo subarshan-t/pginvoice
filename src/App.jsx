@@ -5,6 +5,7 @@ import {
   Upload, Copy, Check, ChevronDown, ChevronRight, Download, Search,
   AlertTriangle, Link2, FileSpreadsheet, FileText, Printer, Users, ArrowUpDown, BarChart3, Clock,
   RefreshCw, Wifi, WifiOff, X, ArrowLeft, MoreVertical, TrendingUp, TrendingDown,
+  Calendar, SlidersHorizontal,
 } from "lucide-react";
 import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, findPersonMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, dominantClientType, basisToClientType } from "./nameMatch.js";
@@ -101,6 +102,7 @@ export default function PGReconciliation({ onNavigateClients }) {
   const [clientTypeFilter, setClientTypeFilter] = useState("package");
   const [consultantFilter, setConsultantFilter] = useState("");
   const [sortMode, setSortMode] = useState("risk");
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const clickupInput = useRef(null);
   const accruedInput = useRef(null);
   const saveTimer = useRef(null);
@@ -1078,53 +1080,20 @@ export default function PGReconciliation({ onNavigateClients }) {
             client list — a divider keeps the two groups visually distinct. */}
         {ready && (
           <div className="pg-panel" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
-          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 14 }}>
+          <div className="pg-pillbar">
             {availableMonths.length > 1 && (
-              <label className="pg-field pg-field--emphasis">
-                <span className="pg-field__label">Reporting period</span>
-                <select value={dataMonthKey} onChange={(e) => setDataMonthKey(e.target.value)}
-                  className="pg-select" style={{ minWidth: 170 }}>
+              <label className="pg-pill pg-pill--select" title="Reporting period">
+                <Calendar size={13} className="pg-pill__icon" />
+                <select value={dataMonthKey} onChange={(e) => setDataMonthKey(e.target.value)}>
                   {availableMonths.map((m) => (
                     <option key={m.key} value={m.key}>{m.label}</option>
                   ))}
                 </select>
+                <ChevronDown size={13} className="pg-pill__chevron" />
               </label>
             )}
-            <label className="pg-field">
-              <span className="pg-field__label">Invoice month</span>
-              <input value={invoiceMonth} onChange={(e) => setInvoiceMonth(e.target.value)} placeholder="e.g. July 2026"
-                className="pg-input" style={{ width: 160 }} />
-            </label>
-            <label className="pg-field">
-              <span className="pg-field__label">Prior balance from</span>
-              <select value={priorMonthKey} onChange={(e) => setPriorMonthKey(e.target.value)}
-                className="pg-select" style={{ minWidth: 180 }}>
-                {accrued.balanceCols.map((bc) => (
-                  <option key={monthKey(bc.year, bc.month)} value={monthKey(bc.year, bc.month)}>{bc.label}</option>
-                ))}
-                {/* The desired prior month isn't in the sheet yet — shown as its own
-                    clearly-labelled option so the select never silently shows a stale
-                    column instead. Selecting it just keeps the estimated fallback. */}
-                {priorMonthKey && !accrued.balanceCols.some((bc) => monthKey(bc.year, bc.month) === priorMonthKey) && (
-                  <option value={priorMonthKey}>{priorMonthPretty} (estimated — not in sheet yet)</option>
-                )}
-              </select>
-            </label>
-            {clickup.hasBillable && (
-              <label className="pg-checkbox-row">
-                <input type="checkbox" checked={billableOnly} onChange={(e) => setBillableOnly(e.target.checked)} />
-                billable only
-              </label>
-            )}
-          </div>
-
-          <div style={{ borderTop: "1px solid var(--border-subtle)" }} />
-
-          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 14 }}>
-            <label className="pg-field pg-field--emphasis">
-              <span className="pg-field__label">Client type</span>
-              <select value={clientTypeFilter} onChange={(e) => setClientTypeFilter(e.target.value)}
-                className="pg-select" style={{ minWidth: 260 }}>
+            <label className="pg-pill pg-pill--select" title="Client type">
+              <select value={clientTypeFilter} onChange={(e) => setClientTypeFilter(e.target.value)}>
                 <option value="all">All Clients ({typeCounts.all})</option>
                 <option value="package">Clients on a Package ({typeCounts.package})</option>
                 <option value="strategy">Strategy Clients ({typeCounts.strategy})</option>
@@ -1135,29 +1104,68 @@ export default function PGReconciliation({ onNavigateClients }) {
                 <option value="map">MAP Clients ({typeCounts.map})</option>
                 <option value="queensland">Queensland Clients (prv) ({typeCounts.queensland})</option>
               </select>
+              <ChevronDown size={13} className="pg-pill__chevron" />
             </label>
-            <label className="pg-field">
-              <span className="pg-field__label"><Users size={11} /> Consultant</span>
+            <label className="pg-pill pg-pill--select" title="Consultant">
               <select value={consultantFilter} onChange={(e) => setConsultantFilter(e.target.value)}
-                className="pg-select" style={{ minWidth: 200 }}
                 disabled={!clickup?.hasUser}>
-                <option value="">All consultants</option>
+                <option value="">All Consultants</option>
                 {consultants.map((u) => <option key={u} value={u}>{u}</option>)}
               </select>
+              <ChevronDown size={13} className="pg-pill__chevron" />
             </label>
-            <label className="pg-field">
-              <span className="pg-field__label"><ArrowUpDown size={11} /> Sort</span>
-              <select value={sortMode} onChange={(e) => setSortMode(e.target.value)}
-                className="pg-select" style={{ minWidth: 150 }}>
-                <option value="risk">Risk</option>
-                <option value="alpha">Alphabetical</option>
+            <label className="pg-pill pg-pill--select" title="Sort">
+              <select value={sortMode} onChange={(e) => setSortMode(e.target.value)}>
+                <option value="risk">Sort: Risk</option>
+                <option value="alpha">Sort: Alphabetical</option>
               </select>
+              <ChevronDown size={13} className="pg-pill__chevron" />
             </label>
-            <label className="pg-field" style={{ flex: 1, minWidth: 180 }}>
-              <span className="pg-field__label"><Search size={11} /> Filter this list</span>
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter the list below by name…" className="pg-input" title="Filters the currently visible, already-filtered client list below. To jump straight to any client regardless of filters, use the search bar in the header (⌘K)." />
+            {clickup.hasBillable && (
+              <label className="pg-pill pg-pill--checkbox">
+                <input type="checkbox" checked={billableOnly} onChange={(e) => setBillableOnly(e.target.checked)} />
+                Billable only
+              </label>
+            )}
+            <label className="pg-pill pg-pill--search">
+              <Search size={13} className="pg-pill__icon" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter clients…" title="Filters the currently visible, already-filtered client list below. To jump straight to any client regardless of filters, use the search bar in the header (⌘K)." />
             </label>
+            <button type="button"
+              className={`pg-pill pg-pill--iconbtn${advancedFiltersOpen ? " is-active" : ""}`}
+              onClick={() => setAdvancedFiltersOpen((v) => !v)}
+              title="More filters: invoice month, prior balance">
+              <SlidersHorizontal size={15} />
+            </button>
           </div>
+
+          {advancedFiltersOpen && (
+            <>
+              <div style={{ borderTop: "1px solid var(--border-subtle)" }} />
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 14 }}>
+                <label className="pg-field">
+                  <span className="pg-field__label">Invoice month</span>
+                  <input value={invoiceMonth} onChange={(e) => setInvoiceMonth(e.target.value)} placeholder="e.g. July 2026"
+                    className="pg-input" style={{ width: 160 }} />
+                </label>
+                <label className="pg-field">
+                  <span className="pg-field__label">Prior balance from</span>
+                  <select value={priorMonthKey} onChange={(e) => setPriorMonthKey(e.target.value)}
+                    className="pg-select" style={{ minWidth: 180 }}>
+                    {accrued.balanceCols.map((bc) => (
+                      <option key={monthKey(bc.year, bc.month)} value={monthKey(bc.year, bc.month)}>{bc.label}</option>
+                    ))}
+                    {/* The desired prior month isn't in the sheet yet — shown as its own
+                        clearly-labelled option so the select never silently shows a stale
+                        column instead. Selecting it just keeps the estimated fallback. */}
+                    {priorMonthKey && !accrued.balanceCols.some((bc) => monthKey(bc.year, bc.month) === priorMonthKey) && (
+                      <option value={priorMonthKey}>{priorMonthPretty} (estimated — not in sheet yet)</option>
+                    )}
+                  </select>
+                </label>
+              </div>
+            </>
+          )}
           </div>
         )}
 
