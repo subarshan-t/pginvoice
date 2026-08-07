@@ -7,6 +7,12 @@ import { supabase } from "./supabaseClient.js";
 
 const PAGE_SIZE = 1000; // PostgREST's default row cap per request — paginate past it
 
+// Stamped onto every live-sync payload's `fileName` -- a manual CSV upload's
+// fileName is always a real filename, which never matches this literal, so
+// callers can tell the two apart after a value has round-tripped through
+// IndexedDB (which caches both kinds of clickup data identically).
+export const LIVE_SYNC_LABEL = "Live sync from ClickUp";
+
 // `sinceMonthKey` (optional, "YYYY-MM") restricts the fetch to that month onward --
 // callers that only need a trailing window (e.g. Overview's 6-month rollup) should
 // always pass this, since the full table is 47k+ rows spanning 15+ months and
@@ -53,7 +59,7 @@ export async function fetchClickupFromSupabase(sinceMonthKey) {
     hasUser: rows.some((r) => r.user),
     hasStartDate: rows.some((r) => r.dateKey),
     warnings: [],
-    fileName: "Live sync from ClickUp",
+    fileName: LIVE_SYNC_LABEL,
   };
 }
 

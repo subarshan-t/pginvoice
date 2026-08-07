@@ -227,10 +227,10 @@ export default function Shell() {
         <div style={{ display: active === "timesheet" ? "block" : "none" }}><TimesheetSummary /></div>
         <div style={{ display: active === "accruals" ? "block" : "none" }}><ClientAccruals /></div>
         <div style={{ display: active === "clients" ? "block" : "none" }}><Clients /></div>
-        <div style={{ display: active === "settings" ? "block" : "none" }}><SettingsPage /></div>
-        <div style={{ display: active === "integrations" ? "block" : "none" }}>
-          <PlaceholderPage title="Integrations." subtitle="Connected apps and sync configuration aren't built yet." icon={Plug} empty="Integrations module coming soon." />
+        <div style={{ display: active === "settings" ? "block" : "none" }}>
+          <PlaceholderPage title="Settings." subtitle="Workspace preferences aren't built yet." icon={Settings} empty="Settings module coming soon." />
         </div>
+        <div style={{ display: active === "integrations" ? "block" : "none" }}><SettingsPage /></div>
         <div style={{ display: active === "help" ? "block" : "none" }}>
           <PlaceholderPage title="Help." subtitle="Documentation and support aren't built yet." icon={HelpCircle} empty="Help module coming soon." />
         </div>

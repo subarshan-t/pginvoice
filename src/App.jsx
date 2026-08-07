@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, findPersonMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, dominantClientType, basisToClientType } from "./nameMatch.js";
-import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync } from "./clickupSync.js";
+import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync, LIVE_SYNC_LABEL } from "./clickupSync.js";
 import { SEED_CLIENTS as CAP_SEED_CLIENTS, SEED_PEOPLE, loadKey as loadCapKey } from "./capacityData.js";
 import { fetchClients as fetchPgClients, fetchClientEvents, applyDueClientEvents, typeForMonth } from "./clientsSync.js";
 import { PersonAvatar } from "./avatar.jsx";
@@ -229,11 +229,21 @@ export default function PGReconciliation({ onNavigateClients }) {
       if (savedClickup) {
         setClickup(savedClickup);
         justHydratedClickupRef.current = savedClickup;
-        // Whatever's in IndexedDB is, by definition, not this page load's live sync --
-        // mark it "manual" immediately so the stale-data banner shows right away instead
-        // of staying blank until (or unless) the live fetch below resolves and overrides it.
-        manualOverrideRef.current = true;
-        setClickupSource("manual");
+        // IndexedDB caches whatever's in `clickup` state regardless of its origin --
+        // both a manual upload AND a successful live sync end up here (see the
+        // idbSet(CLICKUP_DB_KEY, clickup) effect below). Unconditionally marking
+        // restored data "manual" was wrong: once live sync had ever run once, every
+        // later reload restored that live data from cache and permanently mislabeled
+        // it manual, which also set manualOverrideRef -- silently blocking the live
+        // fetch below from ever taking over again, even on a working sync. Only
+        // treat it as manual if it's NOT the live-sync payload (fetchClickupFromSupabase
+        // always stamps its own fileName; a real manual upload never matches it).
+        if (savedClickup.fileName !== LIVE_SYNC_LABEL) {
+          manualOverrideRef.current = true;
+          setClickupSource("manual");
+        } else {
+          setClickupSource("supabase");
+        }
       }
       if (savedAccrued) { setAccrued(savedAccrued); justHydratedAccruedRef.current = savedAccrued; }
       try {
@@ -1010,6 +1020,12 @@ export default function PGReconciliation({ onNavigateClients }) {
                 )}
               </div>
             )}
+            <SyncStatusIcon clickupSource={clickupSource} clickup={clickup} syncMeta={syncMeta} />
+            <WarningIcon title="ClickUp export" warnings={clickup?.warnings} />
+            <WarningIcon title="Accrued sheet" warnings={accrued?.warnings} />
+            {clickupSource !== "manual" && syncMeta?.last_synced_at && syncMeta?.last_sync_status !== "error" && (
+              <span className="pg-status-pill" style={{ color: "var(--status-ok)", background: "var(--status-ok-soft)" }}>Synced</span>
+            )}
             <ImportButton
               clickup={clickup} accrued={accrued} clickupErr={clickupErr} accruedErr={accruedErr}
               onPickClickup={() => clickupInput.current?.click()}
@@ -1046,43 +1062,6 @@ export default function PGReconciliation({ onNavigateClients }) {
           </div>
         )}
 
-        {/* live-sync status — the ClickUp side can auto-populate from a Supabase-scheduled
-            sync instead of a manual upload; this shows which source is currently in play */}
-        <div className="pg-panel" style={{ alignItems: "center" }}>
-          {clickupSource === "manual" ? (
-            <>
-              <WifiOff size={14} style={{ color: "var(--status-warn)" }} />
-              <span style={{ fontSize: 13, color: "var(--status-warn)" }}>
-                {clickup?.uploadedAt
-                  ? `Showing a manually uploaded file (${clickup.fileName || "no name"}), uploaded ${timeAgo(new Date(clickup.uploadedAt).toISOString())} — not the live sync.`
-                  : "Showing a manually uploaded file from a previous session — not the live sync."}
-                {" "}Overrides live sync until the next reload.
-              </span>
-            </>
-          ) : syncMeta?.last_sync_status === "error" ? (
-            <>
-              <WifiOff size={14} style={{ color: "var(--status-warn)" }} />
-              <span style={{ fontSize: 13, color: "var(--status-warn)" }}>Live sync not set up yet ({syncMeta.last_sync_message}). Upload a CSV below in the meantime.</span>
-            </>
-          ) : syncMeta?.last_synced_at ? (
-            <>
-              <Wifi size={14} style={{ color: "var(--status-ok)" }} />
-              <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Live sync from ClickUp · last synced {timeAgo(syncMeta.last_synced_at)} · {syncMeta.rows_synced ?? "—"} entries</span>
-            </>
-          ) : (
-            <>
-              <WifiOff size={14} style={{ color: "var(--fg-tertiary)" }} />
-              <span style={{ fontSize: 13, color: "var(--fg-secondary)" }}>Live sync hasn't run yet.</span>
-            </>
-          )}
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-            <WarningIcon title="ClickUp export" warnings={clickup?.warnings} />
-            <WarningIcon title="Accrued sheet" warnings={accrued?.warnings} />
-            {clickupSource !== "manual" && syncMeta?.last_synced_at && syncMeta?.last_sync_status !== "error" && (
-              <span className="pg-status-pill" style={{ color: "var(--status-ok)", background: "var(--status-ok-soft)" }}>Synced</span>
-            )}
-          </div>
-        </div>
 
         {/* config + filter row, combined into one panel (previously two stacked
             panels) so there's one less thing to scroll past before reaching the
@@ -1308,6 +1287,54 @@ function KpiCard({ label, value, sub, tone, icon, delta, spark }) {
 // Compact icon trigger — replaces the old full-width banner. The full warning
 // text still lives behind a click, just in a small balloon instead of taking
 // over a whole row.
+// Compact replacement for the old always-visible "live-sync status" bar — same
+// 4 states (manual override / sync error / synced / never synced), but as a
+// single icon+balloon next to Import, matching how ClickUp/Accrued warnings
+// already work, instead of a full-width row that was mostly empty space when
+// everything was fine.
+function SyncStatusIcon({ clickupSource, clickup, syncMeta }) {
+  const [open, setOpen] = useState(false);
+  const ref = useDismissable(() => setOpen(false));
+
+  let status, Icon, color, message;
+  if (clickupSource === "manual") {
+    status = "manual"; Icon = WifiOff; color = "var(--status-warn)";
+    message = clickup?.uploadedAt
+      ? `Showing a manually uploaded file (${clickup.fileName || "no name"}), uploaded ${timeAgo(new Date(clickup.uploadedAt).toISOString())} — not the live sync. Overrides live sync until the next reload.`
+      : "Showing a manually uploaded file from a previous session — not the live sync. Overrides live sync until the next reload.";
+  } else if (syncMeta?.last_sync_status === "error") {
+    status = "error"; Icon = WifiOff; color = "var(--status-warn)";
+    message = `Live sync not set up yet (${syncMeta.last_sync_message}). Upload a CSV in the meantime.`;
+  } else if (syncMeta?.last_synced_at) {
+    status = "ok"; Icon = Wifi; color = "var(--status-ok)";
+    message = `Live sync from ClickUp · last synced ${timeAgo(syncMeta.last_synced_at)} · ${syncMeta.rows_synced ?? "—"} entries.`;
+  } else {
+    status = "never"; Icon = WifiOff; color = "var(--fg-tertiary)";
+    message = "Live sync hasn't run yet.";
+  }
+  const needsAttention = status !== "ok";
+
+  return (
+    <div className="pg-warn-icon-wrap" ref={ref}>
+      <button
+        className="pg-warn-icon" onClick={() => setOpen((o) => !o)}
+        style={{ color }}
+        title={message}
+        aria-label={`ClickUp sync status: ${status}`}
+      >
+        <Icon size={14} />
+        {needsAttention && <span className="pg-warn-icon__count">!</span>}
+      </button>
+      {open && (
+        <div className="pg-warn-balloon">
+          <div className="pg-warn-balloon__title">ClickUp sync</div>
+          <div className="pg-warn-balloon__item">{message}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WarningIcon({ title, warnings }) {
   const [open, setOpen] = useState(false);
   const ref = useDismissable(() => setOpen(false));
@@ -1798,44 +1825,46 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
           <div className="pg-drawer__section-title">
             Tasks {drillConsultant ? `worked by ${drillConsultant}` : consultantFilter ? `worked by ${consultantFilter}` : "worked this month"}
           </div>
-          <table className="pg-table">
-            <thead>
-              <tr>
-                <th>Task</th>
-                <th className="right num" style={{ width: 90 }}>Hours</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shownTasks.map(([task, min]) => {
-                const taskUrl = clickupTaskUrl(c.taskIds?.get(task));
-                return (
-                  <tr key={task}>
-                    <td>
-                      {taskUrl ? (
-                        <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" className="pg-clickup-link">
-                          {task}
-                        </a>
-                      ) : task}
-                      {hasUser && <div style={{ fontSize: 11, color: "var(--fg-tertiary)", marginTop: 2 }}><TaskUsersCell userMinutesMap={taskUsersShown?.get(task)} taskUrl={taskUrl} /></div>}
-                    </td>
-                    <td className="right num">{fmt(min / 60)}</td>
-                  </tr>
-                );
-              })}
-              {taskEntries.length === 0 && (
-                <tr><td colSpan={2} className="empty">No tasks in this filter.</td></tr>
-              )}
-              <tr className="total">
-                <td>Total</td>
-                <td className="right num">{fmt(workedShown)}</td>
-              </tr>
-            </tbody>
-          </table>
-          {taskEntries.length > 3 && (
-            <button className="pg-manual-note" style={{ background: "none", border: 0, cursor: "pointer", padding: 0, marginTop: 8 }} onClick={() => setTasksOpen((o) => !o)}>
-              <span style={{ color: "var(--accent)" }}>{tasksOpen ? "Show fewer" : `View all ${taskEntries.length} tasks`}</span>
-            </button>
-          )}
+          <div className="pg-drawer__bubble">
+            <table className="pg-table">
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th className="right num" style={{ width: 90 }}>Hours</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shownTasks.map(([task, min]) => {
+                  const taskUrl = clickupTaskUrl(c.taskIds?.get(task));
+                  return (
+                    <tr key={task}>
+                      <td>
+                        {taskUrl ? (
+                          <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" className="pg-clickup-link">
+                            {task}
+                          </a>
+                        ) : task}
+                        {hasUser && <div style={{ fontSize: 11, color: "var(--fg-tertiary)", marginTop: 2 }}><TaskUsersCell userMinutesMap={taskUsersShown?.get(task)} taskUrl={taskUrl} /></div>}
+                      </td>
+                      <td className="right num">{fmt(min / 60)}</td>
+                    </tr>
+                  );
+                })}
+                {taskEntries.length === 0 && (
+                  <tr><td colSpan={2} className="empty">No tasks in this filter.</td></tr>
+                )}
+                <tr className="total">
+                  <td>Total</td>
+                  <td className="right num">{fmt(workedShown)}</td>
+                </tr>
+              </tbody>
+            </table>
+            {taskEntries.length > 3 && (
+              <button className="pg-manual-note" style={{ background: "none", border: 0, cursor: "pointer", padding: 0, marginTop: 8 }} onClick={() => setTasksOpen((o) => !o)}>
+                <span style={{ color: "var(--accent)" }}>{tasksOpen ? "Show fewer" : `View all ${taskEntries.length} tasks`}</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="pg-drawer__footer">

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Settings as SettingsIcon, Plug, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Plug, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { fetchClickupKeyStatus, saveClickupApiKey, triggerManualSync, fetchSyncMeta } from "./clickupSync.js";
 
 // Lets the ClickUp API key be rotated from the app instead of a Supabase
@@ -67,11 +67,11 @@ export default function Settings() {
       <div className="pg-container">
         <div className="pg-app-header">
           <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-            <div className="pg-app-header__icon"><SettingsIcon size={18} /></div>
+            <div className="pg-app-header__icon"><Plug size={18} /></div>
             <div>
               <span className="pg-eyebrow">Purple Giraffe · Internal</span>
-              <h1 className="pg-app-header__title">Settings.</h1>
-              <p className="pg-app-header__sub">Connections and workspace preferences.</p>
+              <h1 className="pg-app-header__title">Integrations.</h1>
+              <p className="pg-app-header__sub">Connected apps and sync configuration.</p>
             </div>
           </div>
         </div>

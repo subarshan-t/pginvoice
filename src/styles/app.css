@@ -70,8 +70,11 @@
    anchor the base pair; the rest are new values in the same family.
    ============================================================================ */
 :root[data-theme="light"] {
-  /* Purple Giraffe Design OS §5.3 warm off-white canvas */
-  --bg-base:     rgb(246, 244, 241);   /* #F6F4F1 */
+  /* Plain white canvas, per explicit request (the Design OS's original warm
+     off-white read as "cream"/muddy against clean white cards) -- separation
+     between page and card now comes from --shadow-sm/--border-subtle alone,
+     the same way Overview's cards already work. */
+  --bg-base:     rgb(255, 255, 255);   /* #FFFFFF */
   --bg-card:     rgb(255, 255, 255);   /* #FFFFFF */
   --bg-elevated: rgb(238, 232, 255);   /* Purple 100 — used sparingly for active surfaces */
   --bg-nav:      rgba(255, 255, 255, 0.85);
@@ -220,7 +223,14 @@ button { font: inherit; }
 .pg-sidebar--collapsed .pg-sidebar__brand .pg-sidebar__icon-btn { margin-left: 0 !important; }
 
 .pg-sidebar__profile {
-  display: flex; align-items: center; gap: 10px; margin-top: auto;
+  /* No margin-top: auto here -- the secondary nav (Settings/Integrations/Help)
+     above it already has that, via an inline style in Shell.jsx, to push the
+     whole trailing group to the bottom as one unit. Two separate auto margins
+     in the same flex column each grab their own share of the leftover space,
+     which pushed this away from that nav instead of sitting flush under it --
+     exactly what read as "hanging in the middle" instead of pinned to the
+     bottom edge just above the sign-out row. */
+  display: flex; align-items: center; gap: 10px;
   padding: 10px 8px; border-top: 1px solid var(--border-subtle);
 }
 .pg-sidebar--collapsed .pg-sidebar__profile { justify-content: center; padding: 10px 0; }
@@ -741,6 +751,14 @@ button { font: inherit; }
 .pg-status-pill--computed { display: inline-flex; align-items: center; gap: 4px; cursor: help; }
 .pg-drawer__recon-row { display: flex; justify-content: space-between; padding: 6px 0; font-family: var(--font-body); font-size: 12px; color: var(--fg-secondary); border-bottom: 1px dashed var(--border-subtle); }
 .pg-drawer__section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+/* A visually distinct "card within the card" for content that should read as
+   its own self-contained unit at a glance (e.g. the task list) rather than
+   blend into the drawer's plain scroll flow like every other section. */
+.pg-drawer__bubble {
+  background: var(--bg-elevated); border: 1px solid var(--border-subtle);
+  border-radius: var(--app-radius-sm); padding: 12px; margin-top: 4px;
+}
+.pg-drawer__bubble .pg-table { background: transparent; }
 .pg-drawer__section:first-of-type { border-top: 0; }
 .pg-drawer__section-title { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); margin-bottom: 10px; }
 .pg-drawer__field-row { display: flex; gap: 20px; }
