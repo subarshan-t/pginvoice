@@ -578,19 +578,15 @@ textarea:focus-visible {
 .pg-cmdsearch:focus-within { border-color: var(--accent); }
 .pg-cmdsearch:has(.pg-cmdsearch__input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Invisible full-row button wrapping everything in ClientRow except the
-   chevron — display:contents lets its children lay out as direct flex items
-   of .pg-row (as if the button weren't there) while still giving keyboard
-   users a single real, focusable, non-nested control for "open this row". */
+/* Button wrapping everything in ClientRow except the chevron — owns its own
+   box (rather than display:contents) so the whole padded area, including the
+   gaps between the number columns, is one contiguous click/tap target with
+   no dead zones; the chevron sits beside it as a sibling, not nested inside. */
 .pg-row__open {
-  display: contents;
-  background: none; border: 0; padding: 0; margin: 0;
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 16px;
+  background: none; border: 0; padding: 14px 18px; margin: 0;
   text-align: left; cursor: pointer; font: inherit; color: inherit;
 }
-/* display:contents elements render no box of their own, so the default
-   :focus-visible outline above has nothing to draw around — put the ring on
-   the row itself instead when the open-button inside it has keyboard focus. */
-.pg-row:has(.pg-row__open:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
 .pg-cmdsearch__icon { flex: none; color: var(--fg-tertiary); }
 .pg-cmdsearch__input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; font-family: var(--font-body); font-size: 13px; color: var(--fg-primary); }
 .pg-cmdsearch__input::placeholder { color: var(--fg-tertiary); }
@@ -611,9 +607,9 @@ textarea:focus-visible {
 .pg-rowlist { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
 .pg-row-wrap.pg-row--nested { margin-left: 28px; }
 .pg-row {
-  width: 100%; display: flex; align-items: center; gap: 16px; text-align: left;
+  width: 100%; display: flex; align-items: stretch; gap: 4px;
   background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius);
-  box-shadow: var(--shadow-sm); padding: 14px 18px; cursor: pointer; color: inherit;
+  box-shadow: var(--shadow-sm); color: inherit;
   transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .pg-row-wrap.pg-row--nested .pg-row { background: var(--bg-base); }
@@ -627,7 +623,8 @@ textarea:focus-visible {
 .pg-row__num-label { display: block; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-tertiary); margin-bottom: 2px; }
 .pg-row__status { flex: none; width: 130px; text-align: right; font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--fg-secondary); }
 .pg-row__chevron {
-  flex: none; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  flex: none; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px;
+  margin-right: 6px; align-self: center;
   border-radius: var(--app-radius-pill); color: var(--fg-tertiary); cursor: pointer;
   background: none; border: none; font: inherit; padding: 0;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);

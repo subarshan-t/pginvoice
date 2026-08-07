@@ -62,6 +62,8 @@ function LineChart({ series, months }) {
   const svgRef = useRef(null);
   const rafRef = useRef(null);
 
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
+
   if (months.length === 0) {
     return <div className="pg-empty">No months of ClickUp data to chart yet.</div>;
   }
