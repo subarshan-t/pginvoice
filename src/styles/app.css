@@ -392,13 +392,28 @@ button { font: inherit; }
 .pg-pill--select { position: relative; }
 .pg-pill--select select {
   appearance: none; -webkit-appearance: none; background: transparent; border: none; outline: none;
-  font-family: var(--font-body); font-size: 13px; color: var(--fg-primary); cursor: pointer;
-  padding-right: 2px; max-width: 200px; text-overflow: ellipsis;
+  font: inherit; font-family: var(--font-body); font-size: 13px; color: var(--fg-primary); cursor: pointer;
+  /* Fills the rest of the pill (rather than shrinking to its content) so every
+     pixel of the pill is the real clickable <select> — no dead label padding
+     around it that only focuses without opening the dropdown. */
+  flex: 1; min-width: 0; padding-right: 2px; max-width: 200px; text-overflow: ellipsis;
 }
 .pg-pill--select select:disabled { cursor: default; opacity: 0.5; }
-.pg-pill--select option { background: var(--bg-card); color: var(--fg-primary); }
+/* The native option list doesn't always inherit the trigger's font on every
+   platform, which is what made it look like a mismatched "system" popup with
+   a different color/typeface than the rest of the app -- pin both explicitly. */
+.pg-pill--select option { background: var(--bg-card); color: var(--fg-primary); font-family: var(--font-body); font-size: 13px; }
 .pg-pill__icon { flex: none; color: var(--fg-tertiary); }
 .pg-pill__chevron { flex: none; color: var(--fg-tertiary); }
+.pg-pill--stepper { padding: 4px; gap: 2px; cursor: default; }
+.pg-pill__step {
+  display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border-radius: 999px; border: none; background: none; color: var(--fg-secondary); cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.pg-pill__step:hover:not(:disabled) { background: var(--bg-card); color: var(--fg-primary); }
+.pg-pill__step:disabled { color: var(--fg-tertiary); opacity: 0.4; cursor: default; }
+.pg-pill__step-label { display: flex; align-items: center; gap: 6px; padding: 0 4px; white-space: nowrap; }
 .pg-pill--checkbox { gap: 8px; }
 .pg-pill--checkbox input { accent-color: var(--accent); cursor: pointer; }
 .pg-pill--search { flex: 1; min-width: 200px; cursor: text; }
@@ -722,9 +737,14 @@ button { font: inherit; }
    shifted row to row). Grid fixes every column to the same track everywhere. */
 .pg-row-grid-cols { grid-template-columns: 18px 32px minmax(0, 1.4fr) 90px 90px 90px 90px 90px 130px 26px; }
 .pg-rowlist__head {
-  display: grid; align-items: center; gap: 16px; padding: 0 18px 4px;
+  display: grid; align-items: center; gap: 16px; padding: 10px 18px;
   font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--fg-tertiary);
+  /* Stays visible while the list scrolls past it (.pg-shell__main is the actual
+     scrolling ancestor) so the columns are still labelled once you're scrolled
+     well past the page header. */
+  position: sticky; top: 0; z-index: 5; background: var(--bg-base);
+  border-bottom: 1px solid var(--border-subtle);
 }
 @media (max-width: 900px) { .pg-rowlist__head { display: none; } }
 .pg-row {
@@ -773,11 +793,17 @@ button { font: inherit; }
 }
 
 /* ---- client invoicing: inline row expand (chevron), separate from the drawer ----- */
+/* Squares off the row's bottom corners and drops its own shadow while expanded, so
+   it reads as the top half of one continuous card with the panel below rather than
+   a rounded card with a second, separately-shadowed box awkwardly abutting it
+   (the previous negative-margin overlap trick left the row's rounded bottom
+   corners peeking out above the panel's square top edge). */
+.pg-row--expanded { border-bottom-left-radius: 0; border-bottom-right-radius: 0; box-shadow: none; }
 .pg-row-inline {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
-  background: var(--bg-card); border: 1px solid var(--border-subtle); border-top: 0;
+  background: var(--bg-card); border: 1px solid var(--border-subtle); border-top: 1px solid var(--border-subtle);
   border-radius: 0 0 var(--app-radius) var(--app-radius); box-shadow: var(--shadow-sm);
-  margin-top: -8px; padding: 16px 18px 18px;
+  margin-top: 0; padding: 16px 18px 18px;
 }
 @media (max-width: 900px) { .pg-row-inline { grid-template-columns: 1fr; } }
 .pg-row-inline__title { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); margin-bottom: 10px; }

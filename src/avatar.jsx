@@ -66,22 +66,32 @@ export function colorForName(name) {
 // it's consistent everywhere the same client shows up, same as the reference
 // design's colorful client avatars).
 export function ClientAvatar({ name, logo, size = 34, style }) {
+  const [broken, setBroken] = React.useState(false);
+  // Reset the broken flag whenever a different logo URL is handed in, so switching
+  // from a failed one to a working one (or back to no logo) doesn't stay stuck.
+  React.useEffect(() => { setBroken(false); }, [logo]);
   const initials = (name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?";
+  const showLogo = logo && !broken;
   const base = {
     flex: "none", width: size, height: size, borderRadius: "50%",
     display: "flex", alignItems: "center", justifyContent: "center",
     fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: Math.max(10, size * 0.36),
-    color: "#fff", background: colorForName(name), overflow: "hidden",
+    color: "#fff",
+    // Colored fill is purely a stand-in for a missing image -- a real logo (most
+    // are transparent-background PNGs/SVGs) sits directly on the page background
+    // instead, so it doesn't show through as an odd colored ring around the mark.
+    background: showLogo ? "transparent" : colorForName(name),
+    overflow: "hidden",
     ...style,
   };
-  if (logo) {
+  if (showLogo) {
     return (
       <span style={base}>
         <img
           src={logo} alt={name || ""} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           // A favicon URL can 404 (site down, no favicon) -- fall back to the initials
           // tile rather than showing a broken image icon.
-          onError={(e) => { e.currentTarget.style.display = "none"; }}
+          onError={() => setBroken(true)}
         />
       </span>
     );

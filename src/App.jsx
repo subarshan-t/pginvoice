@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, useId } from 
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import {
-  Upload, Copy, Check, ChevronDown, ChevronRight, Download, Search,
+  Upload, Copy, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Search,
   AlertTriangle, Link2, FileSpreadsheet, FileText, Printer, Users, ArrowUpDown, BarChart3, Clock,
   RefreshCw, Wifi, WifiOff, X, ArrowLeft, MoreVertical, TrendingUp, TrendingDown,
   Calendar, SlidersHorizontal,
@@ -21,6 +21,20 @@ import {
 } from "./parsers.js";
 import { buildPrintHtml, printClientPdf } from "./printTemplate.js";
 import { CLICKUP_DB_KEY, ACCRUED_DB_KEY, CAP_CLIENTS_KEY, CAP_PEOPLE_KEY, PG_CLIENTS_KEY } from "./storageKeys.js";
+// A <label> wrapping a <select> only focuses it on click in most browsers -- opening
+// the dropdown itself needs a second click directly on the control. Used as the
+// onClick for every pill-style filter label so one click anywhere on the pill
+// (icon, padding, chevron, not just the select's own text) opens the picker.
+// showPicker() is the real native/system dropdown; falls back to a focus+click
+// nudge on browsers that don't support it yet (still native, just one extra tick).
+function openPillPicker(e) {
+  const select = e.currentTarget.querySelector("select");
+  if (!select || select.disabled || e.target === select) return;
+  e.preventDefault();
+  select.focus();
+  if (typeof select.showPicker === "function") select.showPicker();
+}
+
 // Same link as the task itself (see clickupTaskUrl's note above) -- ClickUp doesn't expose
 // a way to deep-link to one specific person's time entry within a task, only the task page
 // itself (where the Time Tracked panel shows everyone who logged against it).
@@ -741,18 +755,7 @@ export default function PGReconciliation({ onNavigateClients }) {
     return list;
   }, [clients, clientTypeFilter, consultantFilter, search, sortMode, primaryNameByGroup]);
 
-  const stats = useMemo(() => {
-    const hrs = visible.reduce((a, c) => a + (c.workedFiltered ?? c.worked), 0);
-    const over = visible.filter((c) => c.status === "over").length;
-    const under = visible.filter((c) => c.status === "under").length;
-    // "Carry-over / Accrued" KPI — total absolute prior-month balance across every
-    // package client currently in view, whichever direction (credit carried in or
-    // over-used), since both represent a balance still being carried forward.
-    const carry = visible.reduce((a, c) => a + (c.priorBalance != null ? Math.abs(c.priorBalance) : 0), 0);
-    return { hrs, count: visible.length, over, under, carry };
-  }, [visible]);
-
-  // Same filter pipeline as `visible`/`stats` above, applied to prevClients — real,
+  // Same filter pipeline as `visible` above, applied to prevClients — real,
   // fully-computed prior-month numbers (not an estimate) so the KPI cards can show a
   // genuine "vs last month" comparison on an apples-to-apples basis with what's on
   // screen right now (same type/consultant/search filters).
@@ -767,53 +770,12 @@ export default function PGReconciliation({ onNavigateClients }) {
     });
     return result;
   }, [prevClients]);
-  const prevStats = useMemo(() => {
-    let list = clientTypeFilter === "all" ? prevClients.slice()
-      : clientTypeFilter === "map" ? prevClients.filter((c) => c.isMap)
-      : prevClients.filter((c) => c.type === clientTypeFilter);
-    if (consultantFilter) list = list.filter((c) => c.userMinutes.has(consultantFilter));
-    list = list.filter((c) => {
-      if (!c.capGroup) return true;
-      const primaryName = prevPrimaryNameByGroup.get(c.capGroup);
-      return !primaryName || c.name === primaryName;
-    });
-    list = list.map((c) => withConsultantFilter(c, consultantFilter));
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter((c) => c.name.toLowerCase().includes(q) || (c.displayName || "").toLowerCase().includes(q));
-    }
-    const hrs = list.reduce((a, c) => a + (c.workedFiltered ?? c.worked), 0);
-    const over = list.filter((c) => c.status === "over").length;
-    const carry = list.reduce((a, c) => a + (c.priorBalance != null ? Math.abs(c.priorBalance) : 0), 0);
-    // Only meaningful once the export actually has rows for that month — otherwise
-    // "0 vs last month" would misleadingly read as a 100% drop rather than "no data".
-    const available = !!(clickup && prevMonthDataKey && clickup.rows.some((r) => r.monthKey === prevMonthDataKey));
-    return { hrs, count: list.length, over, carry, available };
-  }, [prevClients, clientTypeFilter, consultantFilter, search, prevPrimaryNameByGroup, clickup, prevMonthDataKey]);
 
   const prevMonthShortLabel = useMemo(() => {
     if (!prevMonthDataKey) return "";
     const [y, m] = prevMonthDataKey.split("-").map(Number);
     return new Date(y, m - 1, 1).toLocaleString(undefined, { month: "short", year: "numeric" });
   }, [prevMonthDataKey]);
-
-  // Trailing up-to-6-month hours trend for the "Total billable hours" sparkline — row-level
-  // only (billable/non-internal/consultant-filtered), not tied to the client-type dropdown,
-  // since it's meant to read as "hours logged over time" rather than duplicate the KPI figure.
-  const hoursTrend = useMemo(() => {
-    if (!clickup) return [];
-    const byMonth = new Map();
-    for (const r of clickup.rows) {
-      if (clickup.hasBillable && billableOnly && !r.billable) continue;
-      if (r.isInternal) continue;
-      if (consultantFilter && r.user !== consultantFilter) continue;
-      if (!r.monthKey) continue;
-      byMonth.set(r.monthKey, (byMonth.get(r.monthKey) || 0) + r.minutes);
-    }
-    const keys = [...byMonth.keys()].sort();
-    const upto = dataMonthKey ? keys.filter((k) => k <= dataMonthKey) : keys;
-    return upto.slice(-6).map((k) => byMonth.get(k) / 60);
-  }, [clickup, billableOnly, consultantFilter, dataMonthKey]);
 
   // Flat lookup (visible clients + their nested sub-project siblings) so the drawer
   // can resolve whichever client name was clicked, regardless of nesting.
@@ -827,6 +789,97 @@ export default function PGReconciliation({ onNavigateClients }) {
     return map;
   }, [visible, siblingsByPrimaryName, consultantFilter]);
   const drawerClient = drawerClientName ? allDisplayable.get(drawerClientName) : null;
+
+  // The set of ClickUp folder names the KPI row/sparkline currently represent -- a
+  // single client (plus its sub-project siblings) while its drawer is open, so the
+  // header snapshot reads as "this client's numbers" instead of staying pinned to
+  // the whole filtered list; otherwise every folder behind the currently filtered/
+  // searched client list, so the snapshot tracks search/type/consultant filtering
+  // the same way the row list below it already does.
+  const kpiScopeFolders = useMemo(() => {
+    if (drawerClient) {
+      const names = new Set([drawerClient.name]);
+      (siblingsByPrimaryName.get(drawerClient.name) || []).forEach((s) => names.add(s.name));
+      return names;
+    }
+    const names = new Set();
+    visible.forEach((c) => {
+      names.add(c.name);
+      (siblingsByPrimaryName.get(c.name) || []).forEach((s) => names.add(s.name));
+    });
+    return names;
+  }, [drawerClient, visible, siblingsByPrimaryName]);
+
+  // KPI row scope: the selected client (+ siblings) while its drawer is open,
+  // otherwise every currently filtered/searched client -- same idea as
+  // kpiScopeFolders above, just as client objects rather than folder names.
+  const statsScope = useMemo(() => {
+    if (drawerClient) {
+      const sibs = siblingsByPrimaryName.get(drawerClient.name) || [];
+      return [drawerClient, ...sibs.map((s) => withConsultantFilter(s, consultantFilter))];
+    }
+    return visible;
+  }, [drawerClient, visible, siblingsByPrimaryName, consultantFilter]);
+
+  const stats = useMemo(() => {
+    const hrs = statsScope.reduce((a, c) => a + (c.workedFiltered ?? c.worked), 0);
+    const over = statsScope.filter((c) => c.status === "over").length;
+    const under = statsScope.filter((c) => c.status === "under").length;
+    // "Carry-over / Accrued" KPI — total absolute prior-month balance across every
+    // package client currently in view, whichever direction (credit carried in or
+    // over-used), since both represent a balance still being carried forward.
+    const carry = statsScope.reduce((a, c) => a + (c.priorBalance != null ? Math.abs(c.priorBalance) : 0), 0);
+    return { hrs, count: statsScope.length, over, under, carry };
+  }, [statsScope]);
+
+  const prevStats = useMemo(() => {
+    let list;
+    if (drawerClient) {
+      const sibNames = new Set((siblingsByPrimaryName.get(drawerClient.name) || []).map((s) => s.name));
+      list = prevClients.filter((c) => c.name === drawerClient.name || sibNames.has(c.name));
+    } else {
+      list = clientTypeFilter === "all" ? prevClients.slice()
+        : clientTypeFilter === "map" ? prevClients.filter((c) => c.isMap)
+        : prevClients.filter((c) => c.type === clientTypeFilter);
+      if (consultantFilter) list = list.filter((c) => c.userMinutes.has(consultantFilter));
+      list = list.filter((c) => {
+        if (!c.capGroup) return true;
+        const primaryName = prevPrimaryNameByGroup.get(c.capGroup);
+        return !primaryName || c.name === primaryName;
+      });
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        list = list.filter((c) => c.name.toLowerCase().includes(q) || (c.displayName || "").toLowerCase().includes(q));
+      }
+    }
+    list = list.map((c) => withConsultantFilter(c, consultantFilter));
+    const hrs = list.reduce((a, c) => a + (c.workedFiltered ?? c.worked), 0);
+    const over = list.filter((c) => c.status === "over").length;
+    const carry = list.reduce((a, c) => a + (c.priorBalance != null ? Math.abs(c.priorBalance) : 0), 0);
+    // Only meaningful once the export actually has rows for that month — otherwise
+    // "0 vs last month" would misleadingly read as a 100% drop rather than "no data".
+    const available = !!(clickup && prevMonthDataKey && clickup.rows.some((r) => r.monthKey === prevMonthDataKey));
+    return { hrs, count: list.length, over, carry, available };
+  }, [drawerClient, prevClients, clientTypeFilter, consultantFilter, search, prevPrimaryNameByGroup, siblingsByPrimaryName, clickup, prevMonthDataKey]);
+
+  // Trailing up-to-6-month hours trend for the "Total billable hours" sparkline —
+  // scoped to kpiScopeFolders above, so it tracks the same client(s) the KPI cards
+  // currently represent (search/type/consultant filters, or a single selected client).
+  const hoursTrend = useMemo(() => {
+    if (!clickup) return [];
+    const byMonth = new Map();
+    for (const r of clickup.rows) {
+      if (clickup.hasBillable && billableOnly && !r.billable) continue;
+      if (r.isInternal) continue;
+      if (consultantFilter && r.user !== consultantFilter) continue;
+      if (!kpiScopeFolders.has(r.folder)) continue;
+      if (!r.monthKey) continue;
+      byMonth.set(r.monthKey, (byMonth.get(r.monthKey) || 0) + r.minutes);
+    }
+    const keys = [...byMonth.keys()].sort();
+    const upto = dataMonthKey ? keys.filter((k) => k <= dataMonthKey) : keys;
+    return upto.slice(-6).map((k) => byMonth.get(k) / 60);
+  }, [clickup, billableOnly, consultantFilter, dataMonthKey, kpiScopeFolders]);
   const usedAccruedNames = useMemo(() => new Set(clients.filter((x) => x.matched).map((x) => x.accruedClient.name)), [clients]);
 
   // Only meaningful when the reporting period IS the current real-world month — a mid-month
@@ -1095,18 +1148,30 @@ export default function PGReconciliation({ onNavigateClients }) {
         {ready && (
           <div className="pg-panel" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
           <div className="pg-pillbar">
-            {availableMonths.length > 1 && (
-              <label className="pg-pill pg-pill--select" title="Reporting period">
-                <Calendar size={13} className="pg-pill__icon" />
-                <select value={dataMonthKey} onChange={(e) => setDataMonthKey(e.target.value)}>
-                  {availableMonths.map((m) => (
-                    <option key={m.key} value={m.key}>{m.label}</option>
-                  ))}
-                </select>
-                <ChevronDown size={13} className="pg-pill__chevron" />
-              </label>
-            )}
-            <label className="pg-pill pg-pill--select" title="Client type">
+            {availableMonths.length > 1 && (() => {
+              const idx = availableMonths.findIndex((m) => m.key === dataMonthKey);
+              const label = idx >= 0 ? availableMonths[idx].label : dataMonthKey;
+              return (
+                <div className="pg-pill pg-pill--stepper" title="Reporting period">
+                  <button
+                    type="button" className="pg-pill__step" aria-label="Previous month"
+                    disabled={idx <= 0}
+                    onClick={() => idx > 0 && setDataMonthKey(availableMonths[idx - 1].key)}
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <span className="pg-pill__step-label"><Calendar size={13} className="pg-pill__icon" /> {label}</span>
+                  <button
+                    type="button" className="pg-pill__step" aria-label="Next month"
+                    disabled={idx < 0 || idx >= availableMonths.length - 1}
+                    onClick={() => idx >= 0 && idx < availableMonths.length - 1 && setDataMonthKey(availableMonths[idx + 1].key)}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              );
+            })()}
+            <label className="pg-pill pg-pill--select" title="Client type" onClick={openPillPicker}>
               <select value={clientTypeFilter} onChange={(e) => setClientTypeFilter(e.target.value)}>
                 <option value="all">All Clients ({typeCounts.all})</option>
                 <option value="package">Clients on a Package ({typeCounts.package})</option>
@@ -1120,7 +1185,7 @@ export default function PGReconciliation({ onNavigateClients }) {
               </select>
               <ChevronDown size={13} className="pg-pill__chevron" />
             </label>
-            <label className="pg-pill pg-pill--select" title="Consultant">
+            <label className="pg-pill pg-pill--select" title="Consultant" onClick={openPillPicker}>
               <select value={consultantFilter} onChange={(e) => setConsultantFilter(e.target.value)}
                 disabled={!clickup?.hasUser}>
                 <option value="">All Consultants</option>
@@ -1128,7 +1193,7 @@ export default function PGReconciliation({ onNavigateClients }) {
               </select>
               <ChevronDown size={13} className="pg-pill__chevron" />
             </label>
-            <label className="pg-pill pg-pill--select" title="Sort">
+            <label className="pg-pill pg-pill--select" title="Sort" onClick={openPillPicker}>
               <select value={sortMode} onChange={(e) => setSortMode(e.target.value)}>
                 <option value="risk">Sort: Risk</option>
                 <option value="alpha">Sort: Alphabetical</option>
@@ -1642,7 +1707,7 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName, onCop
     <div className={"pg-row-wrap" + (nested ? " pg-row--nested" : "")}>
       <div
         role="button" tabIndex={0}
-        className={"pg-row pg-row-grid-cols" + (active ? " pg-row--active" : "")}
+        className={"pg-row pg-row-grid-cols" + (active ? " pg-row--active" : "") + (inlineOpen ? " pg-row--expanded" : "")}
         onClick={onOpen}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
       >
