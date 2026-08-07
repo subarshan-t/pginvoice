@@ -4,18 +4,7 @@ import {
   Search, Download, ChevronDown, Plus, X, Users,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, multiFolderMatchesFor, isInternalFolder, basisToClientType, dominantClientType, CLIENT_TYPE_LABELS } from "./nameMatch.js";
-
-// CLIENT_TYPE_TONES (badge coloring, used elsewhere in the app) reuses the same accent for several
-// types (package/strategy both --accent, hourly/ad_hoc both --accent-orchid, etc.)
-// -- fine for a single badge, unreadable once up to 8 of them are simultaneous
-// lines on one chart. This is a chart-only jewel-tone palette (see app.css's
-// --chart-* tokens) with one distinct hue per type, plus its own tone for the
-// aggregate "Total Agreed" line.
-const CHART_TYPE_TONES = {
-  hourly: "var(--chart-hourly)", package: "var(--chart-package)", quoted: "var(--chart-quoted)",
-  map: "var(--chart-map)", strategy: "var(--chart-strategy)", project: "var(--chart-project)", ad_hoc: "var(--chart-ad-hoc)",
-};
+import { findMatch, multiFolderMatchesFor, isInternalFolder, basisToClientType, dominantClientType, CLIENT_TYPE_LABELS, CHART_TYPE_TONES } from "./nameMatch.js";
 import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey, agreedAt } from "./capacityData.js";
 import { useDismissable } from "./useDismissable.js";
 import { SearchBox } from "./SearchBox.jsx";

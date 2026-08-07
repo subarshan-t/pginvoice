@@ -91,6 +91,16 @@ export const CLIENT_TYPE_TONES = {
   ad_hoc: "var(--accent-orchid)",
   queensland: "var(--status-info)",
 };
+// CLIENT_TYPE_TONES above reuses the same accent for several types (package/strategy
+// both --accent, hourly/ad_hoc both --accent-orchid, etc.) -- fine for a single badge,
+// unreadable once up to 8 of them are simultaneous lines on one chart (Reporting's
+// per-client-type trend). This is a chart-only jewel-tone palette (see app.css's
+// --chart-* tokens) with one distinct hue per type, plus its own tone for the
+// aggregate "Total Agreed" line.
+export const CHART_TYPE_TONES = {
+  hourly: "var(--chart-hourly)", package: "var(--chart-package)", quoted: "var(--chart-quoted)",
+  map: "var(--chart-map)", strategy: "var(--chart-strategy)", project: "var(--chart-project)", ad_hoc: "var(--chart-ad-hoc)",
+};
 export function basisToClientType(basis) {
   const b = String(basis || "").trim();
   if (b === "MAP") return "map";

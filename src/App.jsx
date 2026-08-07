@@ -98,6 +98,47 @@ const VIEWSTATE_KEY = "pg-view-state-v1";
 // rather than a real edit-after-the-fact discrepancy worth flagging.
 const MISMATCH_TOLERANCE_H = 0.2;
 
+// Groups a client list by capGroup and, for any group with 2+ members, picks one
+// "primary" (the Package-like one if present, else whoever logged the most hours)
+// so the others can nest under it instead of showing as separate top-level cards.
+// A pure function of the list handed in so it can be run against both the current
+// month's clients and the prior month's without two hand-maintained copies of the
+// same grouping logic quietly drifting apart from each other.
+function computePrimaryNameByGroup(clientList) {
+  const byGroup = new Map();
+  clientList.forEach((c) => { if (!c.capGroup) return; if (!byGroup.has(c.capGroup)) byGroup.set(c.capGroup, []); byGroup.get(c.capGroup).push(c); });
+  const result = new Map();
+  byGroup.forEach((members, group) => {
+    if (members.length < 2) return;
+    const primary = members.find((m) => isPackageLikeType(m.type)) || [...members].sort((a, b) => b.worked - a.worked)[0];
+    result.set(group, primary.name);
+  });
+  return result;
+}
+
+// Shared type/consultant/search filter + primary-group suppression (everything
+// `visible` below needs except the final sort, which only the current-month list
+// actually does). Used for both the current month's `visible` list and the prior
+// month's `prevStats` comparison list, so "what's currently in view" can't
+// silently diverge between the two -- previously prevStats hand-duplicated this
+// exact filtering logic as a separate inline copy.
+function filterClientList(list, { clientTypeFilter, consultantFilter, search, primaryNameByGroup }) {
+  let out = clientTypeFilter === "all" ? list.slice()
+    : clientTypeFilter === "map" ? list.filter((c) => c.isMap)
+    : list.filter((c) => c.type === clientTypeFilter);
+  if (consultantFilter) out = out.filter((c) => c.userMinutes.has(consultantFilter));
+  out = out.filter((c) => {
+    if (!c.capGroup) return true;
+    const primaryName = primaryNameByGroup.get(c.capGroup);
+    return !primaryName || c.name === primaryName;
+  });
+  if (search.trim()) {
+    const q = search.trim().toLowerCase();
+    out = out.filter((c) => c.name.toLowerCase().includes(q) || (c.displayName || "").toLowerCase().includes(q));
+  }
+  return out;
+}
+
 // ================================ COMPONENT =================================
 export default function PGReconciliation({ onNavigateClients }) {
   const [clickup, setClickup] = useState(null);
@@ -687,17 +728,7 @@ export default function PGReconciliation({ onNavigateClients }) {
   // same thing -- easy to mistake for a duplicate/broken entry. Pick one member per group
   // as the "primary" (the Package one, since that's the ongoing relationship; otherwise
   // whichever logged the most hours) so the other(s) can nest underneath it instead.
-  const primaryNameByGroup = useMemo(() => {
-    const byGroup = new Map();
-    clients.forEach((c) => { if (!c.capGroup) return; if (!byGroup.has(c.capGroup)) byGroup.set(c.capGroup, []); byGroup.get(c.capGroup).push(c); });
-    const result = new Map();
-    byGroup.forEach((members, group) => {
-      if (members.length < 2) return;
-      const primary = members.find((m) => isPackageLikeType(m.type)) || [...members].sort((a, b) => b.worked - a.worked)[0];
-      result.set(group, primary.name);
-    });
-    return result;
-  }, [clients]);
+  const primaryNameByGroup = useMemo(() => computePrimaryNameByGroup(clients), [clients]);
   // primary's folder name -> its sibling sub-project(s), computed against the FULL client
   // list (not the type-filtered one below) -- a sub-project's own type would otherwise make
   // it invisible whenever the view is scoped to its parent's type, which is exactly the
@@ -724,24 +755,12 @@ export default function PGReconciliation({ onNavigateClients }) {
     return { ...c, tasksFiltered, workedFiltered, taskUsersFiltered };
   }
 
-  // filtered + sorted + consultant-scoped clients for display
+  // filtered + sorted + consultant-scoped clients for display -- the non-primary
+  // member of a multi-folder group is only ever shown nested under its primary
+  // (see siblingsByPrimaryName above), never again as its own top-level card.
   const visible = useMemo(() => {
-    let list = clientTypeFilter === "all" ? clients.slice()
-      : clientTypeFilter === "map" ? clients.filter((c) => c.isMap)
-      : clients.filter((c) => c.type === clientTypeFilter);
-    if (consultantFilter) list = list.filter((c) => c.userMinutes.has(consultantFilter));
-    // A non-primary member of a multi-folder group is only ever shown nested under its
-    // primary (see siblingsByPrimaryName above), never again as its own top-level card.
-    list = list.filter((c) => {
-      if (!c.capGroup) return true;
-      const primaryName = primaryNameByGroup.get(c.capGroup);
-      return !primaryName || c.name === primaryName;
-    });
+    let list = filterClientList(clients, { clientTypeFilter, consultantFilter, search, primaryNameByGroup });
     list = list.map((c) => withConsultantFilter(c, consultantFilter));
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter((c) => c.name.toLowerCase().includes(q) || (c.displayName || "").toLowerCase().includes(q));
-    }
     // sort
     if (sortMode === "alpha") {
       list.sort((a, b) => (a.displayName || a.name).localeCompare(b.displayName || b.name));
@@ -759,17 +778,7 @@ export default function PGReconciliation({ onNavigateClients }) {
   // fully-computed prior-month numbers (not an estimate) so the KPI cards can show a
   // genuine "vs last month" comparison on an apples-to-apples basis with what's on
   // screen right now (same type/consultant/search filters).
-  const prevPrimaryNameByGroup = useMemo(() => {
-    const byGroup = new Map();
-    prevClients.forEach((c) => { if (!c.capGroup) return; if (!byGroup.has(c.capGroup)) byGroup.set(c.capGroup, []); byGroup.get(c.capGroup).push(c); });
-    const result = new Map();
-    byGroup.forEach((members, group) => {
-      if (members.length < 2) return;
-      const primary = members.find((m) => isPackageLikeType(m.type)) || [...members].sort((a, b) => b.worked - a.worked)[0];
-      result.set(group, primary.name);
-    });
-    return result;
-  }, [prevClients]);
+  const prevPrimaryNameByGroup = useMemo(() => computePrimaryNameByGroup(prevClients), [prevClients]);
 
   const prevMonthShortLabel = useMemo(() => {
     if (!prevMonthDataKey) return "";
@@ -838,19 +847,7 @@ export default function PGReconciliation({ onNavigateClients }) {
       const sibNames = new Set((siblingsByPrimaryName.get(drawerClient.name) || []).map((s) => s.name));
       list = prevClients.filter((c) => c.name === drawerClient.name || sibNames.has(c.name));
     } else {
-      list = clientTypeFilter === "all" ? prevClients.slice()
-        : clientTypeFilter === "map" ? prevClients.filter((c) => c.isMap)
-        : prevClients.filter((c) => c.type === clientTypeFilter);
-      if (consultantFilter) list = list.filter((c) => c.userMinutes.has(consultantFilter));
-      list = list.filter((c) => {
-        if (!c.capGroup) return true;
-        const primaryName = prevPrimaryNameByGroup.get(c.capGroup);
-        return !primaryName || c.name === primaryName;
-      });
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        list = list.filter((c) => c.name.toLowerCase().includes(q) || (c.displayName || "").toLowerCase().includes(q));
-      }
+      list = filterClientList(prevClients, { clientTypeFilter, consultantFilter, search, primaryNameByGroup: prevPrimaryNameByGroup });
     }
     list = list.map((c) => withConsultantFilter(c, consultantFilter));
     const hrs = list.reduce((a, c) => a + (c.workedFiltered ?? c.worked), 0);
