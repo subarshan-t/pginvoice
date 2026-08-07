@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useId } from "react";
 import { useDismissable } from "./useDismissable.js";
 
 function monthLabelShort(key) {
@@ -23,9 +23,12 @@ const PALETTE = [
   "#EAB308", // amber
   "#06B6D4", // cyan
 ];
+// A series carrying its own `color` (the caller knows its real semantic tone,
+// e.g. a client-type's chart palette entry) always wins; the generated PALETTE
+// is only a fallback for series that don't specify one.
 function resolveColors(series) {
   let vivid = 0;
-  return series.map((s) => (NEUTRAL_LABELS.has(s.label) ? "var(--fg-tertiary)" : PALETTE[vivid++ % PALETTE.length]));
+  return series.map((s) => s.color || (NEUTRAL_LABELS.has(s.label) ? "var(--fg-tertiary)" : PALETTE[vivid++ % PALETTE.length]));
 }
 
 /* ============================================================
@@ -43,14 +46,18 @@ function resolveColors(series) {
 export function LineChart({ series, months }) {
   const W = 640, H = 280, padL = 40, padR = 16, padT = 16, padB = 28;
   const plotW = W - padL - padR, plotH = H - padT - padB;
-  const [activeLabel, setActiveLabel] = useState(null); // legend isolation; null = show all
+  const [activeLabel, setActiveLabel] = useState(null); // legend isolation (click); null = show all
+  const [hoverLabel, setHoverLabel] = useState(null); // legend hover -> dim the rest without isolating
   const [hoverMonthIdx, setHoverMonthIdx] = useState(null); // month-label hover -> full tooltip
   const [hoverPoint, setHoverPoint] = useState(null); // { si, i } node hover -> single-value tooltip
   const containerRef = useDismissable(() => setActiveLabel(null));
+  const gradientId = `pg-linechart-grad-${useId().replace(/:/g, "")}`;
+  const glowId = `pg-linechart-glow-${useId().replace(/:/g, "")}`;
 
   const colors = resolveColors(series);
   const visible = activeLabel ? series.filter((s) => s.label === activeLabel) : series;
   const visibleColors = activeLabel ? [colors[series.findIndex((s) => s.label === activeLabel)]] : colors;
+  const primaryIdx = series.findIndex((s) => s.primary);
 
   const allVals = visible.flatMap((s) => s.points.filter((v) => v !== null && v !== undefined));
   const maxV = allVals.length ? Math.max(...allVals) * 1.15 : 10;
@@ -62,21 +69,24 @@ export function LineChart({ series, months }) {
   const legend = (
     <div style={{ display: "flex", gap: 16, marginBottom: 8, flexWrap: "wrap" }}>
       {series.map((s, si) => {
-        const isDimmed = activeLabel && activeLabel !== s.label;
+        const isDimmed = (activeLabel && activeLabel !== s.label) || (!activeLabel && hoverLabel && hoverLabel !== s.label);
         return (
           <button
             key={s.label}
             type="button"
             onClick={() => toggleLegend(s.label)}
+            onMouseEnter={() => setHoverLabel(s.label)}
+            onMouseLeave={() => setHoverLabel((cur) => (cur === s.label ? null : cur))}
             style={{
               display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-mono)", fontSize: 10.5,
-              color: isDimmed ? "var(--fg-tertiary)" : "var(--fg-secondary)", opacity: isDimmed ? 0.5 : 1,
+              color: isDimmed ? "var(--fg-tertiary)" : "var(--fg-secondary)", opacity: isDimmed ? 0.35 : 1,
               background: "none", border: "none", padding: 0, cursor: "pointer",
+              transition: "opacity 0.15s var(--ease), color 0.15s var(--ease)",
             }}
             aria-pressed={activeLabel === s.label}
             title={activeLabel === s.label ? `Showing only ${s.label} — click to show all` : `Show only ${s.label}`}
           >
-            <i style={{ width: 14, height: 3, borderRadius: 2, display: "inline-block", background: colors[si] }} />
+            <i style={{ width: 14, height: s.primary ? 4 : 3, borderRadius: 2, display: "inline-block", background: colors[si] }} />
             {s.label}
           </button>
         );
@@ -97,6 +107,19 @@ export function LineChart({ series, months }) {
     <div ref={containerRef} className="pg-linechart" style={{ position: "relative" }}>
       {legend}
       <svg viewBox={`0 0 ${W} ${H}`} width="100%">
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={primaryIdx >= 0 ? colors[primaryIdx] : "var(--accent)"} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={primaryIdx >= 0 ? colors[primaryIdx] : "var(--accent)"} stopOpacity="0" />
+          </linearGradient>
+          <filter id={glowId} x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
         {[0, 0.25, 0.5, 0.75, 1].map((f) => {
           const v = maxV * f;
           const gy = y(v);
@@ -107,18 +130,38 @@ export function LineChart({ series, months }) {
             </g>
           );
         })}
+        {/* Gradient fill under the primary series only -- one soft area reads as
+            emphasis; a gradient under every one of up to 8 lines would just go
+            muddy on top of itself. */}
+        {primaryIdx >= 0 && visible.includes(series[primaryIdx]) && (() => {
+          const s = series[primaryIdx];
+          const pts = s.points.map((v, i) => (v === null || v === undefined ? null : [x(i), y(v)]));
+          const present = pts.filter(Boolean);
+          if (present.length < 2) return null;
+          const baseline = padT + plotH;
+          const linePath = pts.reduce((path, p, i) => (p ? `${path}${path ? " L " : "M "}${p[0]},${p[1]}` : path), "");
+          const areaPath = `${linePath} L ${present.at(-1)[0]},${baseline} L ${present[0][0]},${baseline} Z`;
+          return <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />;
+        })()}
         {visible.map((s, vi) => {
           const si = series.indexOf(s);
           const color = visibleColors[vi];
+          const isDimmed = !activeLabel && hoverLabel && hoverLabel !== s.label;
           const pts = s.points.map((v, i) => (v === null || v === undefined ? null : [x(i), y(v)]));
           const segments = [];
           let cur = [];
           pts.forEach((p) => { if (p === null) { if (cur.length) segments.push(cur); cur = []; } else cur.push(p); });
           if (cur.length) segments.push(cur);
+          const linePath = segments.map((seg) => seg.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ")).join(" ");
           return (
-            <g key={s.label}>
+            <g key={s.label} style={{ opacity: isDimmed ? 0.25 : 1, transition: "opacity 0.15s var(--ease)" }}>
+              {/* Soft glow duplicate beneath the sharp line, primary series only. */}
+              {s.primary && <path d={linePath} fill="none" stroke={color} strokeWidth="5" opacity="0.35" filter={`url(#${glowId})`} />}
               {segments.map((seg, gi) => (
-                <path key={gi} d={seg.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ")} fill="none" stroke={color} strokeWidth="2.25" />
+                <path
+                  key={gi} d={seg.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ")}
+                  fill="none" stroke={color} strokeWidth={s.primary ? "3.25" : "2.25"} strokeLinecap="round" strokeLinejoin="round"
+                />
               ))}
               {pts.map((p, i) => {
                 if (!p) return null;

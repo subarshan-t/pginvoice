@@ -4,7 +4,18 @@ import {
   Search, Download, ChevronDown, Plus, X, Users,
 } from "lucide-react";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, multiFolderMatchesFor, isInternalFolder, basisToClientType, dominantClientType, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES } from "./nameMatch.js";
+import { findMatch, multiFolderMatchesFor, isInternalFolder, basisToClientType, dominantClientType, CLIENT_TYPE_LABELS } from "./nameMatch.js";
+
+// CLIENT_TYPE_TONES (badge coloring, used elsewhere in the app) reuses the same accent for several
+// types (package/strategy both --accent, hourly/ad_hoc both --accent-orchid, etc.)
+// -- fine for a single badge, unreadable once up to 8 of them are simultaneous
+// lines on one chart. This is a chart-only jewel-tone palette (see app.css's
+// --chart-* tokens) with one distinct hue per type, plus its own tone for the
+// aggregate "Total Agreed" line.
+const CHART_TYPE_TONES = {
+  hourly: "var(--chart-hourly)", package: "var(--chart-package)", quoted: "var(--chart-quoted)",
+  map: "var(--chart-map)", strategy: "var(--chart-strategy)", project: "var(--chart-project)", ad_hoc: "var(--chart-ad-hoc)",
+};
 import { SEED_CLIENTS, SEED_PEOPLE, FIXED_BASES, loadKey, agreedAt } from "./capacityData.js";
 import { useDismissable } from "./useDismissable.js";
 import { SearchBox } from "./SearchBox.jsx";
@@ -355,7 +366,7 @@ function PerformanceInner() {
       const series = [
         { label: "Agreed", color: "var(--fg-tertiary)", points: agreedPts },
         { label: "Hourly (trailing)", color: "var(--accent-orchid)", points: hourlyPts },
-        { label: "Actuals", color: "var(--accent)", points: actualsPts },
+        { label: "Actuals", color: "var(--accent)", primary: true, points: actualsPts },
       ].filter((s) => s.points.some((v) => v !== null));
       const ytdAgreed = agreedPts.reduce((s, v) => s + (v || 0), 0);
       const ytdActuals = actualsPts.reduce((s, v) => s + (v || 0), 0);
@@ -415,8 +426,8 @@ function PerformanceInner() {
     if (!qBasis) {
       // "All" — total Agreed plus every type's own Hours line.
       series = [
-        { label: "Total Agreed", color: "var(--fg-tertiary)", points: totalAgreedByMonth },
-        ...TYPE_ORDER.map((t) => ({ label: TYPE_LINE_LABEL[t], color: CLIENT_TYPE_TONES[t], points: hoursByType[t] })),
+        { label: "Total Agreed", color: "var(--chart-total-agreed)", primary: true, points: totalAgreedByMonth },
+        ...TYPE_ORDER.map((t) => ({ label: TYPE_LINE_LABEL[t], color: CHART_TYPE_TONES[t], points: hoursByType[t] })),
       ];
       ytd = [
         { label: "Total Agreed", value: fmt0(ytdOf(totalAgreedByMonth)) },
@@ -428,13 +439,13 @@ function PerformanceInner() {
       ];
     } else if (qBasis === "hourly") {
       // Hourly has no fixed agreement, so there's no Agreed line to show for it.
-      series = [{ label: TYPE_LINE_LABEL.hourly, color: CLIENT_TYPE_TONES.hourly, points: hoursByType.hourly }];
+      series = [{ label: TYPE_LINE_LABEL.hourly, color: CHART_TYPE_TONES.hourly, primary: true, points: hoursByType.hourly }];
       ytd = [{ label: TYPE_LINE_LABEL.hourly, value: fmt0(ytdOf(hoursByType.hourly)) }];
       current = [{ label: TYPE_LINE_LABEL.hourly, value: fmt0(atLast(hoursByType.hourly)) }];
     } else {
       series = [
         { label: "Agreed", color: "var(--fg-tertiary)", points: agreedByType[qBasis] },
-        { label: TYPE_LINE_LABEL[qBasis], color: CLIENT_TYPE_TONES[qBasis], points: hoursByType[qBasis] },
+        { label: TYPE_LINE_LABEL[qBasis], color: CHART_TYPE_TONES[qBasis], primary: true, points: hoursByType[qBasis] },
       ];
       ytd = [
         { label: "Agreed", value: fmt0(ytdOf(agreedByType[qBasis])) },
