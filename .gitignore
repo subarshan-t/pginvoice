@@ -12,3 +12,5 @@ skills-lock.json
 .claude/skills/*
 !.claude/skills/ui-ux-pro-max
 !.claude/skills/data-scientist
+__pycache__/
+*.pyc
