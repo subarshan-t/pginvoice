@@ -402,7 +402,7 @@ function TeamDashboardInner() {
               <th>Name</th><th>Role</th><th>State</th>
               <th className="right num">Contracted Hrs/wk</th>
               <th className="right num">Billable %</th>
-              <th className="right num">Leaves ({MONTH_LABELS[month]})</th>
+              <th className="right num">Leave Hrs ({MONTH_LABELS[month]})</th>
               <th className="right num">Monthly Hrs</th>
               <th className="right num">Billable Hrs</th>
               <th className="right num">Non-billable Hrs</th>
@@ -452,8 +452,14 @@ function TeamDashboardInner() {
                 </td>
                 <td className="right num">
                   {editing
-                    ? <input className="pg-input" type="number" min="0" step="any" style={{ width: 56, padding: "4px 6px" }} value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} />
-                    : leaveFor(p.id)}
+                    ? (
+                      <input
+                        className="pg-input" type="number" min="0" step="any" style={{ width: 56, padding: "4px 6px" }}
+                        value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)}
+                        title={`Total hours of leave taken this month, not a day count -- a full day off for someone on ${p.contracted}hrs/week is ${(p.contracted / 5).toFixed(1)} hrs.`}
+                      />
+                    )
+                    : `${leaveFor(p.id)} h`}
                 </td>
                 <td className="right num">{avail ? avail.totalMonthlyHours.toFixed(1) : "—"}</td>
                 <td className="right num">{avail ? <b>{avail.billableHours.toFixed(1)}</b> : "—"}</td>
