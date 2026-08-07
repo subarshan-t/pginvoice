@@ -135,6 +135,8 @@ function CapacityDashboardInner({ onNavigateTeam }) {
 
   const [qConsultant, setQConsultant] = useState("");
   const [qClient, setQClient] = useState("");
+  const [qCombined, setQCombined] = useState("");
+  const [utilView, setUtilView] = useState("billable"); // mobile Billable/Non-billable toggle
   const [qRoster, setQRoster] = useState("");
   const [expandedUtil, setExpandedUtil] = useState({});
   const [showAllUtil, setShowAllUtil] = useState(false);
@@ -470,10 +472,21 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   const difference = totalBillableAllocation - totalDemand;
 
   /* ---------- filtering ---------- */
+  // Mobile has one combined "search consultant or client" field instead of the
+  // desktop's two separate ones (see the mobile-only input below) -- it needs
+  // OR semantics (name matches OR has a matching client) rather than the
+  // desktop pair's AND (must match this consultant AND have this client),
+  // since a single query filled into both queries under AND would demand a
+  // consultant literally named e.g. "bee" to ever show a "Bee Squared" match.
+  const clientMatches = (owner, q) => (groupedByOwner[owner] || []).some((g) => g.group.toLowerCase().includes(q) || g.rows.some((r) => r.client.toLowerCase().includes(q)));
   const visibleOwners = OWNERS.filter((owner) => {
     if (!peopleMap[owner]) return false; // resigned as of this month — hide their card entirely
+    if (qCombined) {
+      const q = qCombined.toLowerCase();
+      return owner.toLowerCase().includes(q) || clientMatches(owner, q);
+    }
     const okConsultant = !qConsultant || owner.toLowerCase().includes(qConsultant.toLowerCase());
-    const okClient = !qClient || (groupedByOwner[owner] || []).some((g) => g.group.toLowerCase().includes(qClient.toLowerCase()) || g.rows.some((r) => r.client.toLowerCase().includes(qClient.toLowerCase())));
+    const okClient = !qClient || clientMatches(owner, qClient.toLowerCase());
     return okConsultant && okClient;
   });
 
@@ -633,8 +646,8 @@ function CapacityDashboardInner({ onNavigateTeam }) {
         <span className="pg-tag pg-tag--pill" style={{ color: monthKind === "past" ? "var(--fg-tertiary)" : monthKind === "now" ? "var(--status-ok)" : "var(--accent)" }}>
           {monthKind === "past" ? "past record" : monthKind === "now" ? "latest actuals" : "forecast"}
         </span>
-        <button className="pg-btn-ghost" onClick={() => setShowAddClient((s) => !s)}><Plus size={11} /> Add client</button>
-        <button className="pg-btn-ghost" style={{ marginLeft: "auto" }} onClick={resetSample}>Reset sample data</button>
+        <button className="pg-btn-ghost pg-cap-addclient-btn" onClick={() => setShowAddClient((s) => !s)}><Plus size={11} /> <span>Add client</span></button>
+        <button className="pg-btn-ghost pg-cap-desktop-only" style={{ marginLeft: "auto" }} onClick={resetSample}>Reset sample data</button>
       </div>
 
       {showAddClient && (
@@ -667,10 +680,26 @@ function CapacityDashboardInner({ onNavigateTeam }) {
         </div>
       )}
 
-      <div className="pg-panel">
+      <div className="pg-panel pg-cap-desktop-only">
         <SearchBox label="Consultant" value={qConsultant} onChange={setQConsultant} />
         <SearchBox label="Client" value={qClient} onChange={setQClient} />
         <button className="pg-btn" style={{ marginLeft: "auto" }} onClick={exportXlsx}><Download size={14} /> Export</button>
+      </div>
+      {/* Mobile only -- one combined field instead of two separate ones, plus a
+          filter icon standing in for Export (a file download isn't a mobile-
+          native action; kept reachable rather than duplicated as an icon). */}
+      <div className="pg-cap-mobile-search">
+        <div style={{ position: "relative", flex: 1 }}>
+          <Search size={13} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--fg-tertiary)" }} />
+          <input
+            className="pg-input" style={{ width: "100%", padding: "10px 12px 10px 34px" }}
+            placeholder="Search consultant or client"
+            value={qCombined} onChange={(e) => setQCombined(e.target.value)}
+          />
+        </div>
+        <button className="pg-btn-ghost pg-cap-mobile-search__filter" onClick={exportXlsx} title="Export" aria-label="Export">
+          <Download size={14} />
+        </button>
       </div>
 
       <div className="pg-cap-grid">
@@ -707,13 +736,24 @@ function CapacityDashboardInner({ onNavigateTeam }) {
 
                 {!isCollapsed && (
                   <>
+                    {(() => {
+                      const cardCapacity = pc.usedOwnOnClients + pc.receivedTotal;
+                      const cardDiff = cardCapacity - pc.demand;
+                      return (
+                        <div className="pg-cap-card-statrow">
+                          <div><div className="pg-cap-card-statrow__value">{pc.demand.toFixed(1)} h</div><div className="pg-cap-card-statrow__label">Demand</div></div>
+                          <div><div className="pg-cap-card-statrow__value">{cardCapacity.toFixed(1)} h</div><div className="pg-cap-card-statrow__label">Capacity</div></div>
+                          <div><div className="pg-cap-card-statrow__value" style={{ color: cardDiff < 0 ? "var(--status-over)" : "var(--status-ok)" }}>{cardDiff > 0 ? "+" : ""}{cardDiff.toFixed(1)} h</div><div className="pg-cap-card-statrow__label">Difference</div></div>
+                        </div>
+                      );
+                    })()}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
                       <span className="pg-field__label">Client projects</span>
                       <button className="pg-btn-ghost" onClick={() => setEditingDemand(editingDemand === owner ? null : owner)}>
                         {editingDemand === owner ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}
                       </button>
                     </div>
-                    <div className="pg-table-wrap">
+                    <div className="pg-table-wrap pg-cap-clientprojects-table">
                     <table className="pg-table">
                       <thead><tr><th>Client</th><th>Type</th><th className="right num">Agreed Hrs</th><th className="right num">Average Hrs</th><th className="right num">Projected Hrs</th></tr></thead>
                       <tbody>
@@ -937,11 +977,20 @@ function CapacityDashboardInner({ onNavigateTeam }) {
               />
             </div>
 
-            <div style={{ display: "flex", gap: 16, marginTop: 20 }}>
+            {/* Desktop: static column headers, both bars always shown side by side.
+                Mobile: a real toggle -- there isn't room for two bars per row at
+                phone width, so one view replaces the other instead of both being
+                squeezed in (see .pg-cap-util-list--nonbillable in app.css). */}
+            <div className="pg-cap-desktop-only" style={{ display: "flex", gap: 16, marginTop: 20 }}>
               <div className="pg-footnote" style={{ flex: 1, margin: 0, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center" }}>Billable</div>
               <div className="pg-footnote" style={{ width: 92, flex: "none", margin: 0, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center" }}>Non-billable</div>
             </div>
+            <div className="pg-cap-util-toggle">
+              <button type="button" className={utilView === "billable" ? "pg-cap-util-toggle__btn pg-cap-util-toggle__btn--active" : "pg-cap-util-toggle__btn"} onClick={() => setUtilView("billable")}>Billable</button>
+              <button type="button" className={utilView === "non-billable" ? "pg-cap-util-toggle__btn pg-cap-util-toggle__btn--active" : "pg-cap-util-toggle__btn"} onClick={() => setUtilView("non-billable")}>Non-billable</button>
+            </div>
 
+            <div className={utilView === "non-billable" ? "pg-cap-util-list pg-cap-util-list--nonbillable" : "pg-cap-util-list"}>
             {(() => {
               const filtered = people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase())));
               const visible = (showAllUtil || qRoster) ? filtered : filtered.slice(0, 3);
@@ -984,7 +1033,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                         {hasGiven && (isExpanded ? <ChevronDown size={12} style={{ marginLeft: 5, color: "var(--fg-tertiary)" }} /> : <ChevronRight size={12} style={{ marginLeft: 5, color: "var(--fg-tertiary)" }} />)}
                       </div>
                       <div style={{ display: "flex", gap: 16, marginTop: 4, alignItems: "flex-start" }}>
-                        <div style={{ flex: 1 }}>
+                        <div className="pg-cap-util-col--billable" style={{ flex: 1 }}>
                           <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
                             <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
                           </div>
@@ -997,7 +1046,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                             <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center" }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</p>
                           )}
                         </div>
-                        <div style={{ width: 92, flex: "none" }} title={overflow > 0 ? `${overflow.toFixed(1)} hrs of billable overflow eating into non-billable time` : undefined}>
+                        <div className="pg-cap-util-col--nonbillable" style={{ width: 92, flex: "none" }} title={overflow > 0 ? `${overflow.toFixed(1)} hrs of billable overflow eating into non-billable time` : undefined}>
                           <div className="pg-bar-track" style={{ height: 8, margin: 0 }}>
                             <div className="pg-bar-fill" style={{ width: `${unbillablePct}%`, background: overflow > 0 ? "var(--status-over)" : "var(--fg-tertiary)" }} />
                           </div>
@@ -1026,6 +1075,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                 </div>
               );
             })}
+            </div>
           </div>
           {(() => {
             const filteredCount = people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).length;

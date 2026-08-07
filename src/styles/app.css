@@ -704,6 +704,56 @@ button { font: inherit; }
 @media (max-width: 380px) { .pg-cap-statrow { grid-template-columns: 1fr; } }
 .pg-cap-stat { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); box-shadow: var(--shadow-sm); padding: 14px 16px; }
 @media (max-width: 480px) { .pg-cap-stat { padding: 12px 10px; } .pg-cap-stat .pg-stat__value { font-size: 22px; } }
+
+/* ---- per-consultant-card Demand/Capacity/Difference summary --------------- */
+.pg-cap-card-statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; padding-bottom: 14px; border-bottom: 1px dashed var(--border-soft); }
+.pg-cap-card-statrow__value { font-family: var(--font-display); font-size: 18px; color: var(--fg-primary); }
+.pg-cap-card-statrow__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-tertiary); margin-top: 2px; }
+
+/* ---- mobile-only controls: Add-client icon button, combined search,
+   Billable/Non-billable toggle -- hidden on desktop, where the existing
+   two-field search + always-both-bars view already works. ---------------- */
+.pg-cap-mobile-search { display: none; }
+.pg-cap-util-toggle { display: none; }
+@media (max-width: 760px) {
+  .pg-cap-desktop-only { display: none; }
+  .pg-cap-mobile-search { display: flex; gap: 8px; margin-top: 12px; }
+  .pg-cap-mobile-search__filter { flex: none; padding: 9px; }
+  /* Icon-only "Add client" on mobile -- full text label next to a circular
+     "+" reads as desktop chrome; matches the compact add-client mockup. */
+  .pg-cap-addclient-btn span { display: none; }
+  .pg-cap-addclient-btn { border-radius: var(--app-radius-pill); padding: 9px; }
+
+  .pg-cap-util-toggle {
+    display: flex; margin-top: 14px; background: var(--bg-elevated);
+    border-radius: var(--app-radius-pill); padding: 3px; gap: 2px;
+  }
+  .pg-cap-util-toggle__btn {
+    flex: 1; border: 0; background: transparent; border-radius: var(--app-radius-pill);
+    padding: 8px 10px; font-family: var(--font-body); font-size: 12px; font-weight: 600;
+    color: var(--fg-secondary); cursor: pointer; transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+  .pg-cap-util-toggle__btn--active { background: var(--accent); color: var(--fg-on-accent); }
+  /* Both columns stay in the DOM (desktop always shows both) -- only mobile
+     picks one via the toggle above, so the inactive column just collapses to
+     nothing rather than needing two separate render paths. */
+  .pg-cap-util-list .pg-cap-util-col--nonbillable { display: none; }
+  .pg-cap-util-list .pg-cap-util-col--billable { width: 100%; }
+  .pg-cap-util-list--nonbillable .pg-cap-util-col--billable { display: none; }
+  .pg-cap-util-list--nonbillable .pg-cap-util-col--nonbillable { display: block; width: 100%; }
+
+  /* Client-projects table: Agreed Hrs / Average Hrs are the 3rd/4th cell in
+     every row that has them (regular rows and the "combined" group-parent
+     row both always render 5 cells) -- the Total row's first cell spans 4
+     columns instead, so it only has 2 <td>s total and nth-child(3)/(4)
+     simply never matches it, leaving that row alone. Collapses the table to
+     exactly Client / Type / Projected Hrs on mobile instead of a 5-column
+     table an inch too wide for the screen. */
+  .pg-cap-clientprojects-table th:nth-child(3), .pg-cap-clientprojects-table td:nth-child(3),
+  .pg-cap-clientprojects-table th:nth-child(4), .pg-cap-clientprojects-table td:nth-child(4) {
+    display: none;
+  }
+}
 .pg-cap-textarea {
   width: 100%; min-height: 90px; resize: vertical;
   background: transparent; color: var(--fg-primary); border: 1px solid var(--border-soft); border-radius: var(--app-radius-sm);
