@@ -178,7 +178,7 @@ def analyze_ab(control: np.ndarray, treatment: np.ndarray, alpha: float = 0.05) 
 - `references/experimentation.md` -- A/B testing guide
 - `references/statistics.md` -- Statistical methods
 
-> **Note:** these reference files were not part of the uploaded skill and are not present in this installation. Sections that cite them will need those files added before they can be used as written.
+> **Note:** these reference files don't exist in the upstream `borghei/Claude-Skills` repo either (confirmed by cloning it directly) -- the SKILL.md cites them but they were never authored. Sections that cite them will need those files written before they can be used as described.
 
 ## Scripts
 
@@ -192,8 +192,6 @@ python scripts/hypothesis_tester.py chi-square --file contingency.csv --json
 python scripts/feature_selector.py --file dataset.csv --target churn --top 10
 python scripts/feature_selector.py --file dataset.csv --target revenue --method correlation --json
 ```
-
-> **Note:** these scripts were not part of the uploaded skill and are not present in this installation. The tool calls above will fail until `scripts/experiment_tracker.py`, `scripts/hypothesis_tester.py`, and `scripts/feature_selector.py` are added under this skill's directory.
 
 ## Tool Reference
 
