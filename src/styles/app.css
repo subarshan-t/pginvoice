@@ -223,6 +223,7 @@ button { font: inherit; }
 /* ---- stat strip ---------------------------------------------------------- */
 .pg-stat__value { font-family: var(--font-mono); font-weight: 500; font-size: 26px; color: var(--fg-primary); letter-spacing: -0.01em; }
 .pg-stat__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-tertiary); margin-top: 4px; }
+.pg-stat__sparkline { display: block; margin-top: 8px; }
 
 /* ---- bracketed tag / status chip (the brand's [LABEL] convention) ------- */
 .pg-tag {

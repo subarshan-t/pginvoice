@@ -10,6 +10,7 @@ import { LETTERHEAD_FOOTER_B64 } from "./letterheadFooter.js";
 import { idbGet, idbSet } from "./idbStore.js";
 import { findMatch, isInternalFolder } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync } from "./clickupSync.js";
+import MiniSparkline from "./MiniSparkline.jsx";
 
 // ---------------------------- time text → minutes ----------------------------
 function parseTimeTextToMinutes(raw) {
@@ -795,6 +796,29 @@ export default function PGReconciliation() {
     return { hrs, count: visible.length, over, under };
   }, [visible]);
 
+  // billable-hours trend for the stat-strip sparkline: same scope as `stats.hrs`
+  // (billable-only, non-internal, current client-type filter, consultant filter)
+  // but summed per month across every month present in the export, not just the
+  // selected reporting month — so the card shows where "hours in view" has been
+  // trending even though the rest of the view only ever looks at one month at a time.
+  const hoursHistory = useMemo(() => {
+    if (!clickup) return [];
+    const folderType = new Map(clients.map((c) => [c.name, c.type]));
+    const byMonth = new Map();
+    for (const r of clickup.rows) {
+      if (!r.monthKey) continue;
+      if (clickup.hasBillable && billableOnly && !r.billable) continue;
+      if (r.isInternal) continue;
+      if (folderType.get(r.folder) !== clientTypeFilter) continue;
+      if (consultantFilter && r.user !== consultantFilter) continue;
+      byMonth.set(r.monthKey, (byMonth.get(r.monthKey) || 0) + r.minutes);
+    }
+    return [...byMonth.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, min]) => min / 60)
+      .slice(-8);
+  }, [clickup, clients, billableOnly, clientTypeFilter, consultantFilter]);
+
   // Only meaningful when the reporting period IS the current real-world month — a mid-month
   // check on a still-open month, e.g. "accrued sheet stops at June, it's July 17th, how's the
   // team tracking against package so far this month". A closed historical month has no "pace".
@@ -1079,7 +1103,11 @@ export default function PGReconciliation() {
         {/* stat strip */}
         {ready && (
           <div className="pg-panel" style={{ gap: 40 }}>
-            <Stat value={fmt(stats.hrs)} label={`hours ${clickup.hasBillable && billableOnly ? "(billable) " : ""}${consultantFilter ? "by " + consultantFilter : "in view"}${monthProgress ? " so far" : ""}`} />
+            <Stat
+              value={fmt(stats.hrs)}
+              label={`hours ${clickup.hasBillable && billableOnly ? "(billable) " : ""}${consultantFilter ? "by " + consultantFilter : "in view"}${monthProgress ? " so far" : ""}`}
+              series={hoursHistory}
+            />
             <Stat value={stats.count} label={`${TYPE_LABELS[clientTypeFilter].toLowerCase()} in view`} />
             {clientTypeFilter === "package" && (
               <>
@@ -1180,11 +1208,20 @@ function FileCard({ title, hint, file, err, onClick }) {
     </button>
   );
 }
-function Stat({ value, label, tone }) {
+function Stat({ value, label, tone, series }) {
   return (
     <div>
       <div className="pg-stat__value" style={tone ? { color: tone } : undefined}>{value}</div>
       <div className="pg-stat__label">{label}</div>
+      {series && series.length >= 2 && (
+        <MiniSparkline
+          className="pg-stat__sparkline"
+          data={series}
+          width={120}
+          height={32}
+          ariaLabel={`${label} trend over the last ${series.length} months`}
+        />
+      )}
     </div>
   );
 }
