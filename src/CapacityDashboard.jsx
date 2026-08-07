@@ -981,7 +981,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                 Mobile: a real toggle -- there isn't room for two bars per row at
                 phone width, so one view replaces the other instead of both being
                 squeezed in (see .pg-cap-util-list--nonbillable in app.css). */}
-            <div className="pg-cap-desktop-only" style={{ display: "flex", gap: 16, marginTop: 20 }}>
+            <div className="pg-cap-desktop-only pg-cap-util-header-row">
               <div className="pg-footnote" style={{ flex: 1, margin: 0, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center" }}>Billable</div>
               <div className="pg-footnote" style={{ width: 92, flex: "none", margin: 0, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center" }}>Non-billable</div>
             </div>

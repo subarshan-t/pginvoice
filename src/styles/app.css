@@ -731,6 +731,13 @@ button { font: inherit; }
    two-field search + always-both-bars view already works. ---------------- */
 .pg-cap-mobile-search { display: none; }
 .pg-cap-util-toggle { display: none; }
+/* Was previously an inline style={{ display: "flex" }} on the element -- inline
+   styles always beat a stylesheet's display: none regardless of media query,
+   so .pg-cap-desktop-only below was never actually able to hide this row on
+   mobile. Moving the flex declaration here (lower specificity than an inline
+   style, but equal to and later than nothing else touching display on this
+   element now) lets the mobile media query's display: none actually win. */
+.pg-cap-util-header-row { display: flex; gap: 16px; margin-top: 20px; }
 @media (max-width: 760px) {
   .pg-cap-desktop-only { display: none; }
   .pg-cap-mobile-search { display: flex; gap: 8px; margin-top: 12px; }
