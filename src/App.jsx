@@ -1509,7 +1509,7 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
         </span>
         <button
           type="button" aria-label={inlineOpen ? "Collapse" : "Expand"}
-          className="pg-row__chevron"
+          className="pg-row__chevron pg-icon-btn-sm"
           onClick={(e) => { e.stopPropagation(); setInlineOpen((o) => !o); }}
         >
           <ChevronDown size={16} style={{ transform: inlineOpen ? "rotate(180deg)" : undefined, transition: "transform 0.15s var(--ease)" }} />

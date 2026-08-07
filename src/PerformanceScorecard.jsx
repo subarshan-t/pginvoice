@@ -899,7 +899,7 @@ function NotesPanel({ notes, noteDraft, setNoteDraft, addNote, removeNote }) {
               <div style={{ fontFamily: "var(--font-body)", fontSize: 12, color: "var(--fg-secondary)" }}>{n.text}</div>
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-tertiary)", marginTop: 2 }}>{new Date(n.ts).toLocaleString()}</div>
             </div>
-            {editing && <button className="pg-btn-ghost" style={{ color: "var(--status-over)", padding: "4px 7px" }} onClick={() => removeNote(n.id)}><X size={12} /></button>}
+            {editing && <button className="pg-btn-ghost pg-icon-btn-sm" style={{ color: "var(--status-over)", padding: "4px 7px" }} onClick={() => removeNote(n.id)} aria-label={`Delete note: ${n.text.slice(0, 40)}${n.text.length > 40 ? "…" : ""}`}><X size={12} /></button>}
           </div>
         ))}
       </div>

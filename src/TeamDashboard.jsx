@@ -466,7 +466,7 @@ function TeamDashboardInner() {
                 {editing && (
                   <td style={{ display: "flex", gap: 4 }}>
                     <RosterMenu person={p} onUpdate={(field, value) => updatePerson(p.id, field, value)} aliasConflict={aliasConflicts.get(p.id)} />
-                    <button className="pg-btn-ghost" style={{ color: "var(--status-over)", padding: "4px 7px" }} onClick={() => removePerson(p.id)}><X size={12} /></button>
+                    <button className="pg-btn-ghost pg-icon-btn-sm pg-icon-btn-sm--tight" style={{ color: "var(--status-over)", padding: "4px 7px" }} onClick={() => removePerson(p.id)} aria-label={`Remove ${p.name || "this person"} from roster`}><X size={12} /></button>
                   </td>
                 )}
               </tr>
