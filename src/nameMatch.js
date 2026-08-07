@@ -81,6 +81,10 @@ export const CLIENT_TYPE_LABELS = {
   ad_hoc: "Ad hoc",
   queensland: "Queensland (prv)",
 };
+// Short canonical name for each client type, plus "all" -- shared by Client
+// Invoicing's row/drawer/export code and anywhere else that needs the same
+// short phrasing (as opposed to CLIENT_TYPE_LABELS' longer filter-menu wording).
+export const TYPE_LABELS_SHORT = { all: "All", ...CLIENT_TYPE_LABELS };
 export const CLIENT_TYPE_TONES = {
   package: "var(--accent)",
   hourly: "var(--accent-orchid)",
