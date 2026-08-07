@@ -5,12 +5,22 @@
    captured from, so a few semantic status colors are added here (status-ok /
    status-warn / status-over / status-info) — muted, warm-leaning hues chosen
    to sit quietly next to the brand's lavender accent rather than compete
-   with it. Surfaces and colors follow the system as-is; type and radii are
-   overridden below at the client's request (single Quicksand typeface,
-   softened corners instead of the system's hard edges).
+   with it. Surfaces and colors follow the system as-is; radii are overridden
+   below at the client's request (softened corners instead of the system's
+   hard edges).
+
+   Typeface: Inter, not Quicksand. Quicksand is a rounded display face, not
+   built for dense UI -- weak tabular-figure support in particular, which is
+   exactly the kind of thing that reads as "something's a bit off" once a
+   screen has more than a couple of numbers in it (which most of this app's
+   screens do). Inter is purpose-built for UI text at small sizes with real
+   tabular figures, same choice Linear/Stripe/Vercel/Notion make for the same
+   reason. This does NOT touch the PDF export, which already renders with its
+   own separate 'Nordique Pro' font stack (see printTemplate.js) unrelated to
+   these tokens.
    ============================================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 @keyframes pg-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
@@ -25,10 +35,13 @@
   --status-info:      rgb(129, 162, 184);   /* muted slate — Queensland (prv)   */
   --status-info-soft: rgba(129, 162, 184, 0.14);
 
-  /* One typeface everywhere, per client request (overrides colors_and_type.css) */
-  --font-display: 'Quicksand', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-body:    'Quicksand', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono:    'Quicksand', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  /* One typeface everywhere, per client request (overrides colors_and_type.css).
+     Inter has real tabular figures (font-variant-numeric: tabular-nums, already
+     used throughout this app's number columns, now actually has something to
+     bite into) and font-feature-settings enables them by default site-wide. */
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-body:    'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono:    'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 
   /* Radii — Purple Giraffe Design OS scale (§8): small control 8, input/control
      12-14, button 14-16, card 24-28, floating shell/sidebar 32-40, pill 999 */
