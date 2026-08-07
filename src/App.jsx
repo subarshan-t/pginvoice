@@ -214,7 +214,18 @@ export default function PGReconciliation({ onNavigateClients }) {
   // profiles that haven't had their folder set yet.
   const pgProfileByFolder = useMemo(() => {
     const m = new Map();
-    pgClients.forEach((p) => { if (p.clickupFolder) m.set(p.clickupFolder, p); });
+    pgClients.forEach((p) => {
+      if (!p.clickupFolder) return;
+      const existing = m.get(p.clickupFolder);
+      // More than one Clients-module record can point at the same ClickUp folder
+      // (e.g. a since-offboarded sub-engagement that used to share a client's
+      // main folder) -- prefer whichever one is still active, so lookups here
+      // (type, logo, consultant, …) reflect the client actually using that
+      // folder today rather than whichever row happened to sort last.
+      if (!existing || (existing.status !== "active" && p.status === "active")) {
+        m.set(p.clickupFolder, p);
+      }
+    });
     return m;
   }, [pgClients]);
   const pgClientByName = useMemo(() => new Map(pgClients.map((p) => [p.client, p])), [pgClients]);
@@ -998,13 +1009,13 @@ export default function PGReconciliation({ onNavigateClients }) {
           </div>
 
           <div className="pg-cmdrow__actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button className="pg-btn-ghost" onClick={handleManualSync} disabled={syncing}>
-              <RefreshCw size={12} style={syncing ? { animation: "pg-spin 1s linear infinite" } : undefined} /> {syncing ? "Syncing…" : "Sync now"}
+            <button className="pg-btn-ghost" onClick={handleManualSync} disabled={syncing} title={syncing ? "Syncing…" : "Sync now"}>
+              <RefreshCw size={12} style={syncing ? { animation: "pg-spin 1s linear infinite" } : undefined} /> <span className="pg-btn-label">{syncing ? "Syncing…" : "Sync now"}</span>
             </button>
             {ready && (
               <div style={{ position: "relative" }}>
-                <button onClick={() => setExportOpen((x) => !x)} className="pg-btn-ghost">
-                  <Download size={12} /> Export <ChevronDown size={12} />
+                <button onClick={() => setExportOpen((x) => !x)} className="pg-btn-ghost" title="Export">
+                  <Download size={12} /> <span className="pg-btn-label">Export</span> <ChevronDown size={12} />
                 </button>
                 {exportOpen && (
                   <div className="pg-menu">
@@ -1183,7 +1194,7 @@ export default function PGReconciliation({ onNavigateClients }) {
         {ready && excludedInternal.folders.length > 0 && (
           <div className="pg-panel" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <span className="pg-tag pg-tag--muted">[excluded as internal / non-client]</span>
+              <span className="pg-tag pg-tag--muted pg-tag--pill">excluded as internal / non-client</span>
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-tertiary)" }}>
                 {fmt(excludedInternal.total)} h across {excludedInternal.folders.length} folder{excludedInternal.folders.length === 1 ? "" : "s"}
               </span>
@@ -1217,11 +1228,11 @@ export default function PGReconciliation({ onNavigateClients }) {
               const siblings = siblingsByPrimaryName.get(c.name);
               return (
                 <React.Fragment key={c.name}>
-                  <ClientRow index={i + 1} client={c} active={drawerClientName === c.name} onOpen={() => setDrawerClientName(c.name)} />
+                  <ClientRow index={i + 1} client={c} active={drawerClientName === c.name} onOpen={() => setDrawerClientName(c.name)} onCopy={copySummary} onPdf={downloadPdf} />
                   {siblings && siblings.length > 0 && siblings.map((s) => {
                     const sc = withConsultantFilter(s, consultantFilter);
                     return (
-                      <ClientRow key={sc.name} client={sc} nested parentName={c.displayName} active={drawerClientName === sc.name} onOpen={() => setDrawerClientName(sc.name)} />
+                      <ClientRow key={sc.name} client={sc} nested parentName={c.displayName} active={drawerClientName === sc.name} onOpen={() => setDrawerClientName(sc.name)} onCopy={copySummary} onPdf={downloadPdf} />
                     );
                   })}
                 </React.Fragment>
@@ -1529,8 +1540,8 @@ function ImportButton({ clickup, accrued, clickupErr, accruedErr, onPickClickup,
   const ref = useDismissable(() => setOpen(false));
   return (
     <div style={{ position: "relative" }} ref={ref}>
-      <button className="pg-btn-ghost" onClick={() => setOpen((o) => !o)}>
-        <StatusDot tone={importTone(clickup, accrued)} /> Import <ChevronDown size={12} />
+      <button className="pg-btn-ghost" onClick={() => setOpen((o) => !o)} title="Import">
+        <StatusDot tone={importTone(clickup, accrued)} /> <span className="pg-btn-label">Import</span> <ChevronDown size={12} />
       </button>
       {open && (
         <div className="pg-menu" style={{ minWidth: 280 }}>
@@ -1564,10 +1575,12 @@ function ImportButton({ clickup, accrued, clickupErr, accruedErr, onPickClickup,
 
 // Compact numbered row — the list's default state. Clicking anywhere on it opens
 // the full client detail in the right-side drawer (see ClientDrawer below).
-function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
+function ClientRow({ index, client: c, active, onOpen, nested, parentName, onCopy, onPdf }) {
   const [inlineOpen, setInlineOpen] = useState(false);
   const [tasksAllShown, setTasksAllShown] = useState(false);
   const [consultantsAllShown, setConsultantsAllShown] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useDismissable(() => setMenuOpen(false));
   const isPackage = isPackageLikeType(c.type);
   const statusTone = isPackage
     ? (c.status === "over" ? "var(--status-over)" : c.status === "under" ? "var(--status-warn)" : "var(--status-ok)")
@@ -1638,13 +1651,13 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
         <span className="pg-row__name">
           <span className="pg-row__name-main">
             {c.displayName}
-            {c.isOffboarded && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 6 }} title={c.offboardNote}>[Offboarded]</span>}
+            {c.isOffboarded && <span className="pg-tag pg-tag--muted pg-tag--pill" style={{ marginLeft: 6 }} title={c.offboardNote}>Offboarded</span>}
           </span>
           <span className="pg-row__name-sub">
             {nested ? <><Link2 size={10} /> Related sub-project of {parentName}</> : (c.capGroup && c.capGroup !== c.displayName ? c.capGroup : null)}
           </span>
         </span>
-        <span className="pg-tag" style={{ color: TYPE_TONES[c.type] }}>[{TYPE_LABELS_SHORT[c.type]}]</span>
+        <span className="pg-tag pg-tag--pill" style={{ color: TYPE_TONES[c.type] }}>{TYPE_LABELS_SHORT[c.type]}</span>
         <span className="pg-row__num" style={carryTone ? { color: carryTone } : undefined} title={carryTitle}>
           <span className="pg-row__num-label">{carryLabel}</span>{c.priorBalance != null ? `${fmt(carry)} h` : "—"}
         </span>
@@ -1665,13 +1678,28 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
             </span>
           )}
         </span>
-        <button
-          type="button" aria-label={inlineOpen ? "Collapse" : "Expand"}
-          className="pg-row__chevron pg-icon-btn-sm"
-          onClick={(e) => { e.stopPropagation(); setInlineOpen((o) => !o); }}
-        >
-          <MoreVertical size={16} />
-        </button>
+        <span style={{ position: "relative" }} ref={menuRef}>
+          <button
+            type="button" aria-label="More actions"
+            className="pg-row__chevron pg-icon-btn-sm"
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+          >
+            <MoreVertical size={16} />
+          </button>
+          {menuOpen && (
+            <div className="pg-menu" onClick={(e) => e.stopPropagation()}>
+              <ExportItem icon={<Users size={14} />} label="Open full details" onClick={() => { setMenuOpen(false); onOpen(); }} />
+              <ExportItem
+                icon={<ChevronDown size={14} style={{ transform: inlineOpen ? "rotate(180deg)" : undefined }} />}
+                label={inlineOpen ? "Hide reconciliation breakdown" : "Show reconciliation breakdown"}
+                onClick={() => { setMenuOpen(false); setInlineOpen((o) => !o); }}
+              />
+              <div className="pg-menu-sep" />
+              <ExportItem icon={<Copy size={14} />} label="Copy summary" onClick={() => { setMenuOpen(false); onCopy?.(c); }} />
+              <ExportItem icon={<Printer size={14} />} label="Generate PDF" onClick={() => { setMenuOpen(false); onPdf?.(c); }} />
+            </div>
+          )}
+        </span>
       </div>
 
       {inlineOpen && (
@@ -1803,13 +1831,17 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
         </div>
 
         <div className="pg-drawer__title-row">
-          <div className="pg-drawer__avatar" style={{ color: iconTone, background: "var(--accent-soft)" }}>
-            <BarChart3Icon />
-          </div>
+          {c.logoUrl ? (
+            <ClientAvatar name={c.displayName} logo={c.logoUrl} size={40} style={{ borderRadius: "var(--app-radius-sm)" }} />
+          ) : (
+            <div className="pg-drawer__avatar" style={{ color: iconTone, background: "var(--accent-soft)" }}>
+              <BarChart3Icon />
+            </div>
+          )}
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="pg-drawer__name">
               {c.displayName}
-              {c.isOffboarded && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 6 }} title={c.offboardNote}>[Offboarded]</span>}
+              {c.isOffboarded && <span className="pg-tag pg-tag--muted pg-tag--pill" style={{ marginLeft: 6 }} title={c.offboardNote}>Offboarded</span>}
             </div>
             <div className="pg-drawer__sub">
               {TYPE_LABELS_SHORT[c.type]}

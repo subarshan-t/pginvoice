@@ -481,6 +481,15 @@ button { font: inherit; }
   text-transform: uppercase; white-space: nowrap;
 }
 .pg-tag--muted { color: var(--fg-tertiary); }
+/* Curved pill variant -- same tag semantics (client/entity type), rendered as a
+   soft rounded chip instead of literal square-bracket text, e.g. for a client's
+   type in Client Invoicing. `color` still sets the tag's tone; background is
+   derived from it via color-mix so every type keeps its own soft fill without
+   a hardcoded per-type background token. */
+.pg-tag--pill {
+  display: inline-flex; align-items: center; padding: 3px 10px; border-radius: var(--app-radius-pill);
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
 
 /* ---- client card ---------------------------------------------------------*/
 .pg-client {
@@ -681,6 +690,18 @@ button { font: inherit; }
   flex: none; font-family: var(--font-mono); font-size: 10px; font-weight: 500; color: var(--fg-tertiary);
   background: var(--bg-elevated); border-radius: var(--app-radius-sm); padding: 3px 6px;
 }
+
+/* With the drawer (and possibly the nav sidebar) also claiming width, the
+   header's search box + Sync now / Export / Import buttons don't fit their
+   normal sizes and start wrapping over each other. Collapse the button
+   labels to icon-only and shrink the search box rather than let that happen;
+   everything reverts the moment the drawer closes (this class only applies
+   while pg-app--drawer-open is set on the root). */
+.pg-app--drawer-open .pg-cmdsearch { width: 160px; padding: 8px 10px; }
+.pg-app--drawer-open .pg-cmdsearch__kbd { display: none; }
+.pg-app--drawer-open .pg-cmdrow__actions .pg-btn-label { display: none; }
+.pg-app--drawer-open .pg-cmdrow__actions .pg-btn-ghost,
+.pg-app--drawer-open .pg-cmdrow__actions .pg-btn { padding: 9px; gap: 4px; }
 
 .pg-app-header__icon {
   flex: none; width: 40px; height: 40px; margin-top: 2px; border-radius: var(--app-radius-sm);
