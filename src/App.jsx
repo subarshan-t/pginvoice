@@ -1561,6 +1561,24 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
   const workedPct = Math.max(0, Math.min(100, (worked / barMax) * 100));
   const pkgPct = (pkg / barMax) * 100;
 
+  // priorBalance < 0: unused hours banked last month, brought into this one — a
+  // benefit, shown green. priorBalance > 0: the client over-used their package
+  // last month, so this month's hours are effectively paying that down — shown
+  // red, same "carried in (green) vs. carried over/used (red)" convention the
+  // drawer already uses for this exact field, just applied to this row too.
+  const carryLabel = c.priorBalance == null || c.priorBalance === 0 ? "Carry-over"
+    : c.priorBalance < 0 ? "Carried in" : "Over-used prior";
+  const carryTone = c.priorBalance == null || c.priorBalance === 0 ? undefined
+    : c.priorBalance < 0 ? "var(--status-ok)" : "var(--status-over)";
+  const carryTitle = c.priorBalance == null ? undefined
+    : c.priorBalance < 0 ? `${fmt(carry)} h of unused package time carried in from last month.`
+    : c.priorBalance > 0 ? `${fmt(carry)} h of last month's over-use being carried over into this month.`
+    : undefined;
+  // remaining < 0: over-served (used more than the package this month) — red.
+  // remaining > 0: hours still left in the package this month — green.
+  const remainingTone = c.remaining == null || c.remaining === 0 ? undefined
+    : c.remaining < 0 ? "var(--status-over)" : "var(--status-ok)";
+
   const consultantEntries = [...c.userMinutes.entries()].sort((a, b) => b[1] - a[1]);
   const consultantTotal = consultantEntries.reduce((a, [, min]) => a + min, 0);
   const shownConsultants = consultantsAllShown ? consultantEntries : consultantEntries.slice(0, 3);
@@ -1586,17 +1604,18 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
           </span>
         </span>
         <span className="pg-tag" style={{ color: TYPE_TONES[c.type] }}>[{TYPE_LABELS_SHORT[c.type]}]</span>
-        <span className="pg-row__num">
-          <span className="pg-row__num-label">Worked</span>{fmt(worked)} h
+        <span className="pg-row__num" style={carryTone ? { color: carryTone } : undefined} title={carryTitle}>
+          <span className="pg-row__num-label">{carryLabel}</span>{c.priorBalance != null ? `${fmt(carry)} h` : "—"}
         </span>
         <span className="pg-row__num">
           <span className="pg-row__num-label">Package</span>{c.pkg != null ? `${fmt(c.pkg)} h` : "—"}
         </span>
         <span className="pg-row__num">
-          <span className="pg-row__num-label">Carry-over</span>{c.priorBalance != null ? `${fmt(carry)} h` : "—"}
+          <span className="pg-row__num-label">Worked</span>{fmt(worked)} h
         </span>
-        <span className="pg-row__status" style={statusTone ? { color: statusTone } : undefined}>
-          {statusText || (isPackage ? "no package on file" : "—")}
+        <span className="pg-row__num" style={remainingTone ? { color: remainingTone } : undefined}>
+          <span className="pg-row__num-label">Remaining</span>
+          {c.remaining != null ? `${c.remaining < 0 ? "−" : ""}${fmt(Math.abs(c.remaining))} h` : (statusText || (isPackage ? "no package on file" : "—"))}
         </span>
         <button
           type="button" aria-label={inlineOpen ? "Collapse" : "Expand"}
