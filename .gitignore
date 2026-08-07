@@ -3,5 +3,12 @@ dist
 .DS_Store
 *.local
 .agents
-.claude/skills
 skills-lock.json
+
+# Anthropic's bundled skills (docx, pdf, pptx, etc.) come pre-installed with
+# the Claude Code harness itself -- ignore them by default so they don't show
+# as untracked noise, but keep the project-specific ones we've deliberately
+# committed so every branch/clone has them.
+.claude/skills/*
+!.claude/skills/ui-ux-pro-max
+!.claude/skills/data-scientist
