@@ -10,6 +10,7 @@ import {
 import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
 import { findMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, TYPE_LABELS_SHORT, dominantClientType, basisToClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync, LIVE_SYNC_LABEL } from "./clickupSync.js";
+import { fetchAccruedForReconciliation, ACCRUALS_LIVE_SYNC_LABEL } from "./accrualsSync.js";
 import { SEED_CLIENTS as CAP_SEED_CLIENTS, SEED_PEOPLE, loadKey as loadCapKey } from "./capacityData.js";
 import { fetchClients as fetchPgClients, fetchClientEvents, applyDueClientEvents, typeForMonth } from "./clientsSync.js";
 import { ClientAvatar } from "./avatar.jsx";
@@ -140,6 +141,8 @@ export default function PGReconciliation({ onNavigateClients }) {
   const [syncing, setSyncing] = useState(false);
   const [clickupSource, setClickupSource] = useState(null); // "supabase" | "manual"
   const manualOverrideRef = useRef(false);
+  const [accruedSource, setAccruedSource] = useState(null); // "supabase" | "manual"
+  const accruedManualOverrideRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -283,7 +286,19 @@ export default function PGReconciliation({ onNavigateClients }) {
           setClickupSource("supabase");
         }
       }
-      if (savedAccrued) { setAccrued(savedAccrued); justHydratedAccruedRef.current = savedAccrued; }
+      if (savedAccrued) {
+        setAccrued(savedAccrued);
+        justHydratedAccruedRef.current = savedAccrued;
+        // Same manual-vs-live distinction as the ClickUp cache above -- a cached
+        // live-sync payload restored from IndexedDB shouldn't be mislabeled manual,
+        // or it'd permanently block the live fetch below from ever refreshing it.
+        if (savedAccrued.fileName !== ACCRUALS_LIVE_SYNC_LABEL) {
+          accruedManualOverrideRef.current = true;
+          setAccruedSource("manual");
+        } else {
+          setAccruedSource("supabase");
+        }
+      }
       try {
         const raw = window.localStorage.getItem(VIEWSTATE_KEY);
         if (raw) {
@@ -312,6 +327,17 @@ export default function PGReconciliation({ onNavigateClients }) {
         setClickup(live);
         setClickupSource("supabase");
       }).catch((e) => console.error("Supabase ClickUp fetch failed:", e));
+
+      // Accrual balances kept current in pginvoice_accruals by the Client Accruals
+      // module's recomputeAccruals() -- fetching them here means a new device/browser
+      // has real accrual data immediately, no manual sheet upload required. A manual
+      // upload later in this session still wins (accruedManualOverrideRef), same
+      // pattern as ClickUp's live sync above.
+      fetchAccruedForReconciliation().then((live) => {
+        if (!live || accruedManualOverrideRef.current) return;
+        setAccrued(live);
+        setAccruedSource("supabase");
+      }).catch((e) => console.error("Supabase accruals fetch failed:", e));
     })();
   }, []);
 
@@ -422,11 +448,12 @@ export default function PGReconciliation({ onNavigateClients }) {
   const handleAccrued = (file) => {
     if (!file) return;
     setAccruedErr(null);
+    accruedManualOverrideRef.current = true; // wins over live-synced accruals until the next reload
     const isXlsx = /\.xls[mx]?$/i.test(file.name);
     if (isXlsx) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        try { setAccrued({ ...parseAccruedWorkbook(e.target.result), fileName: file.name }); }
+        try { setAccrued({ ...parseAccruedWorkbook(e.target.result), fileName: file.name }); setAccruedSource("manual"); }
         catch (err) { setAccruedErr("Couldn't read the accrued file: " + err.message); }
       };
       reader.onerror = () => setAccruedErr("Couldn't read the file.");
@@ -441,6 +468,7 @@ export default function PGReconciliation({ onNavigateClients }) {
             XLSX.utils.book_append_sheet(wb, ws, "Accrued Hours");
             const out = XLSX.write(wb, { type: "array", bookType: "xlsx" });
             setAccrued({ ...parseAccruedWorkbook(out), fileName: file.name });
+            setAccruedSource("manual");
           } catch (err) { setAccruedErr("Couldn't read the accrued CSV: " + err.message); }
         },
         error: (e) => setAccruedErr("Couldn't read the file: " + e.message),

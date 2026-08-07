@@ -6,8 +6,15 @@ import { supabase } from "./supabaseClient.js";
 import { fetchClickupFromSupabase } from "./clickupSync.js";
 import { findMatch, multiFolderMatchesFor, isInternalFolder } from "./nameMatch.js";
 import { fetchClients, fetchClientEvents, typeForMonth } from "./clientsSync.js";
+import { monthLabel } from "./parsers.js";
 
 const PAGE_SIZE = 1000;
+
+// Stamped onto the reconciliation-shaped payload built from Supabase below -- a
+// manually uploaded workbook's fileName is always a real filename, which never
+// matches this literal, so Client Invoicing can tell the two apart after a value
+// has round-tripped through IndexedDB (same pattern as clickupSync's LIVE_SYNC_LABEL).
+export const ACCRUALS_LIVE_SYNC_LABEL = "Live sync from stored accruals";
 
 // First number in strings like "24 (Aug)" or "8 (increased to 10 Aug)" — the same
 // convention parseAccruedWorkbook in App.jsx already uses for the package figure.
@@ -50,6 +57,34 @@ export async function fetchAccrualsFromSupabase() {
   }
   if (!all.length) return null;
   return rowsToClients(all);
+}
+
+// Reshapes the persistent pginvoice_accruals table into exactly the shape Client
+// Invoicing's manual-upload parser (parseAccruedWorkbook in parsers.js) already
+// produces -- { clients: [{ name, package, balances }], balanceCols, warnings,
+// fileName } -- so the reconciliation engine can treat live Supabase-sourced
+// accrual data interchangeably with an uploaded spreadsheet. This is what lets a
+// new device pick up the same accrual history automatically instead of needing
+// the sheet re-uploaded every time: the numbers are already being kept current
+// here by recomputeAccruals() (run from the Client Accruals module), Client
+// Invoicing just needs to read them the same way it reads an uploaded file.
+export async function fetchAccruedForReconciliation() {
+  const rows = await fetchAccrualsFromSupabase();
+  if (!rows) return null;
+  const monthSet = new Set();
+  const clients = rows.map((c) => {
+    const balances = {};
+    for (const [mk, cell] of Object.entries(c.months)) {
+      monthSet.add(mk);
+      if (cell.accrualValue !== null) balances[mk] = cell.accrualValue;
+    }
+    return { name: c.client, package: parseAgreedHours(c.agreedHpm), balances };
+  });
+  const balanceCols = [...monthSet].sort().map((mk) => {
+    const [y, m] = mk.split("-").map(Number); // m is 1-12
+    return { year: y, month: m - 1, label: monthLabel(y, m - 1) }; // month here is 0-11, matching monthLabel's Date(year, month, 1)
+  });
+  return { clients, balanceCols, warnings: [], fileName: ACCRUALS_LIVE_SYNC_LABEL };
 }
 
 function rowsToClients(rows) {
