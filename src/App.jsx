@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback, useId } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import {
@@ -1254,19 +1254,51 @@ function DeltaChip({ delta }) {
   return <div className="pg-kpi-card__delta" style={{ color: tone }}>{text}</div>;
 }
 
-function Sparkline({ values }) {
-  const w = 64, h = 24, pad = 2;
+// Smoothed trend line (Catmull-Rom points converted to cubic Bézier segments)
+// with a gradient area fill underneath — replaces the old straight-segment
+// polyline, which read as jagged/rough at this size. Kept as a small inline
+// SVG component in the app's own convention (see LineChart.jsx/Sparkline.jsx)
+// rather than a separate reusable component + CSS file: this card's the only
+// caller today, and its color/sizing already need to follow this card's own
+// design tokens (var(--accent), the KPI card's icon-slot proportions), not a
+// generic hardcoded palette.
+function Sparkline({ values, color = "var(--accent)" }) {
+  const w = 72, h = 28, pad = 3;
+  if (!values || values.length < 2) return null;
   const max = Math.max(...values, 0.0001);
   const min = Math.min(...values, 0);
   const range = max - min || 1;
-  const pts = values.map((v, i) => {
-    const x = pad + (i / (values.length - 1)) * (w - pad * 2);
-    const y = h - pad - ((v - min) / range) * (h - pad * 2);
-    return `${x},${y}`;
-  }).join(" ");
+  const points = values.map((v, i) => ({
+    x: pad + (i / (values.length - 1)) * (w - pad * 2),
+    y: pad + (1 - (v - min) / range) * (h - pad * 2),
+  }));
+
+  const linePath = points.reduce((path, p, i) => {
+    if (i === 0) return `M ${p.x} ${p.y}`;
+    const prev = points[i - 1];
+    const prevPrev = points[i - 2] ?? prev;
+    const next = points[i + 1] ?? p;
+    const c1x = prev.x + (p.x - prevPrev.x) / 6;
+    const c1y = prev.y + (p.y - prevPrev.y) / 6;
+    const c2x = p.x - (next.x - prev.x) / 6;
+    const c2y = p.y - (next.y - prev.y) / 6;
+    return `${path} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p.x} ${p.y}`;
+  }, "");
+  const baseline = h - pad;
+  const areaPath = `${linePath} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`;
+
+  const gradientId = `pg-spark-grad-${useId().replace(/:/g, "")}`;
+
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="pg-kpi-card__spark">
-      <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="pg-kpi-card__spark" role="img" aria-label="Trend over recent months">
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />
+      <path d={linePath} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
