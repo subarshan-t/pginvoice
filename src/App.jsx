@@ -1041,11 +1041,21 @@ export default function PGReconciliation({ onNavigateClients }) {
             simply hidden when the export doesn't cover the prior month at all. */}
         {ready && (
           <div className="pg-kpi-row">
-            <KpiCard
-              label="Total billable hours" value={`${fmt(stats.hrs)} h`}
-              delta={prevStats.available && prevStats.hrs > 0 ? { pct: ((stats.hrs - prevStats.hrs) / prevStats.hrs) * 100, label: prevMonthShortLabel } : null}
-              spark={hoursTrend.length > 1 ? <Sparkline values={hoursTrend} /> : null}
-            />
+            {(() => {
+              // Computed once and passed to both the delta chip and the sparkline,
+              // so they always agree on which direction this month's change is
+              // (the sparkline colors itself from this exact same object).
+              const hoursDelta = prevStats.available && prevStats.hrs > 0
+                ? { pct: ((stats.hrs - prevStats.hrs) / prevStats.hrs) * 100, label: prevMonthShortLabel }
+                : null;
+              return (
+                <KpiCard
+                  label="Total billable hours" value={`${fmt(stats.hrs)} h`}
+                  delta={hoursDelta}
+                  spark={hoursTrend.length > 1 ? <Sparkline values={hoursTrend} delta={hoursDelta} /> : null}
+                />
+              );
+            })()}
             <KpiCard
               label="Clients in view" value={stats.count} icon={<Users size={15} />}
               delta={prevStats.available ? { count: stats.count - prevStats.count, label: prevMonthShortLabel } : null}
@@ -1243,15 +1253,30 @@ export default function PGReconciliation({ onNavigateClients }) {
 // ================================ subcomponents =============================
 // delta shapes: { pct, label } | { count, label, invert? } | { hours, label }
 // invert=true means a smaller number is the improvement (e.g. over-serviced clients).
+// Shared by DeltaChip and Sparkline so a card's trend line and its delta
+// arrow always agree on which direction counts as "good" — `invert` flips
+// which direction is favorable (e.g. over-serviced clients: fewer is better).
+function deltaRaw(delta) {
+  if (!delta) return undefined;
+  if (delta.pct !== undefined) return delta.pct;
+  if (delta.count !== undefined) return delta.count;
+  return delta.hours;
+}
+function deltaTone(delta) {
+  const raw = deltaRaw(delta);
+  if (raw === undefined) return null;
+  if (raw === 0) return "var(--fg-tertiary)";
+  const improving = delta.invert ? raw <= 0 : raw >= 0;
+  return improving ? "var(--status-ok)" : "var(--status-over)";
+}
+
 function DeltaChip({ delta }) {
   if (!delta) return null;
   let raw, text;
   if (delta.pct !== undefined) { raw = delta.pct; text = `${raw >= 0 ? "↑" : "↓"}${fmt(Math.abs(raw), 0)}% vs ${delta.label}`; }
   else if (delta.count !== undefined) { raw = delta.count; text = raw === 0 ? `No change vs ${delta.label}` : `${raw > 0 ? "↑" : "↓"}${Math.abs(raw)} vs ${delta.label}`; }
   else { raw = delta.hours; text = raw === 0 ? `No change vs ${delta.label}` : `${raw > 0 ? "↑" : "↓"}${fmt(Math.abs(raw))} h vs ${delta.label}`; }
-  const improving = delta.invert ? raw <= 0 : raw >= 0;
-  const tone = raw === 0 ? "var(--fg-tertiary)" : improving ? "var(--status-ok)" : "var(--status-over)";
-  return <div className="pg-kpi-card__delta" style={{ color: tone }}>{text}</div>;
+  return <div className="pg-kpi-card__delta" style={{ color: deltaTone(delta) }}>{text}</div>;
 }
 
 // Smoothed trend line (Catmull-Rom points converted to cubic Bézier segments)
@@ -1262,7 +1287,16 @@ function DeltaChip({ delta }) {
 // caller today, and its color/sizing already need to follow this card's own
 // design tokens (var(--accent), the KPI card's icon-slot proportions), not a
 // generic hardcoded palette.
-function Sparkline({ values, color = "var(--accent)" }) {
+function Sparkline({ values, delta, color }) {
+  // useId() must run unconditionally on every render (Rules of Hooks) --
+  // called before the early return below, even though its result only
+  // matters once we know there's actually something to render.
+  const gradientId = `pg-spark-grad-${useId().replace(/:/g, "")}`;
+  // Same red/green logic as this card's own delta arrow (deltaTone), so the
+  // trend line and the chip below it never disagree about which way is good.
+  // Falls back to the neutral accent purple when there's no prior-period
+  // comparison to judge direction from yet (e.g. first month of data).
+  const resolvedColor = color || deltaTone(delta) || "var(--accent)";
   const w = 72, h = 28, pad = 3;
   if (!values || values.length < 2) return null;
   const max = Math.max(...values, 0.0001);
@@ -1287,18 +1321,16 @@ function Sparkline({ values, color = "var(--accent)" }) {
   const baseline = h - pad;
   const areaPath = `${linePath} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`;
 
-  const gradientId = `pg-spark-grad-${useId().replace(/:/g, "")}`;
-
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="pg-kpi-card__spark" role="img" aria-label="Trend over recent months">
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
+          <stop offset="0%" stopColor={resolvedColor} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={resolvedColor} stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />
-      <path d={linePath} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      <path d={linePath} fill="none" stroke={resolvedColor} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
