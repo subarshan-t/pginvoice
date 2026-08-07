@@ -333,8 +333,15 @@ function PerformanceInner() {
   }
 
   const clientChart = useMemo(() => {
-    const TYPE_ORDER = ["hourly", "package", "quoted", "map"];
-    const TYPE_LINE_LABEL = { hourly: "Hours for Hourly", package: "Hours for Packaged", quoted: "Hours for Quoted", map: "Hours for MAP" };
+    // Every value basisToClientType() can return (nameMatch.js) -- hardcoding a
+    // subset here caused a real crash: a client on the Strategy/Project/Ad hoc
+    // basis fell outside this list, so groupsByType[...]/splitRowsByType[...]
+    // below was undefined and .push() threw, taking down the whole module.
+    const TYPE_ORDER = ["hourly", "package", "quoted", "map", "strategy", "project", "ad_hoc"];
+    const TYPE_LINE_LABEL = {
+      hourly: "Hours for Hourly", package: "Hours for Packaged", quoted: "Hours for Quoted", map: "Hours for MAP",
+      strategy: "Hours for Strategy", project: "Hours for Project", ad_hoc: "Hours for Ad hoc",
+    };
 
     if (selectedClient) {
       const g = groups.find((x) => x.group === selectedClient);
@@ -377,8 +384,8 @@ function PerformanceInner() {
     // "Combined" group (e.g. Warrina Homes: a Package row plus a Quoted sub-project row)
     // gets split per row instead — see groupRowMonthly — so its Quoted hours land in the
     // Quoted line rather than all being swept into whichever basis is "dominant".
-    const groupsByType = { hourly: [], package: [], quoted: [], map: [] };
-    const splitRowsByType = { hourly: [], package: [], quoted: [], map: [] };
+    const groupsByType = {}; TYPE_ORDER.forEach((t) => { groupsByType[t] = []; });
+    const splitRowsByType = {}; TYPE_ORDER.forEach((t) => { splitRowsByType[t] = []; });
     matchedGroups.forEach((g) => {
       const rowSplit = groupRowMonthly.get(g.group);
       if (rowSplit) rowSplit.forEach((rs) => splitRowsByType[basisToClientType(rs.row.basis)].push(rs));
