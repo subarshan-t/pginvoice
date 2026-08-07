@@ -347,7 +347,7 @@ export default function Clients() {
                         onClick={() => { setEditingFolder(c.client); setDraftFolder(c.clickupFolder || ""); }}
                         title={matched ? "Matches a real ClickUp folder" : unmatched ? "This folder name isn't in the currently-synced ClickUp data -- may be renamed, archived, or a typo" : "No ClickUp folder set for this client"}
                       >
-                        {matched && <span style={{ color: "var(--status-ok)" }}>✓</span>}
+                        {matched && <Check size={12} aria-label="Matched" style={{ color: "var(--status-ok)" }} />}
                         {unmatched && <AlertTriangle size={12} style={{ color: "var(--status-warn)" }} />}
                         <span style={{ flex: 1, color: c.clickupFolder ? undefined : "var(--fg-tertiary)" }}>{c.clickupFolder || "Not set"}</span>
                         <Pencil size={11} />

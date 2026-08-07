@@ -66,7 +66,7 @@ function LoginGate({ onSuccess }) {
 
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg-base)" }}>
-      <form onSubmit={submit} className="pg-cap-card" style={{ width: 320, display: "flex", flexDirection: "column", gap: 14 }}>
+      <form onSubmit={submit} className="pg-cap-card" style={{ width: 320, maxWidth: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", marginBottom: 4 }}>
           <img src="/assets/giraffe-mark.png" alt="" style={{ width: 22, height: 22 }} />
           <span className="pg-eyebrow">Purple Giraffe</span>
@@ -79,7 +79,7 @@ function LoginGate({ onSuccess }) {
           <span className="pg-field__label">Password</span>
           <input className="pg-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
         </label>
-        {error && <p className="pg-footnote" style={{ color: "var(--status-over)" }}>{error}</p>}
+        {error && <p className="pg-footnote" role="alert" style={{ color: "var(--status-over)" }}>{error}</p>}
         <button className="pg-btn" type="submit" disabled={submitting} style={{ justifyContent: "center" }}>{submitting ? "Signing in…" : "Sign in"}</button>
       </form>
     </div>

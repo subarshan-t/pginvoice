@@ -95,6 +95,7 @@ export default function PGReconciliation({ onNavigateClients }) {
   const [search, setSearch] = useState("");
   const [drawerClientName, setDrawerClientName] = useState(null);
   const [copied, setCopied] = useState(null);
+  const [copyError, setCopyError] = useState(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [clickupErr, setClickupErr] = useState(null);
   const [accruedErr, setAccruedErr] = useState(null);
@@ -951,7 +952,7 @@ export default function PGReconciliation({ onNavigateClients }) {
   };
   const copySummary = async (c) => {
     try { await navigator.clipboard.writeText(summaryText(c)); setCopied(c.name); setTimeout(() => setCopied(null), 1500); }
-    catch (e) {}
+    catch (e) { setCopyError(c.name); setTimeout(() => setCopyError(null), 1500); }
   };
   const downloadPdf = (c) => {
     const monthText = invoiceMonth || new Date().toLocaleString(undefined, { month: "long", year: "numeric" });
@@ -1255,6 +1256,7 @@ export default function PGReconciliation({ onNavigateClients }) {
           onPdf={() => downloadPdf(drawerClient)}
           onViewProfile={onNavigateClients}
           copied={copied === drawerClient.name}
+          copyError={copyError === drawerClient.name}
         />
       )}
     </div>
@@ -1478,35 +1480,36 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
 
   return (
     <div className={"pg-row-wrap" + (nested ? " pg-row--nested" : "")}>
-      <div
-        role="button" tabIndex={0}
-        className={"pg-row" + (active ? " pg-row--active" : "")}
-        onClick={onOpen}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
-      >
-        {!nested && <span className="pg-row__index">{index}</span>}
-        <span className="pg-row__name">
-          <span className="pg-row__name-main">
-            {c.displayName}
-            {c.isOffboarded && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 6 }} title={c.offboardNote}>[Offboarded]</span>}
+      <div className={"pg-row" + (active ? " pg-row--active" : "")}>
+        <button
+          type="button"
+          className="pg-row__open"
+          onClick={onOpen}
+        >
+          {!nested && <span className="pg-row__index">{index}</span>}
+          <span className="pg-row__name">
+            <span className="pg-row__name-main">
+              {c.displayName}
+              {c.isOffboarded && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 6 }} title={c.offboardNote}>[Offboarded]</span>}
+            </span>
+            <span className="pg-row__name-sub">
+              {nested ? <><Link2 size={10} /> Related sub-project of {parentName}</> : (c.capGroup && c.capGroup !== c.displayName ? c.capGroup : null)}
+            </span>
           </span>
-          <span className="pg-row__name-sub">
-            {nested ? <><Link2 size={10} /> Related sub-project of {parentName}</> : (c.capGroup && c.capGroup !== c.displayName ? c.capGroup : null)}
+          <span className="pg-tag" style={{ color: TYPE_TONES[c.type] }}>[{TYPE_LABELS_SHORT[c.type]}]</span>
+          <span className="pg-row__num">
+            <span className="pg-row__num-label">Worked</span>{fmt(worked)} h
           </span>
-        </span>
-        <span className="pg-tag" style={{ color: TYPE_TONES[c.type] }}>[{TYPE_LABELS_SHORT[c.type]}]</span>
-        <span className="pg-row__num">
-          <span className="pg-row__num-label">Worked</span>{fmt(worked)} h
-        </span>
-        <span className="pg-row__num">
-          <span className="pg-row__num-label">Package</span>{c.pkg != null ? `${fmt(c.pkg)} h` : "—"}
-        </span>
-        <span className="pg-row__num">
-          <span className="pg-row__num-label">Carry-over</span>{c.priorBalance != null ? `${fmt(carry)} h` : "—"}
-        </span>
-        <span className="pg-row__status" style={statusTone ? { color: statusTone } : undefined}>
-          {statusText || (isPackage ? "no package on file" : "—")}
-        </span>
+          <span className="pg-row__num">
+            <span className="pg-row__num-label">Package</span>{c.pkg != null ? `${fmt(c.pkg)} h` : "—"}
+          </span>
+          <span className="pg-row__num">
+            <span className="pg-row__num-label">Carry-over</span>{c.priorBalance != null ? `${fmt(carry)} h` : "—"}
+          </span>
+          <span className="pg-row__status" style={statusTone ? { color: statusTone } : undefined}>
+            {statusText || (isPackage ? "no package on file" : "—")}
+          </span>
+        </button>
         <button
           type="button" aria-label={inlineOpen ? "Collapse" : "Expand"}
           className="pg-row__chevron"
@@ -1582,7 +1585,7 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
 // Full client detail — right-side drawer, opened by clicking a row. Reuses exactly
 // the same computed fields the row above reads from (client.*), just laid out for
 // a deeper single-client view: reconciliation bar, consultant contributions, tasks.
-function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress, hasUser, consultantFilter, accruedNames, usedAccruedNames, syncMeta, capPeople, onClose, onSetMatch, onCopy, onPdf, onViewProfile, copied }) {
+function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress, hasUser, consultantFilter, accruedNames, usedAccruedNames, syncMeta, capPeople, onClose, onSetMatch, onCopy, onPdf, onViewProfile, copied, copyError }) {
   const isPackage = isPackageLikeType(c.type);
   const isQld = c.type === "queensland";
   const [drillConsultant, setDrillConsultant] = useState(null);
@@ -1844,8 +1847,8 @@ function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress
               <Users size={12} /> View full profile
             </button>
           )}
-          <button onClick={onCopy} className="pg-btn-ghost">
-            {copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "copied" : "Copy summary"}
+          <button onClick={onCopy} className="pg-btn-ghost" style={copyError ? { color: "var(--status-over)" } : undefined}>
+            {copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "copied" : (copyError ? "copy failed — try again" : "Copy summary")}
           </button>
           <button onClick={onPdf} className="pg-btn">
             <Printer size={12} /> Generate PDF

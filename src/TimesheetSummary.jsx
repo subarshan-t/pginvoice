@@ -303,9 +303,9 @@ function TimesheetInner() {
         <label className="pg-field">
           <span className="pg-field__label">Month</span>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button className="pg-btn-ghost" style={{ padding: "7px 9px" }} onClick={() => shiftMonth(-1)} disabled={monthIdx <= 0}><ChevronLeft size={13} /></button>
+            <button className="pg-btn-ghost" aria-label="Previous month" style={{ padding: "10px" }} onClick={() => shiftMonth(-1)} disabled={monthIdx <= 0}><ChevronLeft size={13} /></button>
             <span style={{ fontFamily: "var(--font-display)", fontSize: 16, minWidth: 130, textAlign: "center" }}>{monthKeyState ? monthLabelOf(monthKeyState) : "—"}</span>
-            <button className="pg-btn-ghost" style={{ padding: "7px 9px" }} onClick={() => shiftMonth(1)} disabled={monthIdx < 0 || monthIdx >= availableMonths.length - 1}><ChevronRight size={13} /></button>
+            <button className="pg-btn-ghost" aria-label="Next month" style={{ padding: "10px" }} onClick={() => shiftMonth(1)} disabled={monthIdx < 0 || monthIdx >= availableMonths.length - 1}><ChevronRight size={13} /></button>
           </div>
         </label>
         <button
@@ -334,9 +334,9 @@ function TimesheetInner() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 18, flexWrap: "wrap", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span className="pg-field__label">Week ending</span>
-              <button className="pg-btn-ghost" style={{ padding: "6px 8px" }} onClick={() => shiftWeek(-1)} disabled={weekIdx <= 0}><ChevronLeft size={12} /></button>
+              <button className="pg-btn-ghost" aria-label="Previous week" style={{ padding: "10px" }} onClick={() => shiftWeek(-1)} disabled={weekIdx <= 0}><ChevronLeft size={12} /></button>
               <span style={{ fontFamily: "var(--font-display)", fontSize: 16 }}>{weekEndingLabel}</span>
-              <button className="pg-btn-ghost" style={{ padding: "6px 8px" }} onClick={() => shiftWeek(1)} disabled={weekIdx >= weeks.length - 1}><ChevronRight size={12} /></button>
+              <button className="pg-btn-ghost" aria-label="Next week" style={{ padding: "10px" }} onClick={() => shiftWeek(1)} disabled={weekIdx >= weeks.length - 1}><ChevronRight size={12} /></button>
             </div>
             <span className="pg-tag pg-tag--muted">Week {weekIdx + 1} of {weeks.length}</span>
           </div>

@@ -109,6 +109,33 @@ body {
 ::selection { background: var(--accent-soft); color: var(--fg-on-accent); }
 button { font: inherit; }
 
+/* Keyboard-only focus ring — visible on every interactive element without
+   showing on mouse/touch clicks (:focus-visible handles that split natively).
+   Sits on top of any component-level `outline: none` below since this rule
+   comes later in the cascade and targets the same selectors' :focus-visible
+   state specifically. */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Respect the OS-level motion preference — collapses every animation/transition
+   in the app to near-instant instead of leaving vestibular-sensitive users with
+   no way to opt out. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 .pg-app { min-height: 100vh; }
 .pg-container { max-width: 1320px; margin: 0 auto; padding: 56px 24px 96px; }
 @media (max-width: 760px) {
@@ -222,7 +249,7 @@ button { font: inherit; }
   .pg-sidebar__brand { padding: 4px; }
   .pg-sidebar__mobile-toggle {
     display: flex; align-items: center; justify-content: center; margin-left: auto;
-    width: 32px; height: 32px; background: transparent; border: 0; border-radius: var(--app-radius-sm);
+    width: 44px; height: 44px; background: transparent; border: 0; border-radius: var(--app-radius-sm);
     color: var(--fg-secondary); cursor: pointer;
   }
   .pg-sidebar__mobile-toggle:hover { background: var(--bg-elevated); }
@@ -548,7 +575,22 @@ button { font: inherit; }
   box-shadow: var(--shadow-sm); padding: 10px 14px;
   transition: border-color var(--dur) var(--ease);
 }
-.pg-cmdsearch:focus-within { border-color: var(--accent-soft); }
+.pg-cmdsearch:focus-within { border-color: var(--accent); }
+.pg-cmdsearch:has(.pg-cmdsearch__input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Invisible full-row button wrapping everything in ClientRow except the
+   chevron — display:contents lets its children lay out as direct flex items
+   of .pg-row (as if the button weren't there) while still giving keyboard
+   users a single real, focusable, non-nested control for "open this row". */
+.pg-row__open {
+  display: contents;
+  background: none; border: 0; padding: 0; margin: 0;
+  text-align: left; cursor: pointer; font: inherit; color: inherit;
+}
+/* display:contents elements render no box of their own, so the default
+   :focus-visible outline above has nothing to draw around — put the ring on
+   the row itself instead when the open-button inside it has keyboard focus. */
+.pg-row:has(.pg-row__open:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
 .pg-cmdsearch__icon { flex: none; color: var(--fg-tertiary); }
 .pg-cmdsearch__input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; font-family: var(--font-body); font-size: 13px; color: var(--fg-primary); }
 .pg-cmdsearch__input::placeholder { color: var(--fg-tertiary); }
@@ -658,7 +700,7 @@ button { font: inherit; }
 }
 .pg-drawer__header { display: flex; justify-content: flex-end; }
 .pg-drawer__icon-btn {
-  display: flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center; width: 44px; height: 44px;
   background: transparent; border: 0; border-radius: var(--app-radius-pill); color: var(--fg-tertiary); cursor: pointer;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }

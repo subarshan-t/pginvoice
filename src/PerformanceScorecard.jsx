@@ -60,6 +60,7 @@ function LineChart({ series, months }) {
   const y = (v) => padT + plotH - (maxV ? (v / maxV) * plotH : 0);
   const [hoverIdx, setHoverIdx] = useState(null);
   const svgRef = useRef(null);
+  const rafRef = useRef(null);
 
   if (months.length === 0) {
     return <div className="pg-empty">No months of ClickUp data to chart yet.</div>;
@@ -68,17 +69,36 @@ function LineChart({ series, months }) {
   function handleMove(e) {
     const svg = svgRef.current;
     if (!svg) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect.width) return;
-    const relX = ((e.clientX - rect.left) / rect.width) * W;
-    let nearest = 0, best = Infinity;
-    months.forEach((_, i) => { const d = Math.abs(x(i) - relX); if (d < best) { best = d; nearest = i; } });
-    setHoverIdx(nearest);
+    const clientX = e.clientX;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      const rect = svg.getBoundingClientRect();
+      if (!rect.width) return;
+      const relX = ((clientX - rect.left) / rect.width) * W;
+      let nearest = 0, best = Infinity;
+      months.forEach((_, i) => { const d = Math.abs(x(i) - relX); if (d < best) { best = d; nearest = i; } });
+      setHoverIdx(nearest);
+    });
+  }
+
+  const chartSummary = `Line chart of ${series.map((s) => s.label).join(", ")} across ${months.length} month${months.length === 1 ? "" : "s"}, from ${monthLabelShort(months[0])} to ${monthLabelShort(months[months.length - 1])}. Use left/right arrow keys to inspect each month's values.`;
+
+  function handleKeyDown(e) {
+    if (e.key === "ArrowRight") { e.preventDefault(); setHoverIdx((i) => Math.min(months.length - 1, (i ?? -1) + 1)); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); setHoverIdx((i) => Math.max(0, (i ?? months.length) - 1)); }
+    else if (e.key === "Escape") { setHoverIdx(null); }
   }
 
   return (
     <div className="pg-linechart" style={{ position: "relative" }}>
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} width="100%" onMouseMove={handleMove} onMouseLeave={() => setHoverIdx(null)}>
+      <svg
+        ref={svgRef} viewBox={`0 0 ${W} ${H}`} width="100%"
+        role="img" aria-label={chartSummary}
+        tabIndex={0}
+        onMouseMove={handleMove} onMouseLeave={() => setHoverIdx(null)}
+        onFocus={() => setHoverIdx((i) => i ?? 0)} onBlur={() => setHoverIdx(null)}
+        onKeyDown={handleKeyDown}
+      >
         {[0, 0.25, 0.5, 0.75, 1].map((f) => {
           const v = maxV * f;
           const gy = y(v);
@@ -89,7 +109,10 @@ function LineChart({ series, months }) {
             </g>
           );
         })}
+        {/* Dash pattern per series, in addition to color, so lines stay distinguishable
+            for colorblind viewers rather than relying on hue alone. */}
         {series.map((s, si) => {
+          const dash = [undefined, "6,3", "2,3", "8,2,2,2"][si % 4];
           const pts = s.points.map((v, i) => (v === null || v === undefined ? null : [x(i), y(v)]));
           const segments = [];
           let cur = [];
@@ -98,7 +121,7 @@ function LineChart({ series, months }) {
           return (
             <g key={si}>
               {segments.map((seg, gi) => (
-                <path key={gi} d={seg.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ")} fill="none" stroke={s.color} strokeWidth="2.25" />
+                <path key={gi} d={seg.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ")} fill="none" stroke={s.color} strokeWidth="2.25" strokeDasharray={dash} />
               ))}
               {pts.map((p, i) => (p ? <circle key={i} cx={p[0]} cy={p[1]} r={hoverIdx === i ? 4 : 2.75} fill={s.color} /> : null))}
             </g>
@@ -116,7 +139,7 @@ function LineChart({ series, months }) {
           position: "absolute", left: `${(x(hoverIdx) / W) * 100}%`, top: 4, transform: "translateX(-50%)",
           background: "var(--bg-card)", border: "1px solid var(--border-soft)", borderRadius: "var(--app-radius-sm)",
           padding: "7px 10px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-primary)",
-          pointerEvents: "none", whiteSpace: "nowrap", zIndex: 5, boxShadow: "0 6px 18px rgba(0,0,0,0.35)",
+          pointerEvents: "none", whiteSpace: "nowrap", zIndex: 5, boxShadow: "var(--shadow-floating)",
         }}>
           <div style={{ color: "var(--fg-tertiary)", marginBottom: 4 }}>{monthLabelShort(months[hoverIdx])}</div>
           {series.map((s) => {

@@ -760,7 +760,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                             <React.Fragment key={g.group}>
                               <tr>
                                 <td>
-                                  <button className="pg-btn-ghost" style={{ padding: "2px 6px", marginRight: 6 }} onClick={() => toggleGroup(groupKey)}>
+                                  <button className="pg-btn-ghost" aria-label={groupOpen ? "Collapse group" : "Expand group"} style={{ padding: "10px", marginRight: 6 }} onClick={() => toggleGroup(groupKey)}>
                                     {groupOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                                   </button>
                                   {g.group} <span style={{ fontSize: 10, color: "var(--fg-tertiary)" }}>({g.rows.length} sub-projects)</span>

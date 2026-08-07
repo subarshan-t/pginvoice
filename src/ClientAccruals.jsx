@@ -158,9 +158,9 @@ export default function ClientAccruals() {
           <div className="pg-field">
             <span className="pg-field__label" style={{ visibility: "hidden" }}>Month</span>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <button className="pg-btn-ghost" onClick={() => setMonth((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
+              <button className="pg-btn-ghost" aria-label="Previous month" onClick={() => setMonth((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
               <span className="pg-tag">{monthLabelOf(month)}</span>
-              <button className="pg-btn-ghost" onClick={() => setMonth((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
+              <button className="pg-btn-ghost" aria-label="Next month" onClick={() => setMonth((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
             </div>
           </div>
         ) : (
@@ -168,17 +168,17 @@ export default function ClientAccruals() {
             <div className="pg-field">
               <span className="pg-field__label">Start</span>
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <button className="pg-btn-ghost" onClick={() => setRangeStart((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
+                <button className="pg-btn-ghost" aria-label="Previous start month" onClick={() => setRangeStart((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
                 <span className="pg-tag">{monthLabelOf(rangeStart)}</span>
-                <button className="pg-btn-ghost" onClick={() => setRangeStart((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
+                <button className="pg-btn-ghost" aria-label="Next start month" onClick={() => setRangeStart((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
               </div>
             </div>
             <div className="pg-field">
               <span className="pg-field__label">End</span>
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <button className="pg-btn-ghost" onClick={() => setRangeEnd((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
+                <button className="pg-btn-ghost" aria-label="Previous end month" onClick={() => setRangeEnd((m) => shiftMonthKey(m, -1))}><ChevronLeft size={13} /></button>
                 <span className="pg-tag">{monthLabelOf(rangeEnd)}</span>
-                <button className="pg-btn-ghost" onClick={() => setRangeEnd((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
+                <button className="pg-btn-ghost" aria-label="Next end month" onClick={() => setRangeEnd((m) => shiftMonthKey(m, 1))}><ChevronRight size={13} /></button>
               </div>
             </div>
           </>

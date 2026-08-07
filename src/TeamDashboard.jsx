@@ -55,13 +55,14 @@ function PhotoUpload({ name, photo, onChange }) {
         type="button"
         onClick={() => inputRef.current && inputRef.current.click()}
         title="Set photo"
-        style={{ border: 0, background: "none", padding: 0, cursor: "pointer", borderRadius: "50%" }}
+        aria-label="Set photo"
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, border: 0, background: "none", padding: 0, cursor: "pointer", borderRadius: "50%" }}
       >
         <PersonAvatar name={name} photo={photo} size={30} />
       </button>
       <input ref={inputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pick} />
       {photo && (
-        <button type="button" className="pg-btn-ghost" style={{ padding: "3px 5px" }} title="Remove photo" onClick={() => onChange("")}>
+        <button type="button" className="pg-btn-ghost" style={{ padding: "10px" }} title="Remove photo" aria-label="Remove photo" onClick={() => onChange("")}>
           <X size={11} />
         </button>
       )}
@@ -97,7 +98,7 @@ function RosterMenu({ person, onUpdate, aliasConflict }) {
 
   return (
     <>
-      <button ref={btnRef} type="button" className="pg-btn-ghost" style={{ padding: "4px 7px" }} onClick={() => (open ? setOpen(false) : openMenu())}>
+      <button ref={btnRef} type="button" className="pg-btn-ghost" aria-label="Person options" style={{ padding: "10px" }} onClick={() => (open ? setOpen(false) : openMenu())}>
         <MoreVertical size={13} />
       </button>
       {open && createPortal(
@@ -157,15 +158,15 @@ function AddPersonForm({ onAdd }) {
   return (
     <div className="pg-cap-addform" style={{ marginTop: 10 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <input className="pg-input" style={{ width: 140 }} placeholder="Name" value={form.name} onChange={(e) => set("name")(e.target.value)} />
+        <input className="pg-input" style={{ width: 140 }} placeholder="Name" aria-label="Name" value={form.name} onChange={(e) => set("name")(e.target.value)} />
         <div style={{ width: 140 }}>
           <Picker value={form.role} options={[{ value: "Consultant", label: "Consultant" }, { value: "Coordinator", label: "Coordinator" }]} onChange={set("role")} />
         </div>
         <div style={{ width: 90 }}>
           <Picker value={form.state} options={[{ value: "SA", label: "SA" }, { value: "WA", label: "WA" }, { value: "QLD", label: "QLD" }]} onChange={set("state")} />
         </div>
-        <input className="pg-input" type="number" step="any" style={{ width: 110 }} placeholder="Hrs/wk" value={form.contracted} onChange={(e) => set("contracted")(e.target.value)} />
-        <input className="pg-input" type="number" min="0" max="100" step="1" style={{ width: 110 }} placeholder="Billable %" value={Math.round(form.rate * 100)} onChange={(e) => set("rate")((Number(e.target.value) || 0) / 100)} />
+        <input className="pg-input" type="number" step="any" style={{ width: 110 }} placeholder="Hrs/wk" aria-label="Hours per week" value={form.contracted} onChange={(e) => set("contracted")(e.target.value)} />
+        <input className="pg-input" type="number" min="0" max="100" step="1" style={{ width: 110 }} placeholder="Billable %" aria-label="Billable percent" value={Math.round(form.rate * 100)} onChange={(e) => set("rate")((Number(e.target.value) || 0) / 100)} />
         <button className="pg-btn" onClick={() => { onAdd(form); setForm({ name: "", role: "Consultant", state: "SA", contracted: 38, rate: 0.7 }); setOpen(false); }} disabled={!form.name.trim()}>
           <Plus size={13} /> Add
         </button>
@@ -464,9 +465,9 @@ function TeamDashboardInner() {
                     : <span style={{ color: "var(--fg-tertiary)", fontSize: 12 }}>{p.note}</span>}
                 </td>
                 {editing && (
-                  <td style={{ display: "flex", gap: 4 }}>
+                  <td style={{ display: "flex", gap: 8 }}>
                     <RosterMenu person={p} onUpdate={(field, value) => updatePerson(p.id, field, value)} aliasConflict={aliasConflicts.get(p.id)} />
-                    <button className="pg-btn-ghost" style={{ color: "var(--status-over)", padding: "4px 7px" }} onClick={() => removePerson(p.id)}><X size={12} /></button>
+                    <button className="pg-btn-ghost" aria-label="Remove person" style={{ color: "var(--status-over)", padding: "10px" }} onClick={() => removePerson(p.id)}><X size={12} /></button>
                   </td>
                 )}
               </tr>
