@@ -75,9 +75,8 @@ function LoginGate({ onSuccess }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg-base)", padding: 16 }}>
       <form onSubmit={submit} className="pg-cap-card" style={{ width: 320, maxWidth: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", marginBottom: 4 }}>
-          <img src="/assets/giraffe-mark.png" alt="" style={{ height: 22, width: "auto" }} />
-          <span className="pg-eyebrow">Purple Giraffe</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 4 }}>
+          <img src="/assets/giraffe-mark.png" alt="Purple Giraffe" style={{ height: 44, width: "auto" }} />
         </div>
         <label className="pg-field">
           <span className="pg-field__label">Email</span>
@@ -146,8 +145,7 @@ export default function Shell() {
       {mobileNavOpen && <div className="pg-sidebar-backdrop" onClick={() => setMobileNavOpen(false)} />}
       <aside className={"pg-sidebar" + (collapsed ? " pg-sidebar--collapsed" : "") + (mobileNavOpen ? " pg-sidebar--mobile-open" : "")}>
         <div className="pg-sidebar__brand">
-          <img src="/assets/giraffe-mark.png" alt="" />
-          <span className="pg-sidebar__hide-collapsed">Purple Giraffe</span>
+          <img src="/assets/giraffe-mark.png" alt="Purple Giraffe" className="pg-sidebar__brand-logo" />
           <button
             className="pg-sidebar__icon-btn pg-sidebar__desktop-only"
             style={{ marginLeft: "auto" }}
