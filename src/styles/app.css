@@ -95,6 +95,51 @@
 }
 :root[data-theme="light"] ::selection { color: var(--fg-on-accent); }
 
+/* ============================================================================
+   DARK THEME
+   Applied via data-theme="dark" on <html>. Before this block existed, toggling
+   dark mode left --bg-base/--bg-card/--bg-elevated/--fg-primary/--fg-secondary/
+   --fg-tertiary/--accent/--accent-soft/--border-soft/--border-subtle/--bg-nav
+   completely undefined app-wide (the light block above is the only place any
+   of them are set), so every surface and text color in the app fell back to
+   the browser's initial CSS values instead of anything intentional. Base
+   surfaces here come from the Purple Giraffe pitch site's own dark palette
+   (colors_and_type.css's original :root, which this app's light theme
+   replaced as the default) — same near-black canvas, same lavender accent
+   hue, re-tuned only where contrast against the new dark backgrounds needed
+   it (fg-tertiary's opacity bumped the same way the light theme already
+   bumps it, for the mono uppercase labels/footnotes that lean on it).
+   ============================================================================ */
+:root[data-theme="dark"] {
+  --bg-base:     rgb(19, 19, 19);      /* #131313 */
+  --bg-card:     rgb(27, 27, 28);      /* #1B1B1C */
+  --bg-elevated: rgb(42, 42, 42);      /* #2A2A2A — used sparingly for active surfaces */
+  --bg-nav:      rgba(19, 19, 19, 0.85);
+
+  --fg-primary:   rgb(229, 226, 225);  /* #E5E2E1 */
+  --fg-secondary: rgb(207, 196, 197);  /* #CFC4C5 */
+  /* Same fix as the light theme's --fg-tertiary: the raw 0.6-alpha value sits
+     under ~4.5:1 against --bg-card; raising the opacity keeps the hue but
+     brings labels/footnotes back to reliably legible contrast. */
+  --fg-tertiary:  rgba(207, 196, 197, 0.78);
+
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-soft:   rgba(255, 255, 255, 0.14);
+
+  /* Transparent lavender tint (not a solid pale fill like light mode's Purple
+     50) so hovered/active surfaces read as a soft glow over the dark card
+     rather than a flat light patch. */
+  --accent-soft: rgba(210, 187, 255, 0.16);
+
+  /* Lighter lavender (Purple Giraffe pitch-site accent) rather than light
+     mode's deep Purple 700 — rgb(78,51,220) would sit under 3:1 against a
+     near-black background; this lighter tint holds ~11:1 against --bg-base
+     and ~9:1 against --bg-card, comfortably past WCAG AA for both text and
+     UI-component use. */
+  --accent: rgb(210, 187, 255);
+}
+:root[data-theme="dark"] ::selection { color: var(--fg-on-accent); }
+
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
