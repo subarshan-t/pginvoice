@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { LayoutDashboard, FileText, BarChart3, TrendingUp, CalendarDays, Clock, Users, Building2, Sun, Moon, LogOut, ChevronLeft, ChevronRight, Settings, Plug, HelpCircle, Menu, X } from "lucide-react";
+import { LayoutDashboard, FileText, BarChart3, TrendingUp, CalendarDays, Clock, Users, Building2, Sun, Moon, LogOut, ChevronLeft, ChevronRight, Settings, Plug, HelpCircle, Menu, X, MoreHorizontal } from "lucide-react";
 import Overview from "./Overview.jsx";
 import PlaceholderPage from "./PlaceholderPage.jsx";
 import PGReconciliation from "./App.jsx";
@@ -22,6 +22,14 @@ const MODULES = [
   { key: "timesheet", label: "Timesheets", icon: CalendarDays },
   { key: "accruals", label: "Client Accruals", icon: Clock },
   { key: "performance", label: "Reporting", icon: TrendingUp },
+];
+// Mobile bottom tab bar: the 4 most-used modules, short labels so 5 tabs
+// (these plus "More") fit comfortably on a phone-width bar.
+const BOTTOM_NAV_MODULES = [
+  { key: "overview", label: "Overview", icon: LayoutDashboard },
+  { key: "invoicing", label: "Invoicing", icon: FileText },
+  { key: "capacity", label: "Capacity", icon: BarChart3 },
+  { key: "team", label: "Team", icon: Users },
 ];
 // Present in the approved nav, but no real functionality behind them yet —
 // each renders an honest "not built" placeholder rather than fake content.
@@ -235,6 +243,31 @@ export default function Shell() {
           <PlaceholderPage title="Help." subtitle="Documentation and support aren't built yet." icon={HelpCircle} empty="Help module coming soon." />
         </div>
       </main>
+      {/* Mobile only (see .pg-bottom-nav's media query) -- a persistent bottom
+          tab bar instead of the sidebar's hamburger, matching how a native
+          mobile app surfaces primary navigation. Only room for a handful of
+          tabs, so this shows the four most-used modules plus a "More" tab
+          that reuses the same full-screen sheet the (now desktop-only)
+          hamburger opens, rather than building a second nav-list UI. */}
+      <nav className="pg-bottom-nav">
+        {BOTTOM_NAV_MODULES.map((m) => (
+          <button
+            key={m.key}
+            className={"pg-bottom-nav__link" + (active === m.key ? " pg-bottom-nav__link--active" : "")}
+            onClick={() => goTo(m.key)}
+          >
+            <m.icon size={20} />
+            <span>{m.label}</span>
+          </button>
+        ))}
+        <button
+          className={"pg-bottom-nav__link" + (mobileNavOpen ? " pg-bottom-nav__link--active" : "")}
+          onClick={() => setMobileNavOpen((o) => !o)}
+        >
+          <MoreHorizontal size={20} />
+          <span>More</span>
+        </button>
+      </nav>
     </div>
   );
 }

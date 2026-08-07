@@ -337,12 +337,39 @@ button { font: inherit; }
   }
   .pg-sidebar__nav { flex-direction: column; }
   .pg-sidebar__desktop-only { display: none; }
+  /* The bottom tab bar (below) is the mobile primary nav now -- the
+     hamburger in the top bar would just be a redundant second way to reach
+     the same "everything" sheet its own "More" tab already opens. */
+  .pg-sidebar__mobile-toggle { display: none; }
+  .pg-shell__main { padding-bottom: 76px; }
 }
 .pg-sidebar-backdrop {
   position: fixed; inset: 0; z-index: 59; background: rgba(23, 23, 23, 0.32);
   animation: pg-fade-in 0.2s var(--ease);
 }
 @media (min-width: 761px) { .pg-sidebar-backdrop { display: none; } }
+
+/* ---- mobile bottom tab bar -------------------------------------------------
+   Native-app-style persistent navigation for phones -- replaces the sidebar's
+   hamburger below 760px. Fixed to the viewport bottom rather than the shell,
+   so it stays put regardless of which module's internal content is scrolled. */
+.pg-bottom-nav { display: none; }
+@media (max-width: 760px) {
+  .pg-bottom-nav {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    background: var(--bg-card); border-top: 1px solid var(--border-subtle);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+    box-shadow: var(--shadow-floating);
+  }
+}
+.pg-bottom-nav__link {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: transparent; border: 0; padding: 6px 2px; min-height: 44px;
+  font-family: var(--font-body); font-size: 10px; font-weight: 500;
+  color: var(--fg-tertiary); cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+.pg-bottom-nav__link--active { color: var(--accent); }
 
 /* ---- header -------------------------------------------------------------- */
 .pg-app-header { display: flex; align-items: flex-end; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid var(--border-soft); }
