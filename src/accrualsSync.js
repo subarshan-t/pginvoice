@@ -187,10 +187,11 @@ export async function recomputeAccruals(clients) {
       // discrepancy: "Coonwarra" (the accrual sheet's name for this client) doesn't
       // fuzzy-match its real ClickUp folder "Coonawarra Grape and Wine Inc" at all (one
       // letter off, zero shared tokens after the "Grape and Wine Inc" suffix), so the old
-      // name-only lookup below silently recorded 0 worked hours against a client with 29h
-      // of real July work -- and "PRG Strategic Advisors" vs "PRG Financial Services
-      // Outsourced Marketing" hit the exact same failure mode (0 of 8.4 real hours
-      // counted). Client Invoicing already prefers this same registered mapping for
+      // name-only lookup below silently recorded 0 worked hours against a client with
+      // 21.23h of real billable July work (29.02h total logged, 7.78h of it non-billable
+      // and correctly excluded) -- and "PRG Strategic Advisors" vs "PRG Financial Services
+      // Outsourced Marketing" hit the exact same failure mode (0 of 8.37 real billable
+      // hours counted). Client Invoicing already prefers this same registered mapping for
       // exactly this reason (see pgProfileByFolder in App.jsx); accruals were the one
       // place still re-deriving the folder from the name instead of trusting it.
       folderMinutes = workedByFolderMonth.get(profile.clickupFolder);
