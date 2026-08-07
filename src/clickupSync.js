@@ -7,15 +7,22 @@ import { supabase } from "./supabaseClient.js";
 
 const PAGE_SIZE = 1000; // PostgREST's default row cap per request — paginate past it
 
-export async function fetchClickupFromSupabase() {
+// `sinceMonthKey` (optional, "YYYY-MM") restricts the fetch to that month onward --
+// callers that only need a trailing window (e.g. Overview's 6-month rollup) should
+// always pass this, since the full table is 47k+ rows spanning 15+ months and
+// paginating through all of it (at 1000 rows/request, sequentially) is the single
+// biggest cost in loading anything that reads this. Callers that genuinely need
+// full history (Client Invoicing's month picker, recomputeAccruals) omit it.
+export async function fetchClickupFromSupabase(sinceMonthKey) {
   let all = [];
   let from = 0;
   while (true) {
-    const { data, error } = await supabase
+    let q = supabase
       .from("pginvoice_clickup_entries")
       .select("folder, task, task_id, minutes, billable, has_billable_col, user_name, is_internal, month_key, month_label, date_key")
-      .order("entry_start", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+      .order("entry_start", { ascending: true });
+    if (sinceMonthKey) q = q.gte("month_key", sinceMonthKey);
+    const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
     if (!data || !data.length) break;
     all = all.concat(data);

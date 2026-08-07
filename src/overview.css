@@ -1,24 +1,28 @@
 /* ============================================================================
    Overview page — additive, page-specific tokens/classes only. Not appended to
-   app.css: the glassmorphism/glow treatment here is a one-page visual idea,
-   not a shared design-system change every module should inherit. Built on the
-   real --bg-card/--accent/--border-soft tokens (now properly defined in both
-   themes, see app.css's dark-theme block) via color-mix(), so it automatically
-   tracks whichever theme is active instead of hardcoding either palette.
+   app.css: this is a one-page layout, not a shared design-system change every
+   module should inherit.
+
+   Originally built as a glassmorphism/blur/glow treatment (color-mix() over
+   --bg-card with backdrop-filter blur and an --accent-tinted glow shadow).
+   That read fine in dark mode but looked washed-out and "clumsy" in light --
+   translucent blur only reads as intentional over a busy/dark background, and
+   a colored glow around every card is a lot on a plain light canvas. Replaced
+   with the same flat solid-card + soft-shadow treatment every other module in
+   this app already uses (.pg-panel/.pg-cap-card), which is already proven in
+   both themes -- Overview should look like the rest of the app, just denser.
    ============================================================================ */
 
 .ov-card {
-  background: color-mix(in srgb, var(--bg-card) 82%, transparent);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--border-soft);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--app-radius);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: var(--shadow-sm);
   transition: box-shadow 200ms ease;
   animation: ov-rise 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: calc(var(--i, 0) * 60ms);
 }
-.ov-card:hover { box-shadow: 0 8px 28px color-mix(in srgb, var(--accent) 32%, transparent); }
+.ov-card:hover { box-shadow: var(--shadow-md); }
 @keyframes ov-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .ov-card { animation: none; } }
 
@@ -38,7 +42,9 @@
 /* ---- KPI card -------------------------------------------------------------- */
 .ov-kpi { padding: 18px 20px; }
 .ov-kpi__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-tertiary); }
+.ov-kpi__row { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
 .ov-kpi__primary { margin-top: 8px; font-size: 28px; }
+.ov-kpi__sparkline { flex: none; opacity: 0.9; margin-bottom: 2px; }
 .ov-kpi__secondary { margin-top: 8px; display: flex; align-items: baseline; gap: 6px; }
 .ov-kpi__secondary-value { font-family: var(--font-mono); font-size: 13px; color: var(--fg-secondary); }
 .ov-kpi__secondary-label { font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); }

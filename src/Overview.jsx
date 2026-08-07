@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { fetchClients, fetchClientEvents } from "./clientsSync.js";
+import { fetchClients } from "./clientsSync.js";
 import { fetchAccrualsFromSupabase } from "./accrualsSync.js";
 import { fetchClickupFromSupabase } from "./clickupSync.js";
 import { loadKey, SEED_PEOPLE, last6MonthKeys } from "./capacityData.js";
@@ -67,18 +67,21 @@ export default function Overview() {
       // below already renders its own honest "no data yet" state per source, so
       // showing what did load (with a banner naming what didn't) is strictly more
       // correct than blanking everything on one unrelated failure.
+      // last6MonthKeys() is newest-first; the oldest of the 6 is the earliest month
+      // this page ever needs, so the ClickUp fetch can skip the other 9+ months of
+      // history (47k+ rows total) sitting in the table.
+      const earliestNeededMonth = last6MonthKeys()[5];
       const sources = [
         ["clients", fetchClients()],
-        ["client events", fetchClientEvents()],
         ["accruals", fetchAccrualsFromSupabase()],
         ["team roster", loadKey(CAP_PEOPLE_KEY, SEED_PEOPLE)],
-        ["ClickUp sync", fetchClickupFromSupabase()],
+        ["ClickUp sync", fetchClickupFromSupabase(earliestNeededMonth)],
         ["leave records", loadKey(CAP_LEAVES_KEY, {})],
       ];
       const results = await Promise.allSettled(sources.map(([, p]) => p));
       if (cancelled) return;
 
-      const [clRes, , accrualsRes, pplRes, cuRes, lvRes] = results;
+      const [clRes, accrualsRes, pplRes, cuRes, lvRes] = results;
       if (clRes.status === "fulfilled") setClients(clRes.value || []);
       if (accrualsRes.status === "fulfilled") setAccrualClients(accrualsRes.value);
       if (pplRes.status === "fulfilled") setPeople(pplRes.value || SEED_PEOPLE);
@@ -195,6 +198,8 @@ export default function Overview() {
                 tone={hasAccruals && health.netHours < 0 ? "var(--status-warn)" : undefined}
                 secondary={hasAccruals ? fmt0(health.negativeCount) : null}
                 secondaryLabel={hasAccruals ? `client${health.negativeCount === 1 ? "" : "s"} below -${NEGATIVE_BALANCE_THRESHOLD_HRS}h` : "no accrual data yet"}
+                sparkline={hasTrend ? trend.totalAccruedHours : null}
+                sparklineColor="var(--status-warn)"
               />
               <OverviewKpiCard
                 index={2}
