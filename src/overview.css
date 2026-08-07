@@ -23,9 +23,9 @@
   animation-delay: calc(var(--i, 0) * 60ms);
 }
 .ov-card:hover { box-shadow: var(--shadow-md); }
-/* Same borderless treatment as the rest of the app in dark mode -- the shadow
-   alone carries the separation, an outline on top reads as redundant. */
-:root[data-theme="dark"] .ov-card { border-color: transparent; }
+/* Same borderless treatment as the rest of the app (both themes) -- the
+   shadow alone carries the separation, an outline on top reads as redundant. */
+.ov-card { border-color: transparent; }
 @keyframes ov-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .ov-card { animation: none; } }
 
