@@ -712,6 +712,18 @@ button { font: inherit; }
    any raw data or upload controls. */
 .pg-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 20px; }
 @media (max-width: 900px) { .pg-kpi-row { grid-template-columns: repeat(2, 1fr); } }
+/* Phone: swipeable horizontal carousel instead of a cramped 2x2 grid --
+   each card takes most of the screen width with the next one peeking in,
+   snapping into place on swipe like a native app's stat-card row. */
+@media (max-width: 640px) {
+  .pg-kpi-row {
+    display: flex; grid-template-columns: none; overflow-x: auto; scroll-snap-type: x mandatory;
+    gap: 10px; margin-left: -14px; margin-right: -14px; padding: 0 14px 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .pg-kpi-row::-webkit-scrollbar { display: none; }
+  .pg-kpi-row .pg-kpi-card { flex: 0 0 78%; scroll-snap-align: start; }
+}
 .pg-kpi-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); box-shadow: var(--shadow-sm); padding: 18px 20px; }
 .pg-kpi-card__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pg-kpi-card__label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary); }
