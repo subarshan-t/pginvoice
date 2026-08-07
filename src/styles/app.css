@@ -677,6 +677,17 @@ button { font: inherit; }
    roster's columns fit without horizontal scrolling. */
 .pg-cap-container { max-width: 1600px; margin: 0 auto; padding: 56px 24px 96px; }
 .pg-cap-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; align-items: start; margin-top: 20px; }
+/* Grid items default to min-width: auto, which resolves to their content's
+   min-content size -- so any descendant with wide intrinsic content (an
+   unwrapped flex row, a fixed max-width card) was silently forcing this
+   whole grid, and everything in it, wider than the viewport on mobile. The
+   overflow-x: hidden fix on .pg-shell__main only stopped that excess width
+   from scrolling the whole page; it didn't stop these columns from BEING
+   too wide, so content was just getting clipped instead. This is the actual
+   fix: let the columns shrink to their real available width, same as any
+   ordinary block element, and let individual descendants handle their own
+   overflow (wrap, or an explicit scroll wrapper like tables already have). */
+.pg-cap-grid > * { min-width: 0; }
 @media (max-width: 1100px) {
   .pg-cap-grid { grid-template-columns: 1fr; }
   /* The right pane (Total demand / Billable allocation / Difference stats,
@@ -734,7 +745,7 @@ button { font: inherit; }
     border-radius: var(--app-radius-pill); padding: 3px; gap: 2px;
   }
   .pg-cap-util-toggle__btn {
-    flex: 1; border: 0; background: transparent; border-radius: var(--app-radius-pill);
+    flex: 1; min-width: 0; border: 0; background: transparent; border-radius: var(--app-radius-pill);
     padding: 8px 10px; font-family: var(--font-body); font-size: 12px; font-weight: 600;
     color: var(--fg-secondary); cursor: pointer; transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
   }
