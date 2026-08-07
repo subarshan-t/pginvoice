@@ -14,6 +14,7 @@ import {
   computeDynamicAverages, demandFor, demandForGroup,
 } from "./capacityData.js";
 import { useDismissable } from "./useDismissable.js";
+import { LeaveEditor } from "./LeaveEditor.jsx";
 import {
   CLICKUP_DB_KEY, CAP_CLIENTS_KEY, CAP_PEOPLE_KEY, CAP_SUPPORT_KEY,
   CAP_NOTES_KEY, CAP_LEAVES_KEY, CAP_OVERRIDES_KEY, PG_CLIENTS_KEY,
@@ -977,13 +978,9 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                             <div className="pg-bar-fill" style={{ width: `${billablePct}%`, background: barColor }} />
                           </div>
                           {editRoster ? (
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 4 }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
                               <span className="pg-footnote" style={{ margin: 0 }}>Leave hrs</span>
-                              <input
-                                className="pg-input" type="number" min="0" step="any" style={{ width: 52, padding: "2px 5px", fontSize: 11 }}
-                                value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)} onClick={(e) => e.stopPropagation()}
-                                title={`Total hours of leave taken this month, not a day count -- a full day off for someone on ${p.contracted}hrs/week is ${(p.contracted / 5).toFixed(1)} hrs.`}
-                              />
+                              <LeaveEditor person={p} hours={leaveFor(p.id)} onChange={(hrs) => setLeaveFor(p.id, hrs)} />
                             </div>
                           ) : (
                             <p className="pg-footnote" style={{ margin: "4px 0 0", textAlign: "center" }}>{allocated.toFixed(1)} / {capacity.toFixed(1)} hrs billable</p>

@@ -7,6 +7,7 @@ import { saveState } from "./capacityStore.js";
 import { PG_DATA_EVENT } from "./idbStore.js";
 import { PersonAvatar, resizePhotoFile } from "./avatar.jsx";
 import { useDismissable } from "./useDismissable.js";
+import { LeaveEditor } from "./LeaveEditor.jsx";
 import { CAP_PEOPLE_KEY, CAP_LEAVES_KEY } from "./storageKeys.js";
 
 const uid = (p) => p + Math.random().toString(36).slice(2, 9);
@@ -452,13 +453,7 @@ function TeamDashboardInner() {
                 </td>
                 <td className="right num">
                   {editing
-                    ? (
-                      <input
-                        className="pg-input" type="number" min="0" step="any" style={{ width: 56, padding: "4px 6px" }}
-                        value={leaveFor(p.id)} onChange={(e) => setLeaveFor(p.id, e.target.value)}
-                        title={`Total hours of leave taken this month, not a day count -- a full day off for someone on ${p.contracted}hrs/week is ${(p.contracted / 5).toFixed(1)} hrs.`}
-                      />
-                    )
+                    ? <LeaveEditor person={p} hours={leaveFor(p.id)} onChange={(hrs) => setLeaveFor(p.id, hrs)} />
                     : `${leaveFor(p.id)} h`}
                 </td>
                 <td className="right num">{avail ? avail.totalMonthlyHours.toFixed(1) : "—"}</td>
