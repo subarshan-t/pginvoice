@@ -180,6 +180,20 @@ export async function recomputeAccruals(clients) {
         if (!fm) continue;
         for (const [mk, min] of fm) folderMinutes.set(mk, (folderMinutes.get(mk) || 0) + min);
       }
+    } else if (profile.clickupFolder && workedByFolderMonth.has(profile.clickupFolder)) {
+      // The Clients module already has an authoritative, human-set folder mapping for
+      // this exact client (pginvoice_clients.clickup_folder) -- prefer it over re-deriving
+      // a match from the accrual sheet's own client name string. Found via a real
+      // discrepancy: "Coonwarra" (the accrual sheet's name for this client) doesn't
+      // fuzzy-match its real ClickUp folder "Coonawarra Grape and Wine Inc" at all (one
+      // letter off, zero shared tokens after the "Grape and Wine Inc" suffix), so the old
+      // name-only lookup below silently recorded 0 worked hours against a client with 29h
+      // of real July work -- and "PRG Strategic Advisors" vs "PRG Financial Services
+      // Outsourced Marketing" hit the exact same failure mode (0 of 8.4 real hours
+      // counted). Client Invoicing already prefers this same registered mapping for
+      // exactly this reason (see pgProfileByFolder in App.jsx); accruals were the one
+      // place still re-deriving the folder from the name instead of trusting it.
+      folderMinutes = workedByFolderMonth.get(profile.clickupFolder);
     } else {
       const match = findMatch(c.client, folderNames);
       folderMinutes = match ? workedByFolderMonth.get(match.name) : null;
