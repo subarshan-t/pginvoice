@@ -67,9 +67,10 @@ export function colorForName(name) {
 // design's colorful client avatars).
 export function ClientAvatar({ name, logo, size = 34, style }) {
   const [broken, setBroken] = React.useState(false);
-  // Reset the broken flag whenever a different logo URL is handed in, so switching
-  // from a failed one to a working one (or back to no logo) doesn't stay stuck.
-  React.useEffect(() => { setBroken(false); }, [logo]);
+  // Reset the broken flag whenever a different logo URL (or client name, which drives
+  // the initials/color fallback) is handed in, so switching from a failed one to a
+  // working one (or back to no logo) doesn't stay stuck.
+  React.useEffect(() => { setBroken(false); }, [logo, name]);
   const initials = (name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?";
   const showLogo = logo && !broken;
   const base = {

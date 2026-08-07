@@ -225,10 +225,14 @@ export function LineChart({ series, months }) {
         // the chart) so the tooltip reads as "this point" rather than floating
         // disconnected from whichever line/month is actually being hovered.
         const py = y(v);
+        // Near the top of the plot there isn't room for the tooltip above the node
+        // (it would clip off the container's top edge) -- flip it to render below
+        // the node instead once we're within a tooltip's-height-ish of the top.
+        const tooShort = py - padT < 40;
         return (
           <div style={{
             position: "absolute", left: `${(x(hoverPoint.i) / W) * 100}%`, top: `${(py / H) * 100}%`,
-            transform: "translate(-50%, calc(-100% - 12px))",
+            transform: tooShort ? "translate(-50%, 12px)" : "translate(-50%, calc(-100% - 12px))",
             background: "var(--bg-card)", border: "1px solid var(--border-soft)", borderRadius: "var(--app-radius-sm)",
             padding: "7px 10px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-primary)",
             pointerEvents: "none", whiteSpace: "nowrap", zIndex: 5, boxShadow: "0 6px 18px rgba(0,0,0,0.35)",

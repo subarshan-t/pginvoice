@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Search, ArrowRight, Pencil, Check, AlertTriangle, Upload, X } from "lucide-react";
-import { fetchClients, fetchClientEvents, createClientEvent, applyDueClientEvents, updateClickupFolder, updateClientWebsite, updateClientLogo, faviconUrlFor } from "./clientsSync.js";
+import { fetchClients, fetchClientEvents, createClientEvent, applyDueClientEvents, updateClickupFolder, updateClientWebsite, updateClientLogo } from "./clientsSync.js";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { CLICKUP_DB_KEY, PG_CLIENTS_KEY } from "./storageKeys.js";
 import { ClientAvatar, resizePhotoFile } from "./avatar.jsx";
+import { useDismissable } from "./useDismissable.js";
 
 // Popover for a client's logo -- upload an image directly, or type in the
 // client's website and let a favicon service supply the logo automatically.
@@ -11,13 +12,18 @@ function LogoEditor({ client, onClose, onSaved }) {
   const [website, setWebsite] = useState(client.website || "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
+  const ref = useDismissable(onClose);
 
   async function saveWebsite() {
     setSaving(true);
     setErr(null);
     try {
-      await updateClientWebsite(client.client, website.trim());
-      onSaved({ website: website.trim() || null, logoUrl: faviconUrlFor(website.trim()) });
+      // updateClientWebsite is the single source of truth for the resulting logo_url
+      // (including clearing it when the website's cleared, and leaving a manually
+      // uploaded logo alone) -- apply its returned patch verbatim rather than
+      // re-deriving it here.
+      const patch = await updateClientWebsite(client.client, website.trim(), { currentLogoUrl: client.logoUrl });
+      onSaved(patch);
     } catch (e) {
       setErr(e.message || String(e));
     } finally {
@@ -55,7 +61,7 @@ function LogoEditor({ client, onClose, onSaved }) {
   }
 
   return (
-    <div className="pg-menu" style={{ top: "calc(100% + 4px)", left: 0, right: "auto", width: 280, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}
+    <div ref={ref} className="pg-menu" style={{ top: "calc(100% + 4px)", left: 0, right: "auto", width: 280, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}
       onClick={(e) => e.stopPropagation()}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <ClientAvatar name={client.client} logo={client.logoUrl} size={40} />

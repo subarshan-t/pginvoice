@@ -57,17 +57,39 @@ export async function updateClickupFolder(client, folder) {
 // Saves the client's website URL and, when `autoLogo` is true, derives a logo
 // from it via a public favicon service rather than scraping the site ourselves
 // (no server-side fetch/CORS/edge-function needed for a small icon). Passing an
-// explicit `logoUrl` (e.g. from a manual upload) skips the auto-fetch.
-export async function updateClientWebsite(client, website, { autoLogo = true, logoUrl } = {}) {
-  const patch = { website: website || null };
+// explicit `logoUrl` (e.g. from a manual upload) skips the auto-fetch entirely.
+//
+// This is the single source of truth for what the logo becomes when the website is
+// saved -- callers should NOT separately recompute `faviconUrlFor(website)` and patch
+// their own local state with it, since that duplicated derivation is what let clearing
+// the website (website === "") leave a stale `logo_url` in the DB while the UI showed
+// no logo. Pass `currentLogoUrl` (the client's logo before this save) so a manually
+// uploaded logo -- a `data:` URL, see resizePhotoFile in avatar.jsx -- isn't silently
+// clobbered by an auto-fetched favicon just because the website field was re-saved for
+// an unrelated reason; a favicon URL always starts with the Google favicon endpoint (see
+// faviconUrlFor below), so that's how we tell "auto" and "manual" logos apart without a
+// schema change. Returns the patch that was actually applied to the DB (`{ website }` or
+// `{ website, logoUrl }`) so the caller can apply the exact same values to local UI state
+// instead of re-deriving them.
+export async function updateClientWebsite(client, website, { autoLogo = true, logoUrl, currentLogoUrl } = {}) {
+  const trimmedWebsite = website || null;
+  const patch = { website: trimmedWebsite };
   if (logoUrl !== undefined) {
     patch.logo_url = logoUrl || null;
-  } else if (autoLogo && website) {
-    patch.logo_url = faviconUrlFor(website);
+  } else if (autoLogo) {
+    const isManualUpload = !!currentLogoUrl && currentLogoUrl.startsWith("data:");
+    if (!isManualUpload) {
+      // Explicitly clears logo_url (to null) when the website is cleared, rather than
+      // leaving a stale favicon in the DB that reappears on the next reload.
+      patch.logo_url = trimmedWebsite ? faviconUrlFor(trimmedWebsite) : null;
+    }
   }
   const { error } = await supabase.from("pginvoice_clients").update(patch).eq("client", client);
   if (error) throw error;
   notifyClientsChanged();
+  const applied = { website: patch.website };
+  if ("logo_url" in patch) applied.logoUrl = patch.logo_url;
+  return applied;
 }
 
 export async function updateClientLogo(client, logoUrl) {

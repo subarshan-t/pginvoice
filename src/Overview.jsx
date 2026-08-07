@@ -135,7 +135,7 @@ export default function Overview() {
   const typeMix = useMemo(() => clientTypeMix(activeClients), [activeClients]);
 
   const hasClients = clients.length > 0;
-  const hasAccruals = !!accrualClients && accrualClients.length > 0;
+  const hasAccruals = !!activeAccrualClients && activeAccrualClients.length > 0;
   const hasTeamData = utilization.perConsultant.length > 0;
   const hasTrend = trend.months.length > 0;
 

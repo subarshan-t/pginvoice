@@ -1736,14 +1736,14 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName, onCop
           <span className="pg-row__num-label">Remaining</span>
           {c.remaining != null ? `${c.remaining < 0 ? "−" : ""}${fmt(Math.abs(c.remaining))} h` : "—"}
         </span>
-        <span>
+        <span className="pg-row__status">
           {statusPill && (
             <span className="pg-status-pill" style={{ color: statusPill.tone, background: statusPill.bg }} title={statusText || undefined}>
               {statusPill.label}
             </span>
           )}
         </span>
-        <span style={{ position: "relative" }} ref={menuRef}>
+        <span className="pg-row__menu" style={{ position: "relative" }} ref={menuRef}>
           <button
             type="button" aria-label="More actions"
             className="pg-row__chevron pg-icon-btn-sm"
