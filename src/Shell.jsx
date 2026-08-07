@@ -65,8 +65,8 @@ function LoginGate({ onSuccess }) {
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg-base)" }}>
-      <form onSubmit={submit} className="pg-cap-card" style={{ width: 320, display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg-base)", padding: 16 }}>
+      <form onSubmit={submit} className="pg-cap-card" style={{ width: 320, maxWidth: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", marginBottom: 4 }}>
           <img src="/assets/giraffe-mark.png" alt="" style={{ width: 22, height: 22 }} />
           <span className="pg-eyebrow">Purple Giraffe</span>
