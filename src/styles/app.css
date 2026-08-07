@@ -213,7 +213,14 @@ button { font: inherit; }
    of how far the active module's content scrolls, instead of the whole shell
    (sidebar included) growing to the page's full scroll height. */
 .pg-shell { display: flex; height: 100vh; background: var(--bg-base); overflow: hidden; }
-.pg-shell__main { flex: 1; min-width: 0; height: 100vh; overflow-y: auto; }
+/* overflow-x was never set here -- per spec, when only one axis is `auto` the
+   other (default `visible`) computes to `auto` too, so this was silently
+   horizontally scrollable the whole time. Any component anywhere that leaks
+   a few extra pixels of width (a fixed-width field, an unwrapped flex row)
+   was dragging the *entire page* sideways instead of clipping or wrapping,
+   which is what actually broke Capacity Planning again after being "fixed" --
+   the real bug was here, not in that page specifically. */
+.pg-shell__main { flex: 1; min-width: 0; height: 100vh; overflow-y: auto; overflow-x: hidden; }
 /* Floating panel — same inset, radius and shadow in both themes, so the nav's
    size/shape never shifts when the theme toggle is used; only the colors (via
    --bg-card / --border-subtle / --shadow-floating) follow the theme. */
@@ -306,7 +313,7 @@ button { font: inherit; }
      already takes its own space above this, so demanding a further full
      viewport height here overflowed the shell and made scrolled content
      slide up underneath the bar instead of being pushed below it. */
-  .pg-shell__main { flex: 1; height: auto; min-height: 0; overflow-y: auto; }
+  .pg-shell__main { flex: 1; height: auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 
   .pg-sidebar {
     width: auto; height: auto; overflow: visible; margin: 12px; padding: 10px 12px;
