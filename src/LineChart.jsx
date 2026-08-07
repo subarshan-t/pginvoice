@@ -130,15 +130,14 @@ export function LineChart({ series, months }) {
             </g>
           );
         })}
-        {/* Gradient fill and glow are reserved for the primary/aggregate series
-            only. Applying them to every one of up to 8 lines stacked semi-
-            transparent fills and blur haze on top of each other -- on a white
-            canvas that reads as a muddy, dirty smear rather than color, since
-            glow/translucent-fill tricks are a dark-canvas effect that need a
-            dark backdrop to read as a glow instead of a blur artifact. Every
-            other line just gets a clean, slightly thicker-than-hairline stroke
-            in its own color -- distinguishable without competing for emphasis. */}
-        {primaryIdx >= 0 && visible.includes(series[primaryIdx]) && (() => {
+        {/* Gradient fill is reserved for the primary/aggregate series, and only
+            when it's realistically the sole (or near-sole) line on screen. The
+            "Total Agreed" line sits well above every individual type line, so
+            filling all the way down to zero washes a translucent block across
+            the entire plot -- covering every other line underneath it instead
+            of just adding emphasis. With 3 lines or fewer there's nothing much
+            left for it to obscure, so it still reads as intentional there. */}
+        {primaryIdx >= 0 && visible.length <= 3 && visible.includes(series[primaryIdx]) && (() => {
           const s = series[primaryIdx];
           const pts = s.points.map((v, i) => (v === null || v === undefined ? null : [x(i), y(v)]));
           const present = pts.filter(Boolean);
