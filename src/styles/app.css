@@ -717,7 +717,14 @@ button { font: inherit; }
 }
 @media (max-width: 640px) {
   .pg-cmdsearch { max-width: none; }
-  .pg-cmdrow__actions .pg-btn, .pg-cmdrow__actions .pg-btn-ghost { flex: 1; justify-content: center; }
+  /* Same icon-only collapse as the drawer-open state above, but for narrow
+     phones generally -- without it, "Sync now" / "Export" / "Import" kept
+     their full text labels at this width and crowded the two status icons
+     and the "Synced" pill into one tightly-packed row with almost no gap
+     between tap targets. */
+  .pg-cmdrow__actions { gap: 10px !important; row-gap: 10px; }
+  .pg-cmdrow__actions .pg-btn-label { display: none; }
+  .pg-cmdrow__actions .pg-btn, .pg-cmdrow__actions .pg-btn-ghost { flex: none; padding: 9px; gap: 4px; justify-content: center; }
 }
 .pg-cmdsearch {
   position: relative; display: flex; align-items: center; gap: 8px; width: 420px; max-width: 100%;

@@ -712,6 +712,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                         {editingDemand === owner ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}
                       </button>
                     </div>
+                    <div className="pg-table-wrap">
                     <table className="pg-table">
                       <thead><tr><th>Client</th><th>Type</th><th className="right num">Agreed Hrs</th><th className="right num">Average Hrs</th><th className="right num">Projected Hrs</th></tr></thead>
                       <tbody>
@@ -804,6 +805,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                         <tr className="total"><td colSpan={4}>Total</td><td className="right num">{pc.demand.toFixed(1)}</td></tr>
                       </tbody>
                     </table>
+                    </div>
                     {editingDemand === owner && <p className="pg-footnote" style={{ marginTop: 8 }}>Click the arrow next to a combined client (e.g. Clarke Energy) to expand it and edit each sub-project's projected hours individually.</p>}
 
                     <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed var(--border-soft)" }}>
@@ -813,6 +815,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                           {isEditing ? <><Check size={11} /> done</> : <><Pencil size={11} /> edit</>}
                         </button>
                       </div>
+                      <div className="pg-table-wrap">
                       <table className="pg-table">
                         <thead><tr><th>Capacity</th><th>Allocation</th><th className="right num">Hrs</th>{isEditing && <th></th>}</tr></thead>
                         <tbody>
@@ -847,6 +850,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                           <tr className="total"><td colSpan={2}>Total capacity assembled for {owner}</td><td className="right num">{(pc.usedOwnOnClients + pc.receivedTotal).toFixed(1)}</td>{isEditing && <td></td>}</tr>
                         </tbody>
                       </table>
+                      </div>
 
                       {isEditing && (
                         <div className="pg-cap-addform">
@@ -879,7 +883,8 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                     {pc.given.length > 0 && (
                       <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed var(--border-soft)" }}>
                         <span className="pg-field__label">Supporting other consultants</span>
-                        <table className="pg-table" style={{ marginTop: 8 }}>
+                        <div className="pg-table-wrap" style={{ marginTop: 8 }}>
+                        <table className="pg-table">
                           <thead><tr><th>Consultant</th><th>Allocation</th><th className="right num">Hrs</th></tr></thead>
                           <tbody>
                             {pc.given.map((g, i) => (
@@ -892,6 +897,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                             <tr className="total"><td colSpan={2}>Total given away</td><td className="right num">{pc.away.toFixed(1)}</td></tr>
                           </tbody>
                         </table>
+                        </div>
                       </div>
                     )}
                   </>
