@@ -12,7 +12,7 @@ import { findMatch, findPersonMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIEN
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync, LIVE_SYNC_LABEL } from "./clickupSync.js";
 import { SEED_CLIENTS as CAP_SEED_CLIENTS, SEED_PEOPLE, loadKey as loadCapKey } from "./capacityData.js";
 import { fetchClients as fetchPgClients, fetchClientEvents, applyDueClientEvents, typeForMonth } from "./clientsSync.js";
-import { PersonAvatar } from "./avatar.jsx";
+import { PersonAvatar, ClientAvatar } from "./avatar.jsx";
 import { useDismissable, useEscape } from "./useDismissable.js";
 import { fmt, esc, filenameSafe, timeAgo, formatTaskUsers, clickupTaskUrl, isPackageLikeType } from "./format.js";
 import {
@@ -586,6 +586,9 @@ export default function PGReconciliation({ onNavigateClients }) {
       clientObj.isOffboarded = !!offboarded && (!monthKey || !offboarded.offboardedFrom || monthKey >= offboarded.offboardedFrom);
       clientObj.offboardNote = offboarded?.note || "";
       if (!clientObj.capGroup && capMatch) clientObj.capGroup = capMatch.name;
+      // Logo set in the Clients module (uploaded, or auto-fetched from the client's
+      // website favicon) — purely cosmetic, falls back to initials when absent.
+      clientObj.logoUrl = pgProfile?.logoUrl || null;
       out.push(clientObj);
     }
     return out;
@@ -1198,6 +1201,18 @@ export default function PGReconciliation({ onNavigateClients }) {
         {/* client list — numbered rows, click one to open its full detail in the drawer */}
         {ready && (
           <div className="pg-rowlist">
+            <div className="pg-rowlist__head" aria-hidden="true">
+              <span className="pg-rowlist__head-index" />
+              <span className="pg-rowlist__head-avatar" />
+              <span className="pg-rowlist__head-name">Client</span>
+              <span className="pg-rowlist__head-tag">Type</span>
+              <span className="pg-rowlist__head-num">Carry</span>
+              <span className="pg-rowlist__head-num">Package</span>
+              <span className="pg-rowlist__head-num">Worked</span>
+              <span className="pg-rowlist__head-num">Remaining</span>
+              <span className="pg-rowlist__head-status">Status</span>
+              <span className="pg-rowlist__head-menu" />
+            </div>
             {visible.map((c, i) => {
               const siblings = siblingsByPrimaryName.get(c.name);
               return (
@@ -1587,6 +1602,19 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
   const remainingTone = c.remaining == null || c.remaining === 0 ? undefined
     : c.remaining < 0 ? "var(--status-over)" : "var(--status-ok)";
 
+  // A friendlier status pill (On pace / At risk / Overserviced / No package) for
+  // package-style clients, reusing the same over/under/ok tone already computed
+  // above; non-package clients just get their type as a neutral pill.
+  const statusPill = isPackage
+    ? (c.pkg == null
+      ? { label: "No package", tone: "var(--fg-tertiary)", bg: "var(--bg-elevated)" }
+      : c.status === "over"
+        ? { label: "Overserviced", tone: "var(--status-over)", bg: "var(--status-over-soft)" }
+        : c.status === "under"
+          ? { label: "At risk", tone: "var(--status-warn)", bg: "var(--status-warn-soft)" }
+          : { label: "On pace", tone: "var(--status-ok)", bg: "var(--status-ok-soft)" })
+    : { label: TYPE_LABELS_SHORT[c.type] || "—", tone: "var(--fg-tertiary)", bg: "var(--bg-elevated)" };
+
   const consultantEntries = [...c.userMinutes.entries()].sort((a, b) => b[1] - a[1]);
   const consultantTotal = consultantEntries.reduce((a, [, min]) => a + min, 0);
   const shownConsultants = consultantsAllShown ? consultantEntries : consultantEntries.slice(0, 3);
@@ -1602,6 +1630,7 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
       >
         {!nested && <span className="pg-row__index">{index}</span>}
+        <ClientAvatar name={c.displayName} logo={c.logoUrl} size={32} style={{ marginRight: -6 }} />
         <span className="pg-row__name">
           <span className="pg-row__name-main">
             {c.displayName}
@@ -1623,14 +1652,17 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
         </span>
         <span className="pg-row__num" style={remainingTone ? { color: remainingTone } : undefined}>
           <span className="pg-row__num-label">Remaining</span>
-          {c.remaining != null ? `${c.remaining < 0 ? "−" : ""}${fmt(Math.abs(c.remaining))} h` : (statusText || (isPackage ? "no package on file" : "—"))}
+          {c.remaining != null ? `${c.remaining < 0 ? "−" : ""}${fmt(Math.abs(c.remaining))} h` : "—"}
+        </span>
+        <span className="pg-status-pill" style={{ color: statusPill.tone, background: statusPill.bg }} title={statusText || undefined}>
+          {statusPill.label}
         </span>
         <button
           type="button" aria-label={inlineOpen ? "Collapse" : "Expand"}
           className="pg-row__chevron pg-icon-btn-sm"
           onClick={(e) => { e.stopPropagation(); setInlineOpen((o) => !o); }}
         >
-          <ChevronDown size={16} style={{ transform: inlineOpen ? "rotate(180deg)" : undefined, transition: "transform 0.15s var(--ease)" }} />
+          <MoreVertical size={16} />
         </button>
       </div>
 

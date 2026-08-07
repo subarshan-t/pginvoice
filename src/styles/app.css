@@ -693,6 +693,21 @@ button { font: inherit; }
    per-row edit buttons; a row opens the full-detail drawer instead. */
 .pg-rowlist { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
 .pg-row-wrap.pg-row--nested { margin-left: 28px; }
+/* Column header strip mirroring .pg-row's layout — labels the columns once
+   instead of repeating a tiny label above every number in every row. */
+.pg-rowlist__head {
+  display: flex; align-items: center; gap: 16px; padding: 0 18px 4px;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--fg-tertiary);
+}
+.pg-rowlist__head-index { width: 18px; flex: none; }
+.pg-rowlist__head-avatar { width: 32px; flex: none; margin-right: -6px; }
+.pg-rowlist__head-name { flex: 1.4; min-width: 0; }
+.pg-rowlist__head-tag { flex: none; width: 70px; }
+.pg-rowlist__head-num { flex: none; width: 90px; }
+.pg-rowlist__head-status { flex: none; width: 130px; }
+.pg-rowlist__head-menu { flex: none; width: 26px; }
+@media (max-width: 900px) { .pg-rowlist__head { display: none; } }
 .pg-row {
   width: 100%; display: flex; align-items: center; gap: 16px; text-align: left;
   background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius);
@@ -707,7 +722,7 @@ button { font: inherit; }
 .pg-row__name-main { font-family: var(--font-display); font-weight: 400; font-size: 16px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-row__name-sub { display: flex; align-items: center; gap: 4px; font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-row__num { flex: none; width: 90px; font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary); font-variant-numeric: tabular-nums; }
-.pg-row__num-label { display: block; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-tertiary); margin-bottom: 2px; }
+.pg-row__num-label { display: none; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-tertiary); margin-bottom: 2px; }
 .pg-row__status { flex: none; width: 130px; text-align: right; font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--fg-secondary); }
 .pg-row__chevron {
   flex: none; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
@@ -719,6 +734,7 @@ button { font: inherit; }
 @media (max-width: 900px) {
   .pg-row { flex-wrap: wrap; }
   .pg-row__num, .pg-row__status { width: auto; }
+  .pg-row__num-label { display: block; }
 }
 @media (max-width: 640px) {
   /* Name forced onto its own full-width line (flex-basis 100% breaks the row),

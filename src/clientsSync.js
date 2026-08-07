@@ -36,6 +36,12 @@ function rowToClient(r) {
     endDate: r.end_date || null,
     status: r.status,
     clickupFolder: r.clickup_folder || null,
+    website: r.website || null,
+    // Either a manually uploaded image (resized to a small JPEG data URL, same
+    // pattern as consultant photos in avatar.jsx) or an auto-fetched favicon URL
+    // from the client's website — either way, just a URL the row/drawer can drop
+    // straight into an <img>.
+    logoUrl: r.logo_url || null,
   };
 }
 
@@ -46,6 +52,43 @@ export async function updateClickupFolder(client, folder) {
   const { error } = await supabase.from("pginvoice_clients").update({ clickup_folder: folder || null }).eq("client", client);
   if (error) throw error;
   notifyClientsChanged();
+}
+
+// Saves the client's website URL and, when `autoLogo` is true, derives a logo
+// from it via a public favicon service rather than scraping the site ourselves
+// (no server-side fetch/CORS/edge-function needed for a small icon). Passing an
+// explicit `logoUrl` (e.g. from a manual upload) skips the auto-fetch.
+export async function updateClientWebsite(client, website, { autoLogo = true, logoUrl } = {}) {
+  const patch = { website: website || null };
+  if (logoUrl !== undefined) {
+    patch.logo_url = logoUrl || null;
+  } else if (autoLogo && website) {
+    patch.logo_url = faviconUrlFor(website);
+  }
+  const { error } = await supabase.from("pginvoice_clients").update(patch).eq("client", client);
+  if (error) throw error;
+  notifyClientsChanged();
+}
+
+export async function updateClientLogo(client, logoUrl) {
+  const { error } = await supabase.from("pginvoice_clients").update({ logo_url: logoUrl || null }).eq("client", client);
+  if (error) throw error;
+  notifyClientsChanged();
+}
+
+// Google's public favicon service -- no API key, no CORS issues, and it already
+// resolves redirects/subdomains for us. Good enough for a small logo chip; a
+// client that wants their exact brand mark can still upload one manually.
+export function faviconUrlFor(website) {
+  if (!website) return null;
+  let host = website.trim();
+  if (!/^https?:\/\//i.test(host)) host = `https://${host}`;
+  try {
+    const { hostname } = new URL(host);
+    return `https://www.google.com/s2/favicons?sz=128&domain=${encodeURIComponent(hostname)}`;
+  } catch {
+    return null;
+  }
 }
 
 // New client, created from either Capacity Planning or the Clients module -- both write

@@ -1,8 +1,86 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Search, ArrowRight, Pencil, Check, AlertTriangle } from "lucide-react";
-import { fetchClients, fetchClientEvents, createClientEvent, applyDueClientEvents, updateClickupFolder } from "./clientsSync.js";
+import { Search, ArrowRight, Pencil, Check, AlertTriangle, Upload, X } from "lucide-react";
+import { fetchClients, fetchClientEvents, createClientEvent, applyDueClientEvents, updateClickupFolder, updateClientWebsite, updateClientLogo, faviconUrlFor } from "./clientsSync.js";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { CLICKUP_DB_KEY, PG_CLIENTS_KEY } from "./storageKeys.js";
+import { ClientAvatar, resizePhotoFile } from "./avatar.jsx";
+
+// Popover for a client's logo -- upload an image directly, or type in the
+// client's website and let a favicon service supply the logo automatically.
+function LogoEditor({ client, onClose, onSaved }) {
+  const [website, setWebsite] = useState(client.website || "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+
+  async function saveWebsite() {
+    setSaving(true);
+    setErr(null);
+    try {
+      await updateClientWebsite(client.client, website.trim());
+      onSaved({ website: website.trim() || null, logoUrl: faviconUrlFor(website.trim()) });
+    } catch (e) {
+      setErr(e.message || String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSaving(true);
+    setErr(null);
+    resizePhotoFile(file, async (dataUrl) => {
+      try {
+        await updateClientLogo(client.client, dataUrl);
+        onSaved({ logoUrl: dataUrl });
+      } catch (err2) {
+        setErr(err2.message || String(err2));
+      } finally {
+        setSaving(false);
+      }
+    }, (msg) => { setErr(msg); setSaving(false); });
+  }
+
+  async function clearLogo() {
+    setSaving(true);
+    try {
+      await updateClientLogo(client.client, null);
+      onSaved({ logoUrl: null });
+    } catch (e) {
+      setErr(e.message || String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="pg-menu" style={{ top: "calc(100% + 4px)", left: 0, right: "auto", width: 280, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}
+      onClick={(e) => e.stopPropagation()}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <ClientAvatar name={client.client} logo={client.logoUrl} size={40} />
+        <div style={{ fontSize: 12, color: "var(--fg-secondary)" }}>Logo / website for {client.client}</div>
+      </div>
+      <label className="pg-field">
+        <span className="pg-field__label">Website</span>
+        <input className="pg-input" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="e.g. clientdomain.com"
+          onKeyDown={(e) => { if (e.key === "Enter") saveWebsite(); }} />
+      </label>
+      <button className="pg-btn" disabled={saving} onClick={saveWebsite}>Save & fetch favicon</button>
+      <label className="pg-btn-ghost" style={{ justifyContent: "center", gap: 6, cursor: "pointer" }}>
+        <Upload size={12} /> Upload logo instead
+        <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleUpload} disabled={saving} />
+      </label>
+      {client.logoUrl && (
+        <button className="pg-btn-ghost" disabled={saving} onClick={clearLogo} style={{ justifyContent: "center", gap: 6 }}>
+          <X size={12} /> Remove logo
+        </button>
+      )}
+      {err && <p className="pg-footnote" style={{ color: "var(--status-over)" }}>{err}</p>}
+      <button className="pg-btn-ghost" style={{ justifyContent: "center" }} onClick={onClose}>Close</button>
+    </div>
+  );
+}
 
 const TYPE_LABEL = {
   package: "Package", hourly: "Hourly", quoted: "Quoted", queensland: "Queensland",
@@ -183,6 +261,7 @@ export default function Clients() {
   const [draftFolder, setDraftFolder] = useState("");
   const [savingFolder, setSavingFolder] = useState(false);
   const [folderMenuOpen, setFolderMenuOpen] = useState(false);
+  const [editingLogo, setEditingLogo] = useState(null); // client name currently showing the logo popover
 
   const folderList = useMemo(() => (folderSet ? [...folderSet].sort((a, b) => a.localeCompare(b)) : []), [folderSet]);
   const folderSuggestions = useMemo(() => {
@@ -302,7 +381,7 @@ export default function Clients() {
         <table className="pg-table">
           <thead>
             <tr>
-              <th>#</th><th>Client</th><th>Type</th><th>Consultant</th><th>ClickUp Folder</th><th>Start Date</th><th>End Date</th><th>Notes</th><th></th>
+              <th>#</th><th></th><th>Client</th><th>Type</th><th>Consultant</th><th>ClickUp Folder</th><th>Start Date</th><th>End Date</th><th>Notes</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -313,6 +392,23 @@ export default function Clients() {
               <React.Fragment key={c.client}>
                 <tr>
                   <td style={{ color: "var(--fg-tertiary)", fontFamily: "var(--font-mono)" }}>{i + 1}</td>
+                  <td style={{ position: "relative" }}>
+                    <button type="button" className="pg-icon-btn-sm" style={{ padding: 0, borderRadius: "50%" }}
+                      title="Set client logo / website"
+                      onClick={() => setEditingLogo(editingLogo === c.client ? null : c.client)}>
+                      <ClientAvatar name={c.client} logo={c.logoUrl} size={28} />
+                    </button>
+                    {editingLogo === c.client && (
+                      <LogoEditor
+                        client={c}
+                        onClose={() => setEditingLogo(null)}
+                        onSaved={(patch) => {
+                          setClients((prev) => prev.map((x) => (x.client !== c.client ? x : { ...x, ...patch })));
+                          setEditingLogo(null);
+                        }}
+                      />
+                    )}
+                  </td>
                   <td>{c.client}</td>
                   <td>{TYPE_LABEL[c.type]}{isPackageLikeType(c.type) && c.agreedHours != null ? ` — ${c.agreedHours} hrs` : ""}</td>
                   <td>{c.consultant || "—"}</td>
@@ -363,7 +459,7 @@ export default function Clients() {
                   <td><button className="pg-btn" onClick={() => setOpenModify(openModify === c.client ? null : c.client)}>Modify</button></td>
                 </tr>
                 {openModify === c.client && (
-                  <tr><td colSpan={9}>
+                  <tr><td colSpan={10}>
                     <ModifyPanel client={c} onClose={() => setOpenModify(null)} onSaved={() => { setOpenModify(null); load(); }} />
                   </td></tr>
                 )}

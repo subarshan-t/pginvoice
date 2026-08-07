@@ -47,3 +47,44 @@ export function PersonAvatar({ name, photo, size = 26, style }) {
   }
   return <span style={base}>{initial}</span>;
 }
+
+// Fixed qualitative palette so a client's initials-avatar color stays stable across
+// reloads (hashed from the name) instead of being randomly reassigned each render.
+const CLIENT_AVATAR_PALETTE = [
+  "#6f4af6", "#7c3aed", "#0f766e", "#b45309", "#be123c",
+  "#1e3a8a", "#166534", "#9333ea", "#0369a1", "#c2410c",
+];
+export function colorForName(name) {
+  const s = name || "";
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  return CLIENT_AVATAR_PALETTE[hash % CLIENT_AVATAR_PALETTE.length];
+}
+
+// Client logo chip — an uploaded/auto-fetched logo if one's set, otherwise a
+// colored circle with the client's initials (color hashed from the name, so
+// it's consistent everywhere the same client shows up, same as the reference
+// design's colorful client avatars).
+export function ClientAvatar({ name, logo, size = 34, style }) {
+  const initials = (name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?";
+  const base = {
+    flex: "none", width: size, height: size, borderRadius: "50%",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: Math.max(10, size * 0.36),
+    color: "#fff", background: colorForName(name), overflow: "hidden",
+    ...style,
+  };
+  if (logo) {
+    return (
+      <span style={base}>
+        <img
+          src={logo} alt={name || ""} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+          // A favicon URL can 404 (site down, no favicon) -- fall back to the initials
+          // tile rather than showing a broken image icon.
+          onError={(e) => { e.currentTarget.style.display = "none"; }}
+        />
+      </span>
+    );
+  }
+  return <span style={base}>{initials}</span>;
+}
