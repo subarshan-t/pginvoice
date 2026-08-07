@@ -1201,17 +1201,17 @@ export default function PGReconciliation({ onNavigateClients }) {
         {/* client list — numbered rows, click one to open its full detail in the drawer */}
         {ready && (
           <div className="pg-rowlist">
-            <div className="pg-rowlist__head" aria-hidden="true">
-              <span className="pg-rowlist__head-index" />
-              <span className="pg-rowlist__head-avatar" />
-              <span className="pg-rowlist__head-name">Client</span>
-              <span className="pg-rowlist__head-tag">Type</span>
-              <span className="pg-rowlist__head-num">Carry</span>
-              <span className="pg-rowlist__head-num">Package</span>
-              <span className="pg-rowlist__head-num">Worked</span>
-              <span className="pg-rowlist__head-num">Remaining</span>
-              <span className="pg-rowlist__head-status">Status</span>
-              <span className="pg-rowlist__head-menu" />
+            <div className="pg-rowlist__head pg-row-grid-cols" aria-hidden="true">
+              <span />
+              <span />
+              <span>Client</span>
+              <span>Type</span>
+              <span>Carry</span>
+              <span>Package</span>
+              <span>Worked</span>
+              <span>Remaining</span>
+              <span>Status</span>
+              <span />
             </div>
             {visible.map((c, i) => {
               const siblings = siblingsByPrimaryName.get(c.name);
@@ -1605,6 +1605,10 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
   // A friendlier status pill (On pace / At risk / Overserviced / No package) for
   // package-style clients, reusing the same over/under/ok tone already computed
   // above; non-package clients just get their type as a neutral pill.
+  // Status column reflects package pacing (the only type with an over/under/on-pace
+  // concept) -- non-package types (hourly, quoted, ad hoc, …) have no such notion, and
+  // showing their type here again would just repeat the Type column two cells over,
+  // so they get a plain "not tracked" placeholder instead.
   const statusPill = isPackage
     ? (c.pkg == null
       ? { label: "No package", tone: "var(--fg-tertiary)", bg: "var(--bg-elevated)" }
@@ -1613,7 +1617,7 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
         : c.status === "under"
           ? { label: "At risk", tone: "var(--status-warn)", bg: "var(--status-warn-soft)" }
           : { label: "On pace", tone: "var(--status-ok)", bg: "var(--status-ok-soft)" })
-    : { label: TYPE_LABELS_SHORT[c.type] || "—", tone: "var(--fg-tertiary)", bg: "var(--bg-elevated)" };
+    : null;
 
   const consultantEntries = [...c.userMinutes.entries()].sort((a, b) => b[1] - a[1]);
   const consultantTotal = consultantEntries.reduce((a, [, min]) => a + min, 0);
@@ -1625,11 +1629,11 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
     <div className={"pg-row-wrap" + (nested ? " pg-row--nested" : "")}>
       <div
         role="button" tabIndex={0}
-        className={"pg-row" + (active ? " pg-row--active" : "")}
+        className={"pg-row pg-row-grid-cols" + (active ? " pg-row--active" : "")}
         onClick={onOpen}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
       >
-        {!nested && <span className="pg-row__index">{index}</span>}
+        <span className="pg-row__index">{!nested ? index : null}</span>
         <ClientAvatar name={c.displayName} logo={c.logoUrl} size={32} style={{ marginRight: -6 }} />
         <span className="pg-row__name">
           <span className="pg-row__name-main">
@@ -1654,8 +1658,12 @@ function ClientRow({ index, client: c, active, onOpen, nested, parentName }) {
           <span className="pg-row__num-label">Remaining</span>
           {c.remaining != null ? `${c.remaining < 0 ? "−" : ""}${fmt(Math.abs(c.remaining))} h` : "—"}
         </span>
-        <span className="pg-status-pill" style={{ color: statusPill.tone, background: statusPill.bg }} title={statusText || undefined}>
-          {statusPill.label}
+        <span>
+          {statusPill && (
+            <span className="pg-status-pill" style={{ color: statusPill.tone, background: statusPill.bg }} title={statusText || undefined}>
+              {statusPill.label}
+            </span>
+          )}
         </span>
         <button
           type="button" aria-label={inlineOpen ? "Collapse" : "Expand"}

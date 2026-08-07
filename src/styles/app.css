@@ -693,23 +693,21 @@ button { font: inherit; }
    per-row edit buttons; a row opens the full-detail drawer instead. */
 .pg-rowlist { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
 .pg-row-wrap.pg-row--nested { margin-left: 28px; }
-/* Column header strip mirroring .pg-row's layout — labels the columns once
-   instead of repeating a tiny label above every number in every row. */
+/* Both the header strip and each row share this exact column track list, so
+   a column's width can never drift between rows depending on content length
+   (a flex row with auto-sized cells like `.pg-tag`/`.pg-status-pill` — whose
+   width varies with label text — was the cause of the previous misalignment:
+   "PACKAGE" vs "HOURLY" are different widths, so every column after Type
+   shifted row to row). Grid fixes every column to the same track everywhere. */
+.pg-row-grid-cols { grid-template-columns: 18px 32px minmax(0, 1.4fr) 90px 90px 90px 90px 90px 130px 26px; }
 .pg-rowlist__head {
-  display: flex; align-items: center; gap: 16px; padding: 0 18px 4px;
+  display: grid; align-items: center; gap: 16px; padding: 0 18px 4px;
   font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--fg-tertiary);
 }
-.pg-rowlist__head-index { width: 18px; flex: none; }
-.pg-rowlist__head-avatar { width: 32px; flex: none; margin-right: -6px; }
-.pg-rowlist__head-name { flex: 1.4; min-width: 0; }
-.pg-rowlist__head-tag { flex: none; width: 70px; }
-.pg-rowlist__head-num { flex: none; width: 90px; }
-.pg-rowlist__head-status { flex: none; width: 130px; }
-.pg-rowlist__head-menu { flex: none; width: 26px; }
 @media (max-width: 900px) { .pg-rowlist__head { display: none; } }
 .pg-row {
-  width: 100%; display: flex; align-items: center; gap: 16px; text-align: left;
+  width: 100%; display: grid; align-items: center; gap: 16px; text-align: left;
   background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius);
   box-shadow: var(--shadow-sm); padding: 14px 18px; cursor: pointer; color: inherit;
   transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
@@ -717,23 +715,28 @@ button { font: inherit; }
 .pg-row-wrap.pg-row--nested .pg-row { background: var(--bg-base); }
 .pg-row:hover { box-shadow: var(--shadow-md); }
 .pg-row--active { border-color: var(--accent); }
-.pg-row__index { font-family: var(--font-mono); font-size: 12px; color: var(--fg-tertiary); width: 18px; flex: none; }
-.pg-row__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1.4; }
+.pg-row__index { font-family: var(--font-mono); font-size: 12px; color: var(--fg-tertiary); }
+.pg-row__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pg-row__name-main { font-family: var(--font-display); font-weight: 400; font-size: 16px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-row__name-sub { display: flex; align-items: center; gap: 4px; font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pg-row__num { flex: none; width: 90px; font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary); font-variant-numeric: tabular-nums; }
+.pg-row__num { font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-row__num-label { display: none; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-tertiary); margin-bottom: 2px; }
-.pg-row__status { flex: none; width: 130px; text-align: right; font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--fg-secondary); }
+.pg-row__status { text-align: right; font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--fg-secondary); }
 .pg-row__chevron {
-  flex: none; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
   border-radius: var(--app-radius-pill); color: var(--fg-tertiary); cursor: pointer;
   background: none; border: none; font: inherit; padding: 0;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .pg-row__chevron:hover { background: var(--bg-elevated); color: var(--fg-primary); }
 @media (max-width: 900px) {
-  .pg-row { flex-wrap: wrap; }
-  .pg-row__num, .pg-row__status { width: auto; }
+  .pg-row { grid-template-columns: none; display: flex; flex-wrap: wrap; }
+  .pg-row__index { width: 18px; flex: none; }
+  .pg-row__name { flex: 1.4; }
+  .pg-row__num { flex: none; width: 90px; }
+  .pg-row__status { flex: none; width: 130px; }
+  .pg-row__chevron { flex: none; }
+  .pg-rowlist__head { display: none; }
   .pg-row__num-label { display: block; }
 }
 @media (max-width: 640px) {
