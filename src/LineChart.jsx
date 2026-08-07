@@ -57,7 +57,6 @@ export function LineChart({ series, months }) {
   const colors = resolveColors(series);
   const visible = activeLabel ? series.filter((s) => s.label === activeLabel) : series;
   const visibleColors = activeLabel ? [colors[series.findIndex((s) => s.label === activeLabel)]] : colors;
-  const primaryIdx = series.findIndex((s) => s.primary);
 
   const allVals = visible.flatMap((s) => s.points.filter((v) => v !== null && v !== undefined));
   const maxV = allVals.length ? Math.max(...allVals) * 1.15 : 10;
@@ -86,7 +85,7 @@ export function LineChart({ series, months }) {
             aria-pressed={activeLabel === s.label}
             title={activeLabel === s.label ? `Showing only ${s.label} — click to show all` : `Show only ${s.label}`}
           >
-            <i style={{ width: 14, height: s.primary ? 4 : 3, borderRadius: 2, display: "inline-block", background: colors[si] }} />
+            <i style={{ width: 14, height: 3, borderRadius: 2, display: "inline-block", background: colors[si] }} />
             {s.label}
           </button>
         );
@@ -108,12 +107,16 @@ export function LineChart({ series, months }) {
       {legend}
       <svg viewBox={`0 0 ${W} ${H}`} width="100%">
         <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={primaryIdx >= 0 ? colors[primaryIdx] : "var(--accent)"} stopOpacity="0.22" />
-            <stop offset="100%" stopColor={primaryIdx >= 0 ? colors[primaryIdx] : "var(--accent)"} stopOpacity="0" />
-          </linearGradient>
+          {/* One gradient per series (own color) so every line can get the same
+              area-fill treatment, not just the primary one. */}
+          {series.map((s, si) => (
+            <linearGradient key={s.label} id={`${gradientId}-${si}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={colors[si]} stopOpacity="0.18" />
+              <stop offset="100%" stopColor={colors[si]} stopOpacity="0" />
+            </linearGradient>
+          ))}
           <filter id={glowId} x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feGaussianBlur stdDeviation="3" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
@@ -130,19 +133,18 @@ export function LineChart({ series, months }) {
             </g>
           );
         })}
-        {/* Gradient fill under the primary series only -- one soft area reads as
-            emphasis; a gradient under every one of up to 8 lines would just go
-            muddy on top of itself. */}
-        {primaryIdx >= 0 && visible.includes(series[primaryIdx]) && (() => {
-          const s = series[primaryIdx];
+        {/* Gradient fill under every visible series, each in its own color --
+            drawn first (all of them) so the line strokes always sit on top. */}
+        {visible.map((s) => {
+          const si = series.indexOf(s);
           const pts = s.points.map((v, i) => (v === null || v === undefined ? null : [x(i), y(v)]));
           const present = pts.filter(Boolean);
           if (present.length < 2) return null;
           const baseline = padT + plotH;
-          const linePath = pts.reduce((path, p, i) => (p ? `${path}${path ? " L " : "M "}${p[0]},${p[1]}` : path), "");
+          const linePath = pts.reduce((path, p) => (p ? `${path}${path ? " L " : "M "}${p[0]},${p[1]}` : path), "");
           const areaPath = `${linePath} L ${present.at(-1)[0]},${baseline} L ${present[0][0]},${baseline} Z`;
-          return <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />;
-        })()}
+          return <path key={s.label} d={areaPath} fill={`url(#${gradientId}-${si})`} stroke="none" />;
+        })}
         {visible.map((s, vi) => {
           const si = series.indexOf(s);
           const color = visibleColors[vi];
@@ -155,12 +157,14 @@ export function LineChart({ series, months }) {
           const linePath = segments.map((seg) => seg.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ")).join(" ");
           return (
             <g key={s.label} style={{ opacity: isDimmed ? 0.25 : 1, transition: "opacity 0.15s var(--ease)" }}>
-              {/* Soft glow duplicate beneath the sharp line, primary series only. */}
-              {s.primary && <path d={linePath} fill="none" stroke={color} strokeWidth="5" opacity="0.35" filter={`url(#${glowId})`} />}
+              {/* Soft glow duplicate beneath every sharp line -- same treatment
+                  on all series so it's easy to compare against just the
+                  primary-only look. */}
+              <path d={linePath} fill="none" stroke={color} strokeWidth="3.5" opacity="0.3" filter={`url(#${glowId})`} />
               {segments.map((seg, gi) => (
                 <path
                   key={gi} d={seg.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ")}
-                  fill="none" stroke={color} strokeWidth={s.primary ? "3.25" : "2.25"} strokeLinecap="round" strokeLinejoin="round"
+                  fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
                 />
               ))}
               {pts.map((p, i) => {
@@ -218,9 +222,14 @@ export function LineChart({ series, months }) {
         const s = series[hoverPoint.si];
         const v = s.points[hoverPoint.i];
         if (v === null || v === undefined) return null;
+        // Anchored to the actual node's position (not a fixed spot at the top of
+        // the chart) so the tooltip reads as "this point" rather than floating
+        // disconnected from whichever line/month is actually being hovered.
+        const py = y(v);
         return (
           <div style={{
-            position: "absolute", left: `${(x(hoverPoint.i) / W) * 100}%`, top: 4, transform: "translateX(-50%)",
+            position: "absolute", left: `${(x(hoverPoint.i) / W) * 100}%`, top: `${(py / H) * 100}%`,
+            transform: "translate(-50%, calc(-100% - 12px))",
             background: "var(--bg-card)", border: "1px solid var(--border-soft)", borderRadius: "var(--app-radius-sm)",
             padding: "7px 10px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-primary)",
             pointerEvents: "none", whiteSpace: "nowrap", zIndex: 5, boxShadow: "0 6px 18px rgba(0,0,0,0.35)",
