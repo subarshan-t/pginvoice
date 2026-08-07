@@ -57,18 +57,33 @@ export function teamMonthlyTotals(people, clickupData, monthKeys) {
 ============================================================ */
 
 // `clients` is fetchClients()'s shape: { client, type, agreedHours, status, ... }.
-// "Active" = status !== "offboarded" (fetchClients()/pginvoice_clients uses
-// "active"/"offboarded" as its two real status values).
+// "Active" = status === "active" exactly — pginvoice_clients has THREE real status
+// values (active/offboarded/archived, see the CHECK constraint), not two. This used
+// to be `status !== "offboarded"`, which silently counted every archived client as
+// active too (confirmed: 42 active + 26 archived = 68, the exact wrong number this
+// page was showing against the Clients module's correctly-scoped 42).
 // active === 0 -> overServicedPct: null (not 0) — "no active clients" is a
 // different fact than "0% of clients are over-serviced", and collapsing them
 // would make an empty book look like a healthy one.
 export function activeClientStats(clients) {
   const list = clients || [];
-  const active = list.filter((c) => c.status !== "offboarded").length;
+  const active = list.filter((c) => c.status === "active").length;
   // Real per-month over-serviced flagging lives in accrualHealth/the accrual data
   // (this function only has the client roster, no monthly actuals) — callers that
   // want the over-serviced count should combine this with accrualHealth's output.
   return { active, overServiced: 0, overServicedPct: active === 0 ? null : 0 };
+}
+
+// fetchAccrualsFromSupabase() returns a row for every client that ever had an
+// accrual entry — including offboarded/archived ones, since pginvoice_accruals
+// carries no status of its own (ClientAccruals.jsx cross-references it against
+// fetchClients()' status for exactly this reason, and defaults its own filter to
+// "active"). Every accrual-derived Overview metric needs the same scoping, or an
+// offboarded client's stale balance silently skews the whole business's numbers.
+export function filterToActiveClients(accrualClients, clients) {
+  if (!accrualClients) return accrualClients;
+  const activeNames = new Set((clients || []).filter((c) => c.status === "active").map((c) => c.client));
+  return accrualClients.filter((c) => activeNames.has(c.client));
 }
 
 // Client Invoicing's own `status === "over"` definition (App.jsx ~line 497) is

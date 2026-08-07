@@ -3,7 +3,7 @@ import { fetchClients, fetchClientEvents } from "./clientsSync.js";
 import { fetchAccrualsFromSupabase } from "./accrualsSync.js";
 import { fetchClickupFromSupabase } from "./clickupSync.js";
 import { loadKey, SEED_PEOPLE, last6MonthKeys } from "./capacityData.js";
-import { CAP_PEOPLE_KEY } from "./storageKeys.js";
+import { CAP_PEOPLE_KEY, CAP_LEAVES_KEY } from "./storageKeys.js";
 import { CLIENT_TYPE_LABELS } from "./nameMatch.js";
 import { LineChart } from "./LineChart.jsx";
 import { OverviewKpiCard } from "./OverviewKpiCard.jsx";
@@ -11,7 +11,7 @@ import { OverviewList } from "./OverviewList.jsx";
 import {
   activeClientStats, overServicedFromAccruals, accrualHealth, NEGATIVE_BALANCE_THRESHOLD_HRS,
   teamMonthlyTotals, teamUtilization, overUtilizedConsultants, OVER_UTILIZATION_PCT,
-  sixMonthTrend, clientTypeMix,
+  sixMonthTrend, clientTypeMix, filterToActiveClients,
 } from "./overviewData.js";
 
 function fmt0(n) { return (n === null || n === undefined || isNaN(n)) ? "—" : Math.round(n).toLocaleString(); }
@@ -56,6 +56,7 @@ export default function Overview() {
   const [accrualClients, setAccrualClients] = useState(null); // null = no data on file at all
   const [people, setPeople] = useState(SEED_PEOPLE);
   const [clickup, setClickup] = useState(null);
+  const [leaves, setLeaves] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -72,15 +73,17 @@ export default function Overview() {
         ["accruals", fetchAccrualsFromSupabase()],
         ["team roster", loadKey(CAP_PEOPLE_KEY, SEED_PEOPLE)],
         ["ClickUp sync", fetchClickupFromSupabase()],
+        ["leave records", loadKey(CAP_LEAVES_KEY, {})],
       ];
       const results = await Promise.allSettled(sources.map(([, p]) => p));
       if (cancelled) return;
 
-      const [clRes, , accrualsRes, pplRes, cuRes] = results;
+      const [clRes, , accrualsRes, pplRes, cuRes, lvRes] = results;
       if (clRes.status === "fulfilled") setClients(clRes.value || []);
       if (accrualsRes.status === "fulfilled") setAccrualClients(accrualsRes.value);
       if (pplRes.status === "fulfilled") setPeople(pplRes.value || SEED_PEOPLE);
       if (cuRes.status === "fulfilled") setClickup(cuRes.value || null);
+      if (lvRes.status === "fulfilled") setLeaves(lvRes.value || {});
 
       const failed = results
         .map((r, i) => (r.status === "rejected" ? sources[i][0] : null))
@@ -96,17 +99,37 @@ export default function Overview() {
   const monthKeys = useMemo(() => last6MonthKeys().slice().reverse(), []);
   const latestMonth = monthKeys[monthKeys.length - 1];
 
+  // Every client-scoped metric below counts/uses ACTIVE clients only, matching the
+  // Clients module's own definition (status === "active") — pginvoice_clients has
+  // three real statuses (active/offboarded/archived), and accrual rows carry no
+  // status of their own, so both the client list and the accrual rows need this
+  // same filter or an archived client's stale numbers silently skew the business
+  // totals (confirmed: this page was showing 68 "active" clients — 42 active + 26
+  // archived — against the Clients module's correctly-scoped 42).
+  const activeClients = useMemo(() => clients.filter((c) => c.status === "active"), [clients]);
+  const activeAccrualClients = useMemo(() => filterToActiveClients(accrualClients, clients), [accrualClients, clients]);
+
   const clientStats = useMemo(() => activeClientStats(clients), [clients]);
   const overServiced = useMemo(
-    () => (accrualClients ? overServicedFromAccruals(accrualClients, latestMonth) : { overServiced: 0, withData: 0 }),
-    [accrualClients, latestMonth]
+    () => (activeAccrualClients ? overServicedFromAccruals(activeAccrualClients, latestMonth) : { overServiced: 0, withData: 0 }),
+    [activeAccrualClients, latestMonth]
   );
-  const health = useMemo(() => accrualHealth(accrualClients), [accrualClients]);
+  const health = useMemo(() => accrualHealth(activeAccrualClients), [activeAccrualClients]);
   const teamMonthly = useMemo(() => teamMonthlyTotals(people, clickup, monthKeys), [people, clickup, monthKeys]);
-  const utilization = useMemo(() => teamUtilization(people, teamMonthly, latestMonth), [people, teamMonthly, latestMonth]);
+  // leaveHrsByPerson is keyed by name (per computeMonthlyAvailability's caller
+  // contract), but cap_leaves is keyed by personId_monthKey -- convert for the
+  // one month utilization actually needs, same as Capacity Planning/Team already
+  // do. Omitting this (as the page did before) meant Overview's utilization was
+  // always higher than the true figure, since nobody's leave was ever subtracted.
+  const leaveHrsByName = useMemo(() => {
+    const m = {};
+    for (const p of people) m[p.name] = Number(leaves[`${p.id}_${latestMonth}`] || 0);
+    return m;
+  }, [people, leaves, latestMonth]);
+  const utilization = useMemo(() => teamUtilization(people, teamMonthly, latestMonth, leaveHrsByName), [people, teamMonthly, latestMonth, leaveHrsByName]);
   const overUtilized = useMemo(() => overUtilizedConsultants(utilization.perConsultant), [utilization]);
-  const trend = useMemo(() => sixMonthTrend(accrualClients, clickup?.rows, monthKeys), [accrualClients, clickup, monthKeys]);
-  const typeMix = useMemo(() => clientTypeMix(clients), [clients]);
+  const trend = useMemo(() => sixMonthTrend(activeAccrualClients, clickup?.rows, monthKeys), [activeAccrualClients, clickup, monthKeys]);
+  const typeMix = useMemo(() => clientTypeMix(activeClients), [activeClients]);
 
   const hasClients = clients.length > 0;
   const hasAccruals = !!accrualClients && accrualClients.length > 0;
@@ -184,7 +207,7 @@ export default function Overview() {
                 index={3}
                 primaryLabel="Client type mix"
                 primary={topType ? CLIENT_TYPE_LABELS[topType[0]] || topType[0] : "—"}
-                secondary={topType ? `${fmt0(topType[1])} of ${fmt0(clients.length)}` : null}
+                secondary={topType ? `${fmt0(topType[1])} of ${fmt0(activeClients.length)}` : null}
                 secondaryLabel={topType ? "clients on the most common type" : (!hasClients ? "no client data yet" : undefined)}
               />
             </div>

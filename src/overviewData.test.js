@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   activeClientStats, accrualHealth, NEGATIVE_BALANCE_THRESHOLD_HRS,
   teamUtilization, sixMonthTrend, clientTypeMix, teamMonthlyTotals,
-  overUtilizedConsultants, OVER_UTILIZATION_PCT,
+  overUtilizedConsultants, OVER_UTILIZATION_PCT, filterToActiveClients,
 } from "./overviewData.js";
 
 describe("activeClientStats", () => {
@@ -12,13 +12,39 @@ describe("activeClientStats", () => {
     expect(result.overServicedPct).toBeNull();
   });
 
-  it("counts every non-offboarded client as active", () => {
+  it("counts only status === 'active', excluding both offboarded AND archived", () => {
+    // Regression test: pginvoice_clients has three real statuses, not two.
+    // This used to be `status !== "offboarded"`, which silently counted every
+    // archived client as active too (42 active + 26 archived = 68, the exact
+    // wrong number Overview was showing against the Clients module's 42).
     const clients = [
       { client: "A", status: "active" },
       { client: "B", status: "active" },
       { client: "C", status: "offboarded" },
+      { client: "D", status: "archived" },
     ];
     expect(activeClientStats(clients).active).toBe(2);
+  });
+});
+
+describe("filterToActiveClients", () => {
+  it("keeps only accrual rows whose client is status === 'active'", () => {
+    const clients = [
+      { client: "A", status: "active" },
+      { client: "B", status: "offboarded" },
+      { client: "C", status: "archived" },
+    ];
+    const accrualClients = [
+      { client: "A", months: {} },
+      { client: "B", months: {} },
+      { client: "C", months: {} },
+    ];
+    const result = filterToActiveClients(accrualClients, clients);
+    expect(result.map((c) => c.client)).toEqual(["A"]);
+  });
+
+  it("passes through null (no accrual data on file) unchanged", () => {
+    expect(filterToActiveClients(null, [{ client: "A", status: "active" }])).toBeNull();
   });
 });
 
