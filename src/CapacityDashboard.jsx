@@ -629,8 +629,8 @@ function CapacityDashboardInner({ onNavigateTeam }) {
         <button className="pg-btn-ghost" style={{ padding: "7px 9px" }} onClick={() => shiftMonth(-1)} disabled={monthIdx === 0}><ChevronLeft size={13} /></button>
         <span style={{ fontFamily: "var(--font-display)", fontSize: 18, minWidth: 76, textAlign: "center" }}>{MONTH_LABELS[month]}</span>
         <button className="pg-btn-ghost" style={{ padding: "7px 9px" }} onClick={() => shiftMonth(1)} disabled={monthIdx === MONTHS.length - 1}><ChevronRight size={13} /></button>
-        <span className="pg-tag" style={{ color: monthKind === "past" ? "var(--fg-tertiary)" : monthKind === "now" ? "var(--status-ok)" : "var(--accent)" }}>
-          [{monthKind === "past" ? "past record" : monthKind === "now" ? "latest actuals" : "forecast"}]
+        <span className="pg-tag pg-tag--pill" style={{ color: monthKind === "past" ? "var(--fg-tertiary)" : monthKind === "now" ? "var(--status-ok)" : "var(--accent)" }}>
+          {monthKind === "past" ? "past record" : monthKind === "now" ? "latest actuals" : "forecast"}
         </span>
         <button className="pg-btn-ghost" onClick={() => setShowAddClient((s) => !s)}><Plus size={11} /> Add client</button>
         <button className="pg-btn-ghost" style={{ marginLeft: "auto" }} onClick={resetSample}>Reset sample data</button>
@@ -701,7 +701,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                 <button className="pg-client__name" style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => toggleCollapse(owner)}>
                   {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
                   {owner}
-                  <span className="pg-tag" style={{ color: "var(--accent)" }}>[Consultant]</span>
+                  <span className="pg-tag pg-tag--pill" style={{ color: "var(--accent)" }}>Consultant</span>
                 </button>
 
                 {!isCollapsed && (
@@ -723,7 +723,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                             return (
                               <tr key={g.group}>
                                 <td>
-                                  {r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !multiFolderMatchesFor(r.group, [...realFolderSet])?.length && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}
+                                  {r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted pg-tag--pill" style={{ marginLeft: 5 }} title={r.offboardNote}>Offboarded</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted pg-tag--pill" style={{ marginLeft: 5 }} title={r.note}>Archived</span>}{realFolderSet.size > 0 && !multiFolderMatchesFor(r.group, [...realFolderSet])?.length && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}
                                   {editingDemand === owner && (
                                     <select className="pg-input" style={{ marginLeft: 8, padding: "2px 4px", fontSize: 11, width: 100 }}
                                       value={owner} onChange={(e) => changeConsultant(r, e.target.value)} title="Reassign consultant -- also updates the Clients module">
@@ -731,7 +731,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                                     </select>
                                   )}
                                 </td>
-                                <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
+                                <td><span className="pg-tag pg-tag--pill" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}</span></td>
                                 <td className="right num">{fmt(agreedAt(r, month))}</td>
                                 <td className="right num">
                                   {fmt(avg)}
@@ -747,7 +747,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                                   ) : (
                                     <>
                                       <b>{demand.toFixed(1)}</b>
-                                      {isOverridden && <span className="pg-tag" style={{ color: "var(--accent)", marginLeft: 6 }}>[manual]</span>}
+                                      {isOverridden && <span className="pg-tag pg-tag--pill" style={{ color: "var(--accent)", marginLeft: 6 }}>manual</span>}
                                     </>
                                   )}
                                 </td>
@@ -766,7 +766,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                                   </button>
                                   {g.group} <span style={{ fontSize: 10, color: "var(--fg-tertiary)" }}>({g.rows.length} sub-projects)</span>
                                 </td>
-                                <td><span className="pg-tag pg-tag--muted">[Combined]</span></td>
+                                <td><span className="pg-tag pg-tag--muted pg-tag--pill">Combined</span></td>
                                 <td className="right num">—</td>
                                 <td className="right num">
                                   {gIsDynamic && (
@@ -780,8 +780,8 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                                 const { demand, avg, isOverridden } = demandFor(r, month, overrides);
                                 return (
                                   <tr key={r.id}>
-                                    <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.offboardNote}>[Offboarded]</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted" style={{ marginLeft: 5 }} title={r.note}>[Archived]</span>}{realFolderSet.size > 0 && !multiFolderMatchesFor(r.group, [...realFolderSet])?.length && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}</td>
-                                    <td><span className="pg-tag" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>[{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}]</span></td>
+                                    <td style={{ paddingLeft: 34, color: "var(--fg-tertiary)" }}>{r.client}{r.offboardedFrom && month >= r.offboardedFrom && <span className="pg-tag pg-tag--muted pg-tag--pill" style={{ marginLeft: 5 }} title={r.offboardNote}>Offboarded</span>}{r.status === "archived" && <span className="pg-tag pg-tag--muted pg-tag--pill" style={{ marginLeft: 5 }} title={r.note}>Archived</span>}{realFolderSet.size > 0 && !multiFolderMatchesFor(r.group, [...realFolderSet])?.length && !findMatch(r.group, [...realFolderSet]) && <AlertTriangle size={11} style={{ marginLeft: 5, verticalAlign: -1, color: "var(--status-warn)" }} title={`"${r.group}" doesn't match any real ClickUp folder right now -- this client's actuals may be silently missing.`} />}</td>
+                                    <td><span className="pg-tag pg-tag--pill" style={{ color: CLIENT_TYPE_TONES[basisToClientType(r.basis)] }} title={r.basis}>{CLIENT_TYPE_LABELS[basisToClientType(r.basis)]}</span></td>
                                     <td className="right num">{fmt(agreedAt(r, month))}</td>
                                     <td className="right num">{fmt(avg)}</td>
                                     <td className="right num">
@@ -791,7 +791,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                                       ) : (
                                         <>
                                           {demand.toFixed(1)}
-                                          {isOverridden && <span className="pg-tag" style={{ color: "var(--accent)", marginLeft: 6 }}>[manual]</span>}
+                                          {isOverridden && <span className="pg-tag pg-tag--pill" style={{ color: "var(--accent)", marginLeft: 6 }}>manual</span>}
                                         </>
                                       )}
                                     </td>
@@ -827,7 +827,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
                             const supporterOver = r.from !== "DMA (external)" && personCalc[r.from] && personCalc[r.from].overAllocated;
                             return (
                               <tr key={i}>
-                                <td>{r.from} {supporterOver && <span className="pg-tag" style={{ color: "var(--status-over)", marginLeft: 6 }}>[over cap]</span>}</td>
+                                <td>{r.from} {supporterOver && <span className="pg-tag pg-tag--pill" style={{ color: "var(--status-over)", marginLeft: 6 }}>over cap</span>}</td>
                                 <td>
                                   {isEditing ? (
                                     <DualAllocationInput
