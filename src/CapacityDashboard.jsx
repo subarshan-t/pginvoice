@@ -137,6 +137,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   const [qClient, setQClient] = useState("");
   const [qRoster, setQRoster] = useState("");
   const [expandedUtil, setExpandedUtil] = useState({});
+  const [showAllUtil, setShowAllUtil] = useState(false);
 
   // The same parsed ClickUp export Client Invoicing has already loaded (and persisted to
   // IndexedDB) — read here too so "Average Hrs" can be driven from real billable hours
@@ -675,7 +676,7 @@ function CapacityDashboardInner({ onNavigateTeam }) {
       <div className="pg-cap-grid">
 
         {/* ===================== LEFT: CONSULTANT CARDS ===================== */}
-        <div>
+        <div className="pg-cap-pane-left">
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
             <button className="pg-btn-ghost" onClick={toggleAllCollapse}>
               {allExpanded ? <><ChevronsUp size={12} /> Collapse all</> : <><ChevronsDown size={12} /> Expand all</>}
@@ -941,7 +942,11 @@ function CapacityDashboardInner({ onNavigateTeam }) {
               <div className="pg-footnote" style={{ width: 92, flex: "none", margin: 0, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center" }}>Non-billable</div>
             </div>
 
-            {people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).map((p) => {
+            {(() => {
+              const filtered = people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase())));
+              const visible = (showAllUtil || qRoster) ? filtered : filtered.slice(0, 3);
+              return visible;
+            })().map((p) => {
               const pc = personCalc[p.name];
               const pm = peopleMap[p.name];
               // Her own personal utilization: how much of HER OWN billable time is committed
@@ -1022,6 +1027,14 @@ function CapacityDashboardInner({ onNavigateTeam }) {
               );
             })}
           </div>
+          {(() => {
+            const filteredCount = people.filter((p) => peopleMap[p.name] && (!qRoster || p.name.toLowerCase().includes(qRoster.toLowerCase()))).length;
+            return !showAllUtil && !qRoster && filteredCount > 3 && (
+              <button className="pg-btn-ghost" style={{ width: "100%", justifyContent: "center", marginTop: 10 }} onClick={() => setShowAllUtil(true)}>
+                View all consultants <ChevronRight size={12} />
+              </button>
+            );
+          })()}
           <p className="pg-footnote" style={{ maxWidth: 460 }}>Each bar is that consultant's own personal utilization — the hours she personally spends on her own clients plus whatever she gives away to support other consultants — against her own billable capacity, exactly the "(own time) X%" row in her Capacity Planning card above. Yellow = under-allocated, spare capacity available. Green = fully using her own billable hours — the target. Red = over-committed — she's promised more of her own time than she has, spilling into her non-billable hours. Roster details (role, state, billable %, resignation dates, ClickUp aliases) live in the Team module.</p>
 
           <div className="pg-cap-card" style={{ marginTop: 14 }}>

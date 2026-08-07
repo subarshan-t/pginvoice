@@ -665,7 +665,16 @@ button { font: inherit; }
    roster's columns fit without horizontal scrolling. */
 .pg-cap-container { max-width: 1600px; margin: 0 auto; padding: 56px 24px 96px; }
 .pg-cap-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; align-items: start; margin-top: 20px; }
-@media (max-width: 1100px) { .pg-cap-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) {
+  .pg-cap-grid { grid-template-columns: 1fr; }
+  /* The right pane (Total demand / Billable allocation / Difference stats,
+     then the Capacity utilization card) is the at-a-glance summary -- it
+     belongs above the full consultant list once the two columns stack on a
+     narrow screen, not below it where someone has to scroll past every
+     consultant's card to find it. */
+  .pg-cap-pane { order: -1; margin-bottom: 18px; }
+  .pg-cap-pane-left { order: 1; }
+}
 /* independent scroll regions: each column sticks to the viewport and scrolls on its
    own, so scrolling through a long consultant-card list never pushes the roster out
    of view (and vice versa) */
@@ -685,8 +694,9 @@ button { font: inherit; }
 .pg-cap-addform-grid { display: grid; grid-template-columns: 1.3fr 1.7fr auto; gap: 8px; align-items: end; }
 @media (max-width: 640px) { .pg-cap-addform-grid { grid-template-columns: 1fr; } }
 .pg-cap-statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
-@media (max-width: 480px) { .pg-cap-statrow { grid-template-columns: 1fr; } }
+@media (max-width: 380px) { .pg-cap-statrow { grid-template-columns: 1fr; } }
 .pg-cap-stat { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius); box-shadow: var(--shadow-sm); padding: 14px 16px; }
+@media (max-width: 480px) { .pg-cap-stat { padding: 12px 10px; } .pg-cap-stat .pg-stat__value { font-size: 22px; } }
 .pg-cap-textarea {
   width: 100%; min-height: 90px; resize: vertical;
   background: transparent; color: var(--fg-primary); border: 1px solid var(--border-soft); border-radius: var(--app-radius-sm);
