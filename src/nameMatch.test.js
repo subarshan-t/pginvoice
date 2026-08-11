@@ -147,6 +147,34 @@ describe("multiFolderAccrualMatchesFor", () => {
     const folders = ["Aus3C Cyber Battle", "Aus3C IRAP"];
     expect(multiFolderAccrualMatchesFor("Aus3C", folders)).toEqual(multiFolderMatchesFor("Aus3C", folders));
   });
+
+  it("rolls up Vegetation Solutions' two cost centres with no umbrella folder of its own", () => {
+    const folders = ["Vegetation Solutions - Firewood Solutions", "Vegetation Solutions - MVS", "Unrelated Folder"];
+    expect(multiFolderMatchesFor("Vegetation Solutions", folders)).toEqual([
+      "Vegetation Solutions - Firewood Solutions",
+      "Vegetation Solutions - MVS",
+    ]);
+  });
+
+  it("keeps BAMSS Childcare out of Brisbane Alarm Monitoring's accrual folders but still rolls it up", () => {
+    const folders = ["Brisbane Alarm Monitoring Security Services (Qld)", "BAMSS Childcare Security Services (Qld)"];
+    expect(multiFolderAccrualMatchesFor("Brisbane Alarm Monitoring Security Services (Qld)", folders)).toEqual([
+      "Brisbane Alarm Monitoring Security Services (Qld)",
+    ]);
+    expect(multiFolderMatchesFor("Brisbane Alarm Monitoring Security Services (Qld)", folders)).toEqual(folders);
+  });
+
+  it("keeps Warrina Homes' quoted Employee Guide project out of the accrual", () => {
+    const folders = ["Warrina Homes - Outsourced Marketing", "Warrina Homes - Employee Guide (Quoted Project)"];
+    expect(multiFolderAccrualMatchesFor("Warrina Homes", folders)).toEqual(["Warrina Homes - Outsourced Marketing"]);
+    expect(multiFolderMatchesFor("Warrina Homes", folders)).toEqual(folders);
+  });
+
+  it("keeps Apex Comms Website out of Apex Energy's accrual but not Apex Comms Sales Presenter", () => {
+    const folders = ["Apex Energy", "Apex Comms Website (QP)", "Apex Comms Sales Presenter (QP)"];
+    expect(multiFolderAccrualMatchesFor("Apex Energy", folders)).toEqual(["Apex Energy", "Apex Comms Sales Presenter (QP)"]);
+    expect(multiFolderMatchesFor("Apex Energy", folders)).toEqual(folders);
+  });
 });
 
 describe("isInternalFolder", () => {

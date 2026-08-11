@@ -8,7 +8,7 @@ import {
   Calendar, SlidersHorizontal,
 } from "lucide-react";
 import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, multiFolderAccrualMatchesFor, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, TYPE_LABELS_SHORT, dominantClientType, basisToClientType } from "./nameMatch.js";
+import { findMatch, multiFolderMatchesFor, multiFolderAccrualMatchesFor, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, TYPE_LABELS_SHORT, dominantClientType, basisToClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync, LIVE_SYNC_LABEL } from "./clickupSync.js";
 import { fetchAccruedForReconciliation, ACCRUALS_LIVE_SYNC_LABEL } from "./accrualsSync.js";
 import { SEED_CLIENTS as CAP_SEED_CLIENTS, SEED_PEOPLE, loadKey as loadCapKey } from "./capacityData.js";
@@ -103,6 +103,11 @@ function filterClientList(list, { clientTypeFilter, consultantFilter, search, pr
     const primaryName = primaryNameByGroup.get(c.capGroup);
     return !primaryName || c.name === primaryName;
   });
+  // A folder explicitly tagged as another cost-centre client's sub-project (see
+  // costCentreParentAccName in buildClientsForMonth) is always shown nested under that
+  // parent's tile, never again as its own top-level card -- same rule as capGroup above,
+  // just driven by nameMatch.js's rules instead of Capacity Planning's grouping.
+  out = out.filter((c) => !c.costCentreParentAccName);
   if (search.trim()) {
     const q = search.trim().toLowerCase();
     out = out.filter((c) => c.name.toLowerCase().includes(q) || (c.displayName || "").toLowerCase().includes(q));
@@ -544,36 +549,58 @@ export default function PGReconciliation({ onNavigateClients }) {
     // folders would all show "package 20h" as if each had its own independent 20h
     // commitment, instead of the four together sharing one.
     // A folder deliberately EXCLUDED from a client's package/accrual math (e.g. Majestic
-    // Plumbing's "Quoted Web Project" -- real client work, billed separately from the
-    // retainer) is left completely alone here -- it stays its own normal map entry, which
-    // the existing capacity-group sibling nesting below (siblingsByPrimaryName) already
-    // renders directly under its cost-centre parent as a "Sub project" row. Only the
-    // accrual-eligible folders get folded into one merged row.
+    // Plumbing's "Quoted Web Project", BAMSS Childcare, Apex Comms Website, Warrina Homes'
+    // Employee Guide project -- real client work, billed separately from the retainer) is
+    // left completely alone here -- it stays its own normal map entry, which the existing
+    // capacity-group sibling nesting below (siblingsByPrimaryName) already renders directly
+    // under its cost-centre parent as a "Sub project" row. Only the accrual-eligible
+    // folders get folded into one merged row.
+    //
+    // The candidate list is every REGISTERED client (pgClientNames), not just ones with
+    // accrual history (accruedNames) -- accruedNames only covers clients recomputeAccruals
+    // has ever written a package/strategy row for, which misses purely-hourly cost-centre
+    // clients entirely (Vegetation Solutions, Brisbane Alarm Monitoring, Magain Real
+    // Estate's rarer single-folder months, ...). Those clients still need their folders
+    // merged for display even though there's no accrual math to run on them.
     const folderNames = [...map.keys()];
-    for (const accName of accruedNames) {
+    const costCentreCandidates = new Set([...pgClientNames, ...accruedNames]);
+    for (const accName of costCentreCandidates) {
       const accrualFolders = multiFolderAccrualMatchesFor(accName, folderNames);
       const matchedInMap = accrualFolders ? accrualFolders.filter((f) => map.has(f)) : [];
-      if (matchedInMap.length < 2) continue;
+      // Folders this same rule matches but deliberately excludes from the accrual (billed
+      // separately -- Majestic Plumbing's web project, BAMSS Childcare, Apex Comms Website,
+      // Warrina Homes' Employee Guide project) are tagged with their true parent's identity
+      // right here, rather than left to the capacity-planning capGroup mechanism to (maybe)
+      // catch by name similarity -- that mechanism has its own, unrelated grouping data and
+      // has no reason to know these two specific client names are related. Tagged folders
+      // are left in `map` untouched (not merged, not deleted) so they still become their
+      // own ordinary client row below, just carrying a pointer to their real parent.
+      const allFolders = multiFolderMatchesFor(accName, folderNames) || [];
+      for (const f of allFolders) {
+        if (matchedInMap.includes(f) || !map.has(f)) continue;
+        map.get(f).costCentreParentAccName = accName;
+      }
+      if (matchedInMap.length < 1) continue;
       // The client's own registered ClickUp folder (set in the Clients module) is the
-      // right "identity" folder for this roll-up -- picking whichever sibling folder
-      // happens to have logged the most hours that month used to promote essentially
-      // arbitrary folders (e.g. "Aus3C IRAP", or Magain's busiest agent folder that
-      // month) to stand in for the whole client, with the real parent
-      // ("Australian Cyber Collaboration Centre", "Magain Real Estate") demoted to just
-      // another sub-project row -- backwards from what the roll-up is meant to show.
+      // right "identity" folder for this roll-up when it actually logged hours this month
+      // -- picking whichever sibling folder happens to have logged the most hours instead
+      // used to promote essentially arbitrary folders (e.g. "Aus3C IRAP", or Magain's
+      // busiest agent folder that month) to stand in for the whole client, with the real
+      // parent ("Australian Cyber Collaboration Centre") demoted to just another line
+      // item -- backwards from what the roll-up is meant to show. Vegetation Solutions and
+      // Magain have no umbrella folder of their own at all (hasDirectFolder stays false),
+      // so every line item below is labelled with its own real folder name instead.
       const profile = pgClientByName.get(accName);
-      let primary = (profile?.clickupFolder && matchedInMap.includes(profile.clickupFolder)) ? profile.clickupFolder : null;
-      if (!primary) {
-        primary = matchedInMap[0];
+      const hasDirectFolder = !!(profile?.clickupFolder && matchedInMap.includes(profile.clickupFolder));
+      let primary = hasDirectFolder ? profile.clickupFolder : matchedInMap[0];
+      if (!hasDirectFolder) {
         for (const f of matchedInMap) if (map.get(f).totalMin > map.get(primary).totalMin) primary = f;
       }
       const primaryEntry = map.get(primary);
-      // Hours logged directly to the parent's own umbrella folder, before folding any
-      // sibling's minutes in -- shown as its own line item (labelled with the client's
-      // real name, not the raw folder name) alongside the sibling folders, so the
-      // breakdown accounts for every hour in "Total worked" instead of only the siblings.
-      const directHours = primaryEntry.totalMin / 60;
-      const lineItems = [{ name: accName, hours: directHours }];
+      // The primary folder's own hours, captured before any sibling gets merged in --
+      // labelled with the client's real name only when it's genuinely the registered
+      // umbrella folder; otherwise it's just another sibling folder and gets its own name.
+      const lineItems = [{ name: hasDirectFolder ? accName : primary, hours: primaryEntry.totalMin / 60 }];
       for (const f of matchedInMap) {
         if (f === primary) continue;
         const entry = map.get(f);
@@ -598,10 +625,18 @@ export default function PGReconciliation({ onNavigateClients }) {
         map.delete(f);
       }
       lineItems.sort((a, b) => b.hours - a.hours);
-      primaryEntry.costCentre = {
-        lineItems, totalWorked: primaryEntry.totalMin / 60,
-        accrualFolderNames: matchedInMap,
-      };
+      // Only worth a "Rolled Up" breakdown when there's an actual sibling folder to show
+      // alongside the parent's own -- a client whose only accrual-eligible "match" is its
+      // own registered umbrella folder (e.g. Brisbane Alarm Monitoring or Warrina Homes,
+      // once their one real sibling is excluded as a billed-separately sub-project) would
+      // otherwise show a roll-up panel containing nothing but itself.
+      const isTrivialRollup = hasDirectFolder && lineItems.length === 1;
+      if (!isTrivialRollup) {
+        primaryEntry.costCentre = {
+          lineItems, totalWorked: primaryEntry.totalMin / 60,
+          accrualFolderNames: matchedInMap,
+        };
+      }
       // The merged entry's true identity is the accrued client itself, not whichever raw
       // ClickUp folder ended up "primary" -- e.g. Magain Real Estate's busiest folder is
       // literally named "Magain Sales", nothing like the client's own name, so leaving
@@ -830,6 +865,35 @@ export default function PGReconciliation({ onNavigateClients }) {
     });
     return result;
   }, [clients, primaryNameByGroup]);
+  // A second, independent source of sub-projects: folders nameMatch.js's
+  // MULTI_FOLDER_CLIENTS rules explicitly exclude from a cost-centre client's accrual
+  // (billed separately -- BAMSS Childcare, Apex Comms Website, ...), tagged directly onto
+  // the row during the merge in buildClientsForMonth (costCentreParentAccName). Deliberately
+  // NOT routed through capGroup/siblingsByPrimaryName above -- that grouping comes from
+  // Capacity Planning's own, unrelated data and two client names this different from each
+  // other (e.g. "BAMSS Childcare Security Services" vs "Brisbane Alarm Monitoring Security
+  // Services") have no reason to already be grouped there.
+  const costCentreSubProjectsByParentName = useMemo(() => {
+    const m = new Map();
+    clients.forEach((c) => {
+      if (!c.costCentreParentAccName) return;
+      if (!m.has(c.costCentreParentAccName)) m.set(c.costCentreParentAccName, []);
+      m.get(c.costCentreParentAccName).push(c);
+    });
+    return m;
+  }, [clients]);
+  // Every "extra row nested under this one" a primary might have, from either source
+  // (capGroup-based siblings and nameMatch.js-tagged sub-projects) -- one lookup so the
+  // six places below that need "what's nested under this client" don't each have to
+  // remember to check both maps and merge/dedupe them by hand.
+  const allSiblingsFor = (name) => {
+    const a = siblingsByPrimaryName.get(name) || [];
+    const b = costCentreSubProjectsByParentName.get(name) || [];
+    if (!a.length) return b;
+    if (!b.length) return a;
+    const seen = new Set(a.map((s) => s.name));
+    return [...a, ...b.filter((s) => !seen.has(s.name))];
+  };
 
   function withConsultantFilter(c, consultant) {
     const tasksFiltered = consultant ? (c.tasksByUser.get(consultant) || new Map()) : c.tasksAll;
@@ -878,11 +942,11 @@ export default function PGReconciliation({ onNavigateClients }) {
     const map = new Map();
     visible.forEach((c) => map.set(c.name, c));
     visible.forEach((c) => {
-      const siblings = siblingsByPrimaryName.get(c.name);
+      const siblings = allSiblingsFor(c.name);
       if (siblings) siblings.forEach((s) => map.set(s.name, withConsultantFilter(s, consultantFilter)));
     });
     return map;
-  }, [visible, siblingsByPrimaryName, consultantFilter]);
+  }, [visible, siblingsByPrimaryName, costCentreSubProjectsByParentName, consultantFilter]);
   const drawerClient = drawerClientName ? allDisplayable.get(drawerClientName) : null;
 
   // The set of ClickUp folder names the KPI row/sparkline currently represent -- a
@@ -894,27 +958,27 @@ export default function PGReconciliation({ onNavigateClients }) {
   const kpiScopeFolders = useMemo(() => {
     if (drawerClient) {
       const names = new Set([drawerClient.name]);
-      (siblingsByPrimaryName.get(drawerClient.name) || []).forEach((s) => names.add(s.name));
+      allSiblingsFor(drawerClient.name).forEach((s) => names.add(s.name));
       return names;
     }
     const names = new Set();
     visible.forEach((c) => {
       names.add(c.name);
-      (siblingsByPrimaryName.get(c.name) || []).forEach((s) => names.add(s.name));
+      allSiblingsFor(c.name).forEach((s) => names.add(s.name));
     });
     return names;
-  }, [drawerClient, visible, siblingsByPrimaryName]);
+  }, [drawerClient, visible, siblingsByPrimaryName, costCentreSubProjectsByParentName]);
 
   // KPI row scope: the selected client (+ siblings) while its drawer is open,
   // otherwise every currently filtered/searched client -- same idea as
   // kpiScopeFolders above, just as client objects rather than folder names.
   const statsScope = useMemo(() => {
     if (drawerClient) {
-      const sibs = siblingsByPrimaryName.get(drawerClient.name) || [];
+      const sibs = allSiblingsFor(drawerClient.name);
       return [drawerClient, ...sibs.map((s) => withConsultantFilter(s, consultantFilter))];
     }
     return visible;
-  }, [drawerClient, visible, siblingsByPrimaryName, consultantFilter]);
+  }, [drawerClient, visible, siblingsByPrimaryName, costCentreSubProjectsByParentName, consultantFilter]);
 
   const stats = useMemo(() => {
     const hrs = statsScope.reduce((a, c) => a + (c.workedFiltered ?? c.worked), 0);
@@ -930,7 +994,7 @@ export default function PGReconciliation({ onNavigateClients }) {
   const prevStats = useMemo(() => {
     let list;
     if (drawerClient) {
-      const sibNames = new Set((siblingsByPrimaryName.get(drawerClient.name) || []).map((s) => s.name));
+      const sibNames = new Set(allSiblingsFor(drawerClient.name).map((s) => s.name));
       list = prevClients.filter((c) => c.name === drawerClient.name || sibNames.has(c.name));
     } else {
       list = filterClientList(prevClients, { clientTypeFilter, consultantFilter, search, primaryNameByGroup: prevPrimaryNameByGroup });
@@ -943,7 +1007,7 @@ export default function PGReconciliation({ onNavigateClients }) {
     // "0 vs last month" would misleadingly read as a 100% drop rather than "no data".
     const available = !!(clickup && prevMonthDataKey && clickup.rows.some((r) => r.monthKey === prevMonthDataKey));
     return { hrs, count: list.length, over, carry, available };
-  }, [drawerClient, prevClients, clientTypeFilter, consultantFilter, search, prevPrimaryNameByGroup, siblingsByPrimaryName, clickup, prevMonthDataKey]);
+  }, [drawerClient, prevClients, clientTypeFilter, consultantFilter, search, prevPrimaryNameByGroup, siblingsByPrimaryName, costCentreSubProjectsByParentName, clickup, prevMonthDataKey]);
 
   // Trailing up-to-6-month hours trend for the "Total billable hours" sparkline —
   // scoped to kpiScopeFolders above, so it tracks the same client(s) the KPI cards
@@ -1373,7 +1437,7 @@ export default function PGReconciliation({ onNavigateClients }) {
               <span />
             </div>
             {visible.map((c, i) => {
-              const siblings = siblingsByPrimaryName.get(c.name) || [];
+              const siblings = allSiblingsFor(c.name);
               // A client with sub-projects (siblings, e.g. a quoted one-off billed
               // separately) and/or a cost-centre breakdown renders inside one shared
               // .pg-tile card instead of each row getting its own floating card --

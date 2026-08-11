@@ -159,16 +159,28 @@ export function dominantClientType(rows) {
 // including them, since that function backs the "how much did we actually work for this
 // client in total" views, not the "are they over/under their package hours" one.
 const MULTI_FOLDER_CLIENTS = [
-  // "Apex Comms Website (QP)" / "Apex Comms Sales Presenter (QP)" are cost centres of
-  // the active "Apex Energy" client, not the separate (offboarded) "Apex Communications"
-  // client the old "apex comm" key was written for -- that old key is retired since it
-  // would otherwise double-claim the same folders for two different clients.
-  { key: "apex energy", prefixes: ["apex energy", "apex comms "], exact: ["apex energy"] },
+  // "Apex Comms Website (QP)" is a quoted one-off project, not part of the Apex Energy
+  // retainer -- excluded from the accrual the same way Majestic Plumbing's web project
+  // is, so it shows as a sub-project rather than a cost centre. "Apex Comms Sales
+  // Presenter (QP)" stays a plain cost centre (no accrual either way -- Apex Energy
+  // isn't currently on a package -- but nothing marks it "billed separately").
+  { key: "apex energy", prefixes: ["apex energy", "apex comms "], exact: ["apex energy"], excludeFromAccrual: ["apex comms website"] },
   { key: "aus3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
   { key: "aus 3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
+  // BAMSS Childcare Security Services is its own registered client (with its own type
+  // history and a scheduled reactivation) -- it keeps that identity, but its folder is
+  // billed separately from the Brisbane Alarm Monitoring retainer, so it's excluded from
+  // the accrual and shown as a sub-project the same way Majestic Plumbing's web project is.
+  { key: "brisbane alarm monitoring", prefixes: ["brisbane alarm monitoring", "bamss"], excludeFromAccrual: ["bamss childcare"] },
   { key: "clarke energy", prefixes: ["cea "], exact: ["clarke energy"] },
   { key: "magain", prefixes: ["magain "] },
   { key: "majestic plumbing", prefixes: ["majestic plumbing", "mp "], excludeFromAccrual: ["majestic plumbing quoted web project"] },
+  // "Warrina Homes - Employee Guide (Quoted Project)" used to fuzzy-match "Warrina Homes"
+  // on its own (via findMatch's token-similarity fallback), showing as a second,
+  // independent "Warrina Homes" row instead of nesting under the real one -- an explicit
+  // rule here takes it out of that fuzzy path entirely.
+  { key: "warrina homes", prefixes: ["warrina homes"], excludeFromAccrual: ["warrina homes employee guide"] },
+  { key: "vegetation solutions", prefixes: ["vegetation solutions"] },
 ];
 
 // Returns every real ClickUp folder belonging to a multi-folder client, or null if `name`
