@@ -8,7 +8,7 @@ import {
   Calendar, SlidersHorizontal,
 } from "lucide-react";
 import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, multiFolderAccrualMatchesFor, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, TYPE_LABELS_SHORT, dominantClientType, basisToClientType } from "./nameMatch.js";
+import { findMatch, multiFolderMatchesFor, multiFolderAccrualMatchesFor, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, TYPE_LABELS_SHORT, dominantClientType, basisToClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync, LIVE_SYNC_LABEL } from "./clickupSync.js";
 import { fetchAccruedForReconciliation, ACCRUALS_LIVE_SYNC_LABEL } from "./accrualsSync.js";
 import { SEED_CLIENTS as CAP_SEED_CLIENTS, SEED_PEOPLE, loadKey as loadCapKey } from "./capacityData.js";
@@ -535,24 +535,47 @@ export default function PGReconciliation({ onNavigateClients }) {
       }
     }
 
-    // Some clients (Aus3C, Majestic Plumbing, Clarke Energy, etc.) run real work across
-    // several sibling ClickUp folders ("cost centres") instead of one umbrella folder --
-    // Client Accruals and Capacity Planning already merge these via multiFolderAccrualMatchesFor,
-    // but until now Client Invoicing showed each sibling folder as its own unrelated top-level
-    // row, each independently matching (and each separately claiming) the SAME accrued-sheet
-    // package -- e.g. Aus3C's four active folders would all show "package 20h" as if each had
-    // its own independent 20h commitment, instead of the four together sharing one. Fold every
-    // sibling into the folder with the most logged minutes (its "cost centre parent"), tagging
-    // that merged entry with `costCentre` so the row can render the roll-up breakdown.
+    // Some clients (Aus3C, Majestic Plumbing, Clarke Energy, Magain, etc.) run real work
+    // across several sibling ClickUp folders ("cost centres") instead of one umbrella
+    // folder -- Client Accruals and Capacity Planning already merge these via
+    // multiFolderAccrualMatchesFor, but until now Client Invoicing showed each sibling
+    // folder as its own unrelated top-level row, each independently matching (and each
+    // separately claiming) the SAME accrued-sheet package -- e.g. Aus3C's four active
+    // folders would all show "package 20h" as if each had its own independent 20h
+    // commitment, instead of the four together sharing one.
     const folderNames = [...map.keys()];
     for (const accName of accruedNames) {
-      const multi = multiFolderAccrualMatchesFor(accName, folderNames);
-      const matchedInMap = multi ? multi.filter((f) => map.has(f)) : [];
-      if (matchedInMap.length < 2) continue;
-      let primary = matchedInMap[0];
-      for (const f of matchedInMap) if (map.get(f).totalMin > map.get(primary).totalMin) primary = f;
+      const accrualFolders = multiFolderAccrualMatchesFor(accName, folderNames);
+      const matchedInMap = accrualFolders ? accrualFolders.filter((f) => map.has(f)) : [];
+      // A rule can also carry folders deliberately EXCLUDED from the package/accrual math
+      // (e.g. Majestic Plumbing's "Quoted Web Project" -- real client work, billed
+      // separately from the retainer) -- multiFolderMatchesFor (no exclusions) minus
+      // multiFolderAccrualMatchesFor gives exactly those, still shown under this client
+      // for visibility, just kept out of the worked/package/remaining math.
+      const allFolders = multiFolderMatchesFor(accName, folderNames) || [];
+      const excludedFolderNames = allFolders.filter((f) => map.has(f) && !matchedInMap.includes(f));
+      if (matchedInMap.length < 2 && !excludedFolderNames.length) continue;
+      // The client's own registered ClickUp folder (set in the Clients module) is the
+      // right "identity" folder for this roll-up -- picking whichever sibling folder
+      // happens to have logged the most hours that month used to promote essentially
+      // arbitrary folders (e.g. "Aus3C IRAP", or Magain's busiest agent folder that
+      // month) to stand in for the whole client, with the real parent
+      // ("Australian Cyber Collaboration Centre", "Magain Real Estate") demoted to just
+      // another sub-project row -- backwards from what the roll-up is meant to show.
+      const profile = pgClientByName.get(accName);
+      let primary = (profile?.clickupFolder && matchedInMap.includes(profile.clickupFolder)) ? profile.clickupFolder : null;
+      if (!primary && matchedInMap.length) {
+        primary = matchedInMap[0];
+        for (const f of matchedInMap) if (map.get(f).totalMin > map.get(primary).totalMin) primary = f;
+      }
+      // No accrual-eligible folder logged anything this month, but an excluded (billed-
+      // separately) one did -- still needs somewhere to anchor the roll-up, so fall back
+      // to the busiest excluded folder rather than dropping the client's hours entirely.
+      if (!primary) {
+        primary = excludedFolderNames[0];
+        for (const f of excludedFolderNames) if (map.get(f).totalMin > map.get(primary).totalMin) primary = f;
+      }
       const primaryEntry = map.get(primary);
-      const directHours = primaryEntry.totalMin / 60;
       const subFolders = [];
       for (const f of matchedInMap) {
         if (f === primary) continue;
@@ -577,8 +600,26 @@ export default function PGReconciliation({ onNavigateClients }) {
         }
         map.delete(f);
       }
+      const excludedSubFolders = [];
+      for (const f of excludedFolderNames) {
+        if (f === primary) continue;
+        excludedSubFolders.push({ name: f, hours: map.get(f).totalMin / 60 });
+        map.delete(f);
+      }
       subFolders.sort((a, b) => b.hours - a.hours);
-      primaryEntry.costCentre = { subFolders, directHours, totalWorked: primaryEntry.totalMin / 60 };
+      excludedSubFolders.sort((a, b) => b.hours - a.hours);
+      primaryEntry.costCentre = {
+        subFolders, excludedSubFolders, totalWorked: primaryEntry.totalMin / 60,
+        accrualFolderNames: [primary, ...subFolders.map((s) => s.name)],
+      };
+      // The merged entry's true identity is the accrued client itself, not whichever raw
+      // ClickUp folder ended up "primary" -- e.g. Magain Real Estate's busiest folder is
+      // literally named "Magain Sales", nothing like the client's own name, so leaving
+      // c.name as that folder name would make the accrued-sheet match below fail or
+      // misfire. We already know the identity here, so stamp it directly instead of
+      // making the per-client loop re-derive it via fuzzy matching.
+      primaryEntry.name = accName;
+      primaryEntry.costCentreAccruedName = accName;
     }
 
     const out = [];
@@ -587,7 +628,10 @@ export default function PGReconciliation({ onNavigateClients }) {
       let accruedClient = null;
       let matchInfo = null;
       if (accrued) {
-        if (nameMap[c.name]) {
+        if (c.costCentreAccruedName) {
+          accruedClient = accrued.clients.find((a) => a.name === c.costCentreAccruedName) || null;
+          if (accruedClient) matchInfo = { name: accruedClient.name, confidence: 1, method: "cost-centre" };
+        } else if (nameMap[c.name]) {
           accruedClient = accrued.clients.find((a) => a.name === nameMap[c.name]) || null;
           if (accruedClient) matchInfo = { name: accruedClient.name, confidence: 1, method: "manual" };
         } else {
@@ -595,6 +639,13 @@ export default function PGReconciliation({ onNavigateClients }) {
           if (m) { accruedClient = accrued.clients.find((a) => a.name === m.name) || null; matchInfo = m; }
         }
       }
+      // monthWorked is keyed by raw ClickUp folder name, one entry per folder -- a
+      // cost-centre client's identity (c.name) is the accrued client name, not a real
+      // folder, so a plain monthWorked.get(c.name) would always miss. Sum across every
+      // folder this client's roll-up actually draws from instead.
+      const priorMonthWorkedMin = c.costCentre
+        ? c.costCentre.accrualFolderNames.reduce((a, f) => a + (monthWorked?.get(f) || 0), 0)
+        : (monthWorked?.get(c.name) || 0);
       const pkg = accruedClient?.package ?? null;
       let priorBalance = accruedClient && priorKey ? (accruedClient.balances[priorKey] ?? null) : null;
       // The accrued sheet doesn't have a column for the prior month (e.g. it hasn't
@@ -605,7 +656,7 @@ export default function PGReconciliation({ onNavigateClients }) {
       // rather than presented as verified accrued-sheet data.
       let priorBalanceEstimated = false;
       if (priorBalance === null && accruedClient && pkg !== null && pkg > 0 && monthWorked) {
-        const priorWorkedH = (monthWorked.get(c.name) || 0) / 60;
+        const priorWorkedH = priorMonthWorkedMin / 60;
         const priorPriorBalance = accruedClient.balances[prevMonthKeyStr(priorKey)] ?? 0;
         priorBalance = priorWorkedH - pkg + priorPriorBalance;
         priorBalanceEstimated = true;
@@ -626,7 +677,7 @@ export default function PGReconciliation({ onNavigateClients }) {
       // entries were edited after the accrued sheet was last updated for that period.
       let priorMismatch = null;
       if (!priorBalanceEstimated && pkg !== null && pkg > 0 && priorBalance !== null && monthWorked) {
-        const priorWorkedH = (monthWorked.get(c.name) || 0) / 60;
+        const priorWorkedH = priorMonthWorkedMin / 60;
         const priorPriorBalance = accruedClient.balances[prevMonthKeyStr(priorKey)] ?? 0;
         const recomputed = priorWorkedH - pkg + priorPriorBalance;
         if (Math.abs(recomputed - priorBalance) > MISMATCH_TOLERANCE_H) {

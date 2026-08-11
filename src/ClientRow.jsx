@@ -13,13 +13,14 @@ import { ExportItem } from "./ExportItem.jsx";
 // the parent row itself; this just makes that merge visible instead of silently folding
 // the sibling folders' hours in with no indication where they came from.
 function CostCentreBreakdown({ client: c, pkg }) {
-  const { subFolders, totalWorked } = c.costCentre;
+  const { subFolders, excludedSubFolders, totalWorked } = c.costCentre;
   const rollupAdjustment = pkg != null ? totalWorked - pkg : null;
   const netApplied = pkg != null ? Math.min(totalWorked, pkg) : totalWorked;
+  const rowCount = subFolders.length + excludedSubFolders.length;
   return (
     <div className="pg-costcentre">
       <div className="pg-costcentre__head">
-        <span className="pg-costcentre__head-label"><Users size={14} /> {subFolders.length} sub-project{subFolders.length === 1 ? "" : "s"} (rolled up to this cost centre)</span>
+        <span className="pg-costcentre__head-label"><Users size={14} /> {rowCount} sub-project{rowCount === 1 ? "" : "s"} rolled up to this cost centre</span>
         <span className="pg-costcentre__head-total"><span className="pg-row__num-label">Total worked</span>{fmt(totalWorked)} h</span>
       </div>
       <div className="pg-costcentre__table">
@@ -39,13 +40,26 @@ function CostCentreBreakdown({ client: c, pkg }) {
             <span>—</span>
           </div>
         ))}
+        {excludedSubFolders.map((s) => (
+          <div className="pg-costcentre__row pg-costcentre__row--excluded" key={s.name}>
+            <span className="pg-costcentre__name">
+              <span className="pg-costcentre__name-main">{s.name}</span>
+              <span className="pg-costcentre__name-sub">Billed separately from {c.displayName}</span>
+            </span>
+            <span><span className="pg-tag pg-tag--pill pg-tag--muted">Excluded</span></span>
+            <span>—</span>
+            <span>{fmt(s.hours)} h</span>
+            <span>—</span>
+            <span>—</span>
+          </div>
+        ))}
       </div>
       <div className="pg-costcentre__footer">
         <span className="pg-costcentre__footer-label">These hours are rolled up to<br /><b>{c.displayName}</b></span>
         <span className="pg-row__num"><span className="pg-row__num-label">Total worked (from projects)</span>{fmt(totalWorked)} h</span>
         <span className="pg-row__num"><span className="pg-row__num-label">Package</span>{pkg != null ? `${fmt(pkg)} h` : "—"}</span>
         <span className="pg-row__num" style={rollupAdjustment != null && rollupAdjustment < 0 ? { color: "var(--status-warn)" } : undefined}
-          title="Total worked across every sub-project, minus the parent's package.">
+          title="Total worked across every accrual-eligible sub-project, minus the parent's package. Excludes anything billed separately.">
           <span className="pg-row__num-label"><HelpCircle size={11} /> Roll-up adjustment</span>
           {rollupAdjustment != null ? `${rollupAdjustment < 0 ? "−" : "+"}${fmt(Math.abs(rollupAdjustment))} h` : "—"}
         </span>
@@ -140,21 +154,20 @@ export function ClientRow({ index, client: c, active, onOpen, nested, parentName
             {c.displayName}
             {c.isOffboarded && <span className="pg-tag pg-tag--muted pg-tag--pill" style={{ marginLeft: 6 }} title={c.offboardNote}>Offboarded</span>}
             {c.costCentre && (
-              <>
-                <button
-                  type="button" aria-label={costCentreOpen ? "Collapse cost centre breakdown" : "Expand cost centre breakdown"}
-                  className="pg-icon-btn-sm" style={{ marginLeft: 4 }}
-                  onClick={(e) => { e.stopPropagation(); setCostCentreOpen((o) => !o); }}
-                >
-                  <ChevronDown size={14} style={{ transform: costCentreOpen ? "rotate(180deg)" : undefined }} />
-                </button>
-                <span className="pg-tag pg-tag--pill pg-tag--costcentre" style={{ marginLeft: 4 }}>Rolled up</span>
-              </>
+              <button
+                type="button"
+                aria-label={costCentreOpen ? "Collapse cost centre breakdown" : "Expand cost centre breakdown"}
+                className="pg-tag pg-tag--pill pg-tag--costcentre"
+                style={{ marginLeft: 6 }}
+                onClick={(e) => { e.stopPropagation(); setCostCentreOpen((o) => !o); }}
+              >
+                Rolled up <ChevronDown size={12} style={{ transform: costCentreOpen ? "rotate(180deg)" : undefined }} />
+              </button>
             )}
           </span>
           <span className="pg-row__name-sub">
             {nested ? <><Link2 size={10} /> Related sub-project of {parentName}</>
-              : c.costCentre ? `${c.costCentre.subFolders.length} project${c.costCentre.subFolders.length === 1 ? "" : "s"} rolled up to this cost centre`
+              : c.costCentre ? `${c.costCentre.subFolders.length + c.costCentre.excludedSubFolders.length} project${(c.costCentre.subFolders.length + c.costCentre.excludedSubFolders.length) === 1 ? "" : "s"} rolled up to this cost centre`
               : (c.capGroup && c.capGroup !== c.displayName ? c.capGroup : null)}
           </span>
         </span>

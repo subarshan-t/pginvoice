@@ -159,7 +159,11 @@ export function dominantClientType(rows) {
 // including them, since that function backs the "how much did we actually work for this
 // client in total" views, not the "are they over/under their package hours" one.
 const MULTI_FOLDER_CLIENTS = [
-  { key: "apex comm", prefixes: ["apex comms "] },
+  // "Apex Comms Website (QP)" / "Apex Comms Sales Presenter (QP)" are cost centres of
+  // the active "Apex Energy" client, not the separate (offboarded) "Apex Communications"
+  // client the old "apex comm" key was written for -- that old key is retired since it
+  // would otherwise double-claim the same folders for two different clients.
+  { key: "apex energy", prefixes: ["apex energy", "apex comms "], exact: ["apex energy"] },
   { key: "aus3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
   { key: "aus 3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
   { key: "clarke energy", prefixes: ["cea "], exact: ["clarke energy"] },
