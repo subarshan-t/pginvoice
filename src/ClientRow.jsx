@@ -17,10 +17,10 @@ import { ExportItem } from "./ExportItem.jsx";
 // the accrual (billed separately, e.g. a quoted one-off project) never appears here —
 // it stays its own ordinary row, nested underneath via the existing sub-project
 // mechanism (see the `nested` prop below), tagged "Sub project" rather than folded in.
-function CostCentreBreakdown({ client: c }) {
+function CostCentreBreakdown({ client: c, divider }) {
   const { lineItems } = c.costCentre;
   return (
-    <div className="pg-costcentre-mini">
+    <div className={"pg-costcentre-mini" + (divider ? " pg-costcentre-mini--divider" : "")}>
       {lineItems.map((item) => (
         <div className="pg-costcentre-mini__row" key={item.name}>
           <span className="pg-costcentre-mini__dot" />
@@ -34,7 +34,15 @@ function CostCentreBreakdown({ client: c }) {
 
 // Compact numbered row — the list's default state. Clicking anywhere on it opens
 // the full client detail in the right-side drawer (see ClientDrawer.jsx).
-export function ClientRow({ index, client: c, active, onOpen, nested, parentName, onCopy, onPdf }) {
+//
+// `tileRow` + `hasMoreBelow`: when a client has sub-projects (siblings billed
+// separately, e.g. a quoted one-off) and/or a cost-centre breakdown, every one of
+// those rows renders inside a single shared `.pg-tile` card (see App.jsx) instead of
+// each getting its own floating card -- `tileRow` tells this row to drop its own
+// border/shadow/radius (the tile already provides those) and `hasMoreBelow` tells it
+// whether to draw the divider line under itself, since dividers only belong between
+// rows, never trailing the last one in the group.
+export function ClientRow({ index, client: c, active, onOpen, nested, parentName, onCopy, onPdf, tileRow, hasMoreBelow }) {
   const [inlineOpen, setInlineOpen] = useState(false);
   // Cost-centre breakdown starts expanded — the whole point of showing it is to make
   // the roll-up visible by default, not to hide it behind another click.
@@ -100,11 +108,24 @@ export function ClientRow({ index, client: c, active, onOpen, nested, parentName
   const taskEntries = [...c.tasksFiltered.entries()].sort((a, b) => b[1] - a[1]);
   const shownTasks = tasksAllShown ? taskEntries : taskEntries.slice(0, 3);
 
+  // A divider belongs under whichever piece of this row is visually last -- the row
+  // itself, unless its cost-centre breakdown is open, in which case the breakdown
+  // (rendered right after it) takes the divider instead so the row and its own
+  // breakdown never get a line drawn between them.
+  const rowDivider = tileRow && hasMoreBelow && !(c.costCentre && costCentreOpen);
+  const miniDivider = tileRow && hasMoreBelow && !!c.costCentre && costCentreOpen;
+
   return (
-    <div className={"pg-row-wrap" + (nested ? " pg-row--nested" : "")}>
+    <div className={tileRow ? "pg-tile__row-wrap" : "pg-row-wrap" + (nested ? " pg-row--nested" : "")}>
       <div
         role="button" tabIndex={0}
-        className={"pg-row pg-row-grid-cols" + (active ? " pg-row--active" : "") + (inlineOpen ? " pg-row--expanded" : "")}
+        className={
+          "pg-row pg-row-grid-cols"
+          + (tileRow ? " pg-row--in-tile" : "")
+          + (active ? " pg-row--active" : "")
+          + (inlineOpen ? " pg-row--expanded" : "")
+          + (rowDivider ? " pg-row--divider" : "")
+        }
         onClick={onOpen}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
       >
@@ -176,7 +197,7 @@ export function ClientRow({ index, client: c, active, onOpen, nested, parentName
         </span>
       </div>
 
-      {c.costCentre && costCentreOpen && <CostCentreBreakdown client={c} />}
+      {c.costCentre && costCentreOpen && <CostCentreBreakdown client={c} divider={miniDivider} />}
 
       {inlineOpen && (
         <div className="pg-row-inline">

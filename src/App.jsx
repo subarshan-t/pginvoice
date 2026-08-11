@@ -1373,17 +1373,26 @@ export default function PGReconciliation({ onNavigateClients }) {
               <span />
             </div>
             {visible.map((c, i) => {
-              const siblings = siblingsByPrimaryName.get(c.name);
+              const siblings = siblingsByPrimaryName.get(c.name) || [];
+              // A client with sub-projects (siblings, e.g. a quoted one-off billed
+              // separately) and/or a cost-centre breakdown renders inside one shared
+              // .pg-tile card instead of each row getting its own floating card --
+              // ClientRow's `tileRow`/`hasMoreBelow` props drop each row's own
+              // border/shadow/radius in favor of the tile's, with divider lines
+              // between rows instead of gaps between separate cards.
+              if (!c.costCentre && siblings.length === 0) {
+                return <ClientRow key={c.name} index={i + 1} client={c} active={drawerClientName === c.name} onOpen={() => setDrawerClientName(c.name)} onCopy={copySummary} onPdf={downloadPdf} />;
+              }
               return (
-                <React.Fragment key={c.name}>
-                  <ClientRow index={i + 1} client={c} active={drawerClientName === c.name} onOpen={() => setDrawerClientName(c.name)} onCopy={copySummary} onPdf={downloadPdf} />
-                  {siblings && siblings.length > 0 && siblings.map((s) => {
+                <div className="pg-tile" key={c.name}>
+                  <ClientRow index={i + 1} client={c} tileRow hasMoreBelow={siblings.length > 0} active={drawerClientName === c.name} onOpen={() => setDrawerClientName(c.name)} onCopy={copySummary} onPdf={downloadPdf} />
+                  {siblings.map((s, idx) => {
                     const sc = withConsultantFilter(s, consultantFilter);
                     return (
-                      <ClientRow key={sc.name} client={sc} nested parentName={c.displayName} active={drawerClientName === sc.name} onOpen={() => setDrawerClientName(sc.name)} onCopy={copySummary} onPdf={downloadPdf} />
+                      <ClientRow key={sc.name} client={sc} nested tileRow hasMoreBelow={idx < siblings.length - 1} parentName={c.displayName} active={drawerClientName === sc.name} onOpen={() => setDrawerClientName(sc.name)} onCopy={copySummary} onPdf={downloadPdf} />
                     );
                   })}
-                </React.Fragment>
+                </div>
               );
             })}
             {visible.length === 0 && (

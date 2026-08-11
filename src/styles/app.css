@@ -893,6 +893,16 @@ button { font: inherit; }
    per-row edit buttons; a row opens the full-detail drawer instead. */
 .pg-rowlist { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
 .pg-row-wrap.pg-row--nested { margin-left: 28px; }
+/* A client with a cost-centre breakdown and/or sub-projects (see App.jsx's visible.map)
+   renders every one of those rows inside ONE of these instead of each getting its own
+   floating card -- overflow:hidden clips the first/last row's square corners to the
+   tile's own rounded ones, and .pg-row--in-tile below strips each row's individual
+   border/shadow/radius so only this outer edge reads as a card boundary. */
+.pg-tile {
+  background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius);
+  box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.pg-tile__row-wrap { width: 100%; }
 /* Both the header strip and each row share this exact column track list, so
    a column's width can never drift between rows depending on content length
    (a flex row with auto-sized cells like `.pg-tag`/`.pg-status-pill` — whose
@@ -920,6 +930,15 @@ button { font: inherit; }
 .pg-row-wrap.pg-row--nested .pg-row { background: var(--bg-base); }
 .pg-row:hover { box-shadow: var(--shadow-md); }
 .pg-row--active { border-color: var(--accent); }
+/* Inside a .pg-tile, individual rows give up their own card look entirely -- the
+   tile already draws the border/shadow/radius, so a second one here would just
+   double up. A thin divider line (added only between rows, never trailing the
+   last one -- see .pg-row--divider) replaces the .pg-rowlist gap that separates
+   ordinary standalone rows. */
+.pg-row--in-tile { border: 0; border-radius: 0; box-shadow: none; }
+.pg-row--in-tile:hover { box-shadow: none; background: var(--bg-elevated); }
+.pg-row--in-tile.pg-row--active { background: var(--bg-elevated); }
+.pg-row--in-tile.pg-row--divider { border-bottom: 1px solid var(--border-subtle); }
 .pg-row__index { font-family: var(--font-mono); font-size: 12px; color: var(--fg-tertiary); }
 .pg-row__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pg-row__name-main { font-family: var(--font-display); font-weight: 400; font-size: 16px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1006,6 +1025,7 @@ button { font: inherit; }
 }
 .pg-row__name-sub--toggle:hover { text-decoration: underline; }
 .pg-costcentre-mini { display: flex; flex-direction: column; padding: 2px 18px 10px 46px; }
+.pg-costcentre-mini--divider { border-bottom: 1px solid var(--border-subtle); }
 .pg-costcentre-mini__row { display: flex; align-items: center; gap: 10px; padding: 6px 0; position: relative; }
 /* The connecting line runs from each dot's center down to the next one, so the whole
    list reads as one continuous thread rather than isolated rows -- skipped on the last
