@@ -1024,18 +1024,24 @@ button { font: inherit; }
   cursor: pointer; color: var(--accent); font-family: var(--font-body); font-size: 11px;
 }
 .pg-row__name-sub--toggle:hover { text-decoration: underline; }
-.pg-costcentre-mini { display: flex; flex-direction: column; padding: 2px 18px 10px 46px; }
+.pg-costcentre-mini { display: flex; flex-direction: column; padding: 2px 18px 10px; }
 .pg-costcentre-mini--divider { border-bottom: 1px solid var(--border-subtle); }
-.pg-costcentre-mini__row { display: flex; align-items: center; gap: 10px; padding: 6px 0; position: relative; }
+/* Each line item reuses .pg-row-grid-cols (see ClientRow.jsx) so its hours land in
+   exactly the same column as the row's own "Worked" figure, instead of trailing
+   directly after the folder name at a distance that shifts with name length. */
+.pg-costcentre-mini__row { display: grid; align-items: center; gap: 16px; padding: 6px 0; position: relative; }
+.pg-costcentre-mini__dotcell { display: flex; align-items: center; justify-content: center; height: 100%; }
 /* The connecting line runs from each dot's center down to the next one, so the whole
    list reads as one continuous thread rather than isolated rows -- skipped on the last
    item, which has nothing left to connect to. */
-.pg-costcentre-mini__row:not(:last-child)::before {
-  content: ""; position: absolute; left: 3px; top: 14px; bottom: -6px; width: 1px; background: var(--border-soft);
+.pg-costcentre-mini__row:not(:last-child) .pg-costcentre-mini__dotcell::before {
+  content: ""; position: absolute; top: 14px; bottom: -6px; width: 1px; background: var(--border-soft);
 }
-.pg-costcentre-mini__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); z-index: 1; }
-.pg-costcentre-mini__name { flex: 1 1 auto; min-width: 0; font-family: var(--font-body); font-size: 13px; color: var(--fg-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pg-costcentre-mini__hours { flex: none; font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary); font-variant-numeric: tabular-nums; }
+.pg-costcentre-mini__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); z-index: 1; }
+.pg-costcentre-mini__name { min-width: 0; font-family: var(--font-body); font-size: 13px; color: var(--fg-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-costcentre-mini__hours { font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 900px) { .pg-costcentre-mini__row { grid-template-columns: 16px 28px minmax(0, 1.1fr) 64px 64px 64px 64px 64px 92px 22px; } }
+@media (max-width: 640px) { .pg-costcentre-mini__row { grid-template-columns: 24px minmax(0, 1fr) auto; column-gap: 8px; } .pg-costcentre-mini__row > *:not(.pg-costcentre-mini__dotcell):not(.pg-costcentre-mini__name):not(.pg-costcentre-mini__hours) { display: none; } }
 
 /* ---- client invoicing: right-side drawer -----------------------------------
    Purple Giraffe Design OS §11.7 — client detail, opened alongside the list

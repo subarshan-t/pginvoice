@@ -22,9 +22,17 @@ function CostCentreBreakdown({ client: c, divider }) {
   return (
     <div className={"pg-costcentre-mini" + (divider ? " pg-costcentre-mini--divider" : "")}>
       {lineItems.map((item) => (
-        <div className="pg-costcentre-mini__row" key={item.name}>
-          <span className="pg-costcentre-mini__dot" />
+        // Reuses the row's own grid-column track list (pg-row-grid-cols) rather than an
+        // independent layout, so each line item's hours land in exactly the same column
+        // as the "Worked" figure on the row above -- a fixed left-padding/flex layout
+        // can't guarantee that once folder names vary in length.
+        <div className="pg-costcentre-mini__row pg-row-grid-cols" key={item.name}>
+          <span />
+          <span className="pg-costcentre-mini__dotcell"><span className="pg-costcentre-mini__dot" /></span>
           <span className="pg-costcentre-mini__name">{item.name}</span>
+          <span />
+          <span />
+          <span />
           <span className="pg-costcentre-mini__hours">{fmt(item.hours)} h</span>
         </div>
       ))}
@@ -42,11 +50,18 @@ function CostCentreBreakdown({ client: c, divider }) {
 // border/shadow/radius (the tile already provides those) and `hasMoreBelow` tells it
 // whether to draw the divider line under itself, since dividers only belong between
 // rows, never trailing the last one in the group.
-export function ClientRow({ index, client: c, active, onOpen, nested, parentName, onCopy, onPdf, tileRow, hasMoreBelow }) {
+//
+// `subIndex` + `avatarOf`: a sub-project doesn't get its own number in the list --
+// it's not a separate client, just a different billing arrangement for the same one --
+// so it's labelled against its parent's number instead (parent "26" -> sub-project
+// "26s", a second one "26s2", ...). `avatarOf` carries the parent's {name, logo} so the
+// sub-project's avatar reads as the same client's picture, not a distinct one of its own.
+export function ClientRow({ index, client: c, active, onOpen, nested, parentName, onCopy, onPdf, tileRow, hasMoreBelow, subIndex, avatarOf }) {
   const [inlineOpen, setInlineOpen] = useState(false);
-  // Cost-centre breakdown starts expanded — the whole point of showing it is to make
-  // the roll-up visible by default, not to hide it behind another click.
-  const [costCentreOpen, setCostCentreOpen] = useState(true);
+  // Cost-centre breakdown starts collapsed, same as every other row's expand affordance
+  // (the reconciliation breakdown below, the drawer) -- the list should read as a plain
+  // set of tiles by default, not open every roll-up's internals at once.
+  const [costCentreOpen, setCostCentreOpen] = useState(false);
   const [tasksAllShown, setTasksAllShown] = useState(false);
   const [consultantsAllShown, setConsultantsAllShown] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -129,8 +144,8 @@ export function ClientRow({ index, client: c, active, onOpen, nested, parentName
         onClick={onOpen}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
       >
-        <span className="pg-row__index">{!nested ? index : null}</span>
-        <ClientAvatar name={c.displayName} logo={c.logoUrl} size={32} style={{ marginRight: -6 }} />
+        <span className="pg-row__index">{nested ? subIndex : index}</span>
+        <ClientAvatar name={avatarOf?.name ?? c.displayName} logo={avatarOf?.logo ?? c.logoUrl} size={32} style={{ marginRight: -6 }} />
         <span className="pg-row__name">
           <span className="pg-row__name-main">
             {c.displayName}

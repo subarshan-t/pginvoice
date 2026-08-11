@@ -1389,7 +1389,13 @@ export default function PGReconciliation({ onNavigateClients }) {
                   {siblings.map((s, idx) => {
                     const sc = withConsultantFilter(s, consultantFilter);
                     return (
-                      <ClientRow key={sc.name} client={sc} nested tileRow hasMoreBelow={idx < siblings.length - 1} parentName={c.displayName} active={drawerClientName === sc.name} onOpen={() => setDrawerClientName(sc.name)} onCopy={copySummary} onPdf={downloadPdf} />
+                      <ClientRow
+                        key={sc.name} client={sc} nested tileRow hasMoreBelow={idx < siblings.length - 1}
+                        subIndex={`${i + 1}s${idx === 0 ? "" : idx + 1}`}
+                        avatarOf={{ name: c.displayName, logo: c.logoUrl }}
+                        parentName={c.displayName} active={drawerClientName === sc.name}
+                        onOpen={() => setDrawerClientName(sc.name)} onCopy={copySummary} onPdf={downloadPdf}
+                      />
                     );
                   })}
                 </div>
