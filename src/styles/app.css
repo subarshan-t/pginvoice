@@ -990,6 +990,48 @@ button { font: inherit; }
 .pg-row-inline__more { background: none; border: 0; padding: 8px 0 0; cursor: pointer; color: var(--accent); font-family: var(--font-body); font-size: 12px; text-align: left; }
 .pg-row-inline__more:hover { text-decoration: underline; }
 
+/* ---- client invoicing: cost-centre roll-up -----------------------------------
+   A "cost centre" client (Aus3C, Majestic Plumbing + CLT, ...) logs real work across
+   several sibling ClickUp folders instead of one umbrella folder; multiFolderAccrualMatchesFor
+   already merges them into the parent row's package/worked/remaining figures — this panel
+   makes that merge visible, listing exactly which sub-projects contributed and how much,
+   instead of leaving a jump in the numbers with no explanation. Sits directly under the
+   parent row, same "continuous card" treatment as .pg-row-inline above. */
+.pg-tag--costcentre { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.pg-costcentre {
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--app-radius); box-shadow: var(--shadow-sm);
+  margin-top: 8px; overflow: hidden;
+}
+.pg-costcentre__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 18px; background: var(--bg-elevated); border-bottom: 1px solid var(--border-subtle);
+}
+.pg-costcentre__head-label { display: flex; align-items: center; gap: 8px; font-family: var(--font-body); font-size: 12px; color: var(--fg-secondary); }
+.pg-costcentre__head-total { font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary); font-variant-numeric: tabular-nums; }
+.pg-costcentre__table { display: flex; flex-direction: column; }
+.pg-costcentre__row {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) 90px 90px 90px 90px 90px;
+  align-items: center; gap: 16px; padding: 10px 18px; border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary);
+}
+.pg-costcentre__row:last-of-type { border-bottom: 0; }
+.pg-costcentre__row--header {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary);
+}
+.pg-costcentre__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pg-costcentre__name-main { font-family: var(--font-display); font-weight: 400; font-size: 14px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-costcentre__name-sub { font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-costcentre__footer {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(4, 1fr);
+  align-items: center; gap: 16px; padding: 14px 18px; background: var(--bg-elevated);
+}
+.pg-costcentre__footer-label { font-family: var(--font-body); font-size: 12px; color: var(--accent); line-height: 1.4; }
+@media (max-width: 900px) {
+  .pg-costcentre__row, .pg-costcentre__footer { grid-template-columns: 1fr; row-gap: 6px; text-align: left; }
+  .pg-costcentre__row--header { display: none; }
+}
+
 /* ---- client invoicing: right-side drawer -----------------------------------
    Purple Giraffe Design OS §11.7 — client detail, opened alongside the list
    (not on top of it): the page becomes a flex row, the list pane shrinks and

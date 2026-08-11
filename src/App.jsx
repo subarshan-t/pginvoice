@@ -8,7 +8,7 @@ import {
   Calendar, SlidersHorizontal,
 } from "lucide-react";
 import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, TYPE_LABELS_SHORT, dominantClientType, basisToClientType } from "./nameMatch.js";
+import { findMatch, multiFolderAccrualMatchesFor, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, TYPE_LABELS_SHORT, dominantClientType, basisToClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync, LIVE_SYNC_LABEL } from "./clickupSync.js";
 import { fetchAccruedForReconciliation, ACCRUALS_LIVE_SYNC_LABEL } from "./accrualsSync.js";
 import { SEED_CLIENTS as CAP_SEED_CLIENTS, SEED_PEOPLE, loadKey as loadCapKey } from "./capacityData.js";
@@ -535,6 +535,52 @@ export default function PGReconciliation({ onNavigateClients }) {
       }
     }
 
+    // Some clients (Aus3C, Majestic Plumbing, Clarke Energy, etc.) run real work across
+    // several sibling ClickUp folders ("cost centres") instead of one umbrella folder --
+    // Client Accruals and Capacity Planning already merge these via multiFolderAccrualMatchesFor,
+    // but until now Client Invoicing showed each sibling folder as its own unrelated top-level
+    // row, each independently matching (and each separately claiming) the SAME accrued-sheet
+    // package -- e.g. Aus3C's four active folders would all show "package 20h" as if each had
+    // its own independent 20h commitment, instead of the four together sharing one. Fold every
+    // sibling into the folder with the most logged minutes (its "cost centre parent"), tagging
+    // that merged entry with `costCentre` so the row can render the roll-up breakdown.
+    const folderNames = [...map.keys()];
+    for (const accName of accruedNames) {
+      const multi = multiFolderAccrualMatchesFor(accName, folderNames);
+      const matchedInMap = multi ? multi.filter((f) => map.has(f)) : [];
+      if (matchedInMap.length < 2) continue;
+      let primary = matchedInMap[0];
+      for (const f of matchedInMap) if (map.get(f).totalMin > map.get(primary).totalMin) primary = f;
+      const primaryEntry = map.get(primary);
+      const directHours = primaryEntry.totalMin / 60;
+      const subFolders = [];
+      for (const f of matchedInMap) {
+        if (f === primary) continue;
+        const entry = map.get(f);
+        subFolders.push({ name: f, hours: entry.totalMin / 60 });
+        primaryEntry.totalMin += entry.totalMin;
+        for (const [task, min] of entry.tasksAll) primaryEntry.tasksAll.set(task, (primaryEntry.tasksAll.get(task) || 0) + min);
+        for (const [u, min] of entry.userMinutes) primaryEntry.userMinutes.set(u, (primaryEntry.userMinutes.get(u) || 0) + min);
+        for (const [u, tm] of entry.tasksByUser) {
+          if (!primaryEntry.tasksByUser.has(u)) primaryEntry.tasksByUser.set(u, new Map());
+          const t = primaryEntry.tasksByUser.get(u);
+          for (const [task, min] of tm) t.set(task, (t.get(task) || 0) + min);
+        }
+        for (const [task, tu] of entry.taskUsers) {
+          if (!primaryEntry.taskUsers.has(task)) primaryEntry.taskUsers.set(task, new Map());
+          const t = primaryEntry.taskUsers.get(task);
+          for (const [u, min] of tu) t.set(u, (t.get(u) || 0) + min);
+        }
+        for (const [task, ids] of entry.taskIds) {
+          if (!primaryEntry.taskIds.has(task)) primaryEntry.taskIds.set(task, new Set());
+          for (const id of ids) primaryEntry.taskIds.get(task).add(id);
+        }
+        map.delete(f);
+      }
+      subFolders.sort((a, b) => b.hours - a.hours);
+      primaryEntry.costCentre = { subFolders, directHours, totalWorked: primaryEntry.totalMin / 60 };
+    }
+
     const out = [];
     for (const c of map.values()) {
       const worked = c.totalMin / 60;
@@ -592,6 +638,7 @@ export default function PGReconciliation({ onNavigateClients }) {
         pkg, priorBalance, priorBalanceEstimated, newBalance, remaining, kpiPct, status, priorMismatch,
         matched: !!accruedClient,
         displayName: accruedClient?.name ?? c.name,
+        costCentre: c.costCentre || null,
       };
       clientObj.type = classifyClient(clientObj);
       // The Clients module knows what this client was actually billing as for THIS

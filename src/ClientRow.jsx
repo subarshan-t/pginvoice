@@ -1,15 +1,69 @@
 import React, { useState } from "react";
-import { Link2, MoreVertical, ChevronDown, Copy, Printer, Users } from "lucide-react";
+import { Link2, MoreVertical, ChevronDown, Copy, Printer, Users, HelpCircle } from "lucide-react";
 import { fmt, isPackageLikeType } from "./format.js";
 import { CLIENT_TYPE_TONES, TYPE_LABELS_SHORT } from "./nameMatch.js";
 import { ClientAvatar } from "./avatar.jsx";
 import { useDismissable } from "./useDismissable.js";
 import { ExportItem } from "./ExportItem.jsx";
 
+// The sub-project breakdown for a "cost centre" client — one whose real work is logged
+// across several sibling ClickUp folders (e.g. Aus3C's training programs, Majestic
+// Plumbing + CLT) instead of a single umbrella folder. multiFolderAccrualMatchesFor
+// (nameMatch.js) already merges these for the package/remaining/status figures shown on
+// the parent row itself; this just makes that merge visible instead of silently folding
+// the sibling folders' hours in with no indication where they came from.
+function CostCentreBreakdown({ client: c, pkg }) {
+  const { subFolders, totalWorked } = c.costCentre;
+  const rollupAdjustment = pkg != null ? totalWorked - pkg : null;
+  const netApplied = pkg != null ? Math.min(totalWorked, pkg) : totalWorked;
+  return (
+    <div className="pg-costcentre">
+      <div className="pg-costcentre__head">
+        <span className="pg-costcentre__head-label"><Users size={14} /> {subFolders.length} sub-project{subFolders.length === 1 ? "" : "s"} (rolled up to this cost centre)</span>
+        <span className="pg-costcentre__head-total"><span className="pg-row__num-label">Total worked</span>{fmt(totalWorked)} h</span>
+      </div>
+      <div className="pg-costcentre__table">
+        <div className="pg-costcentre__row pg-costcentre__row--header">
+          <span>Sub-project</span><span>Type</span><span>Package</span><span>Worked</span><span>Remaining</span><span>Status</span>
+        </div>
+        {subFolders.map((s) => (
+          <div className="pg-costcentre__row" key={s.name}>
+            <span className="pg-costcentre__name">
+              <span className="pg-costcentre__name-main">{s.name}</span>
+              <span className="pg-costcentre__name-sub">Cost centre of {c.displayName}</span>
+            </span>
+            <span><span className="pg-tag pg-tag--pill" style={{ color: CLIENT_TYPE_TONES.hourly }}>{TYPE_LABELS_SHORT.hourly}</span></span>
+            <span>—</span>
+            <span>{fmt(s.hours)} h</span>
+            <span>—</span>
+            <span>—</span>
+          </div>
+        ))}
+      </div>
+      <div className="pg-costcentre__footer">
+        <span className="pg-costcentre__footer-label">These hours are rolled up to<br /><b>{c.displayName}</b></span>
+        <span className="pg-row__num"><span className="pg-row__num-label">Total worked (from projects)</span>{fmt(totalWorked)} h</span>
+        <span className="pg-row__num"><span className="pg-row__num-label">Package</span>{pkg != null ? `${fmt(pkg)} h` : "—"}</span>
+        <span className="pg-row__num" style={rollupAdjustment != null && rollupAdjustment < 0 ? { color: "var(--status-warn)" } : undefined}
+          title="Total worked across every sub-project, minus the parent's package.">
+          <span className="pg-row__num-label"><HelpCircle size={11} /> Roll-up adjustment</span>
+          {rollupAdjustment != null ? `${rollupAdjustment < 0 ? "−" : "+"}${fmt(Math.abs(rollupAdjustment))} h` : "—"}
+        </span>
+        <span className="pg-row__num" style={{ color: "var(--accent-orchid)" }}>
+          <span className="pg-row__num-label">Net applied / billed</span>{fmt(netApplied)} h
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // Compact numbered row — the list's default state. Clicking anywhere on it opens
 // the full client detail in the right-side drawer (see ClientDrawer.jsx).
 export function ClientRow({ index, client: c, active, onOpen, nested, parentName, onCopy, onPdf }) {
   const [inlineOpen, setInlineOpen] = useState(false);
+  // Cost-centre breakdown starts expanded — the whole point of showing it is to make
+  // the roll-up visible by default, not to hide it behind another click.
+  const [costCentreOpen, setCostCentreOpen] = useState(true);
   const [tasksAllShown, setTasksAllShown] = useState(false);
   const [consultantsAllShown, setConsultantsAllShown] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -85,9 +139,23 @@ export function ClientRow({ index, client: c, active, onOpen, nested, parentName
           <span className="pg-row__name-main">
             {c.displayName}
             {c.isOffboarded && <span className="pg-tag pg-tag--muted pg-tag--pill" style={{ marginLeft: 6 }} title={c.offboardNote}>Offboarded</span>}
+            {c.costCentre && (
+              <>
+                <button
+                  type="button" aria-label={costCentreOpen ? "Collapse cost centre breakdown" : "Expand cost centre breakdown"}
+                  className="pg-icon-btn-sm" style={{ marginLeft: 4 }}
+                  onClick={(e) => { e.stopPropagation(); setCostCentreOpen((o) => !o); }}
+                >
+                  <ChevronDown size={14} style={{ transform: costCentreOpen ? "rotate(180deg)" : undefined }} />
+                </button>
+                <span className="pg-tag pg-tag--pill pg-tag--costcentre" style={{ marginLeft: 4 }}>Rolled up</span>
+              </>
+            )}
           </span>
           <span className="pg-row__name-sub">
-            {nested ? <><Link2 size={10} /> Related sub-project of {parentName}</> : (c.capGroup && c.capGroup !== c.displayName ? c.capGroup : null)}
+            {nested ? <><Link2 size={10} /> Related sub-project of {parentName}</>
+              : c.costCentre ? `${c.costCentre.subFolders.length} project${c.costCentre.subFolders.length === 1 ? "" : "s"} rolled up to this cost centre`
+              : (c.capGroup && c.capGroup !== c.displayName ? c.capGroup : null)}
           </span>
         </span>
         <span className="pg-tag pg-tag--pill" style={{ color: CLIENT_TYPE_TONES[c.type] }}>{TYPE_LABELS_SHORT[c.type]}</span>
@@ -134,6 +202,8 @@ export function ClientRow({ index, client: c, active, onOpen, nested, parentName
           )}
         </span>
       </div>
+
+      {c.costCentre && costCentreOpen && <CostCentreBreakdown client={c} pkg={c.pkg} />}
 
       {inlineOpen && (
         <div className="pg-row-inline">
