@@ -71,10 +71,22 @@ export async function fetchSyncMeta() {
 
 // Calls the Edge Function directly rather than waiting for the next cron
 // tick — used by the "Sync now" button for an on-demand refresh.
+//
+// Also reconciles last month (monthOffset: 1), not just the current one.
+// The Edge Function's stale-row cleanup only deletes rows whose entry_start
+// falls inside the month it just fetched, so a month that's never re-synced
+// never gets its deletions/edits reconciled again — an entry logged (and
+// later removed in ClickUp) right before a month boundary would linger in
+// Supabase forever once the calendar rolled over, even after clicking
+// "Sync now" repeatedly. Two months is cheap (well under the Edge
+// Function's per-invocation budget — see clickup-sync/index.ts) and covers
+// the realistic case of edits made just after month-end.
 export async function triggerManualSync() {
   const { data, error } = await supabase.functions.invoke("clickup-sync", { body: {} });
   if (error) throw error;
-  return data;
+  const { data: lastMonthData, error: lastMonthError } = await supabase.functions.invoke("clickup-sync", { body: { monthOffset: 1 } });
+  if (lastMonthError) throw lastMonthError;
+  return { current: data, lastMonth: lastMonthData };
 }
 
 // Settings' ClickUp connection card — status check never sees the raw token

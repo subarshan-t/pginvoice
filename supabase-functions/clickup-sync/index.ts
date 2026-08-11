@@ -13,11 +13,16 @@
 // Function's compute budget (WORKER_RESOURCE_LIMIT), since ~2,500 entries per
 // month is already ~3.5s of real work on its own.
 //
-// Invoked on a schedule via pg_cron every 20 minutes (see cron.job) with an
-// empty body, which defaults to monthOffset 0 (the current month) — that's
-// the only month whose entries realistically change day-to-day. To backfill
-// older months, invoke manually with a JSON body like {"monthOffset": 1} for
-// last month, {"monthOffset": 2} for the month before, etc.
+// Invoked on a schedule via pg_cron: every 20 minutes with an empty body
+// (monthOffset 0, the current month — where entries change day-to-day), and
+// every 4 hours with {"monthOffset": 1} (last month). The stale-row cleanup
+// below only deletes rows whose entry_start falls in the month just fetched,
+// so a month that's never re-synced never gets edits/deletions made in
+// ClickUp reconciled again -- without the monthOffset-1 job, an entry logged
+// (then edited/removed in ClickUp) right at a month boundary would linger in
+// Supabase forever once the calendar rolled over, even after "Sync now".
+// "Sync now" (App.jsx) mirrors this: it calls both offset 0 and offset 1.
+// To backfill further back, invoke manually with {"monthOffset": 2}, etc.
 //
 // CLICKUP_API_TOKEN must be set as an Edge Function secret (Project Settings
 // -> Edge Functions -> Secrets); it is never sent to the client.
