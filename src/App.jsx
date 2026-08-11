@@ -8,7 +8,7 @@ import {
   Calendar, SlidersHorizontal,
 } from "lucide-react";
 import { idbGet, idbSet, PG_DATA_EVENT } from "./idbStore.js";
-import { findMatch, multiFolderMatchesFor, multiFolderAccrualMatchesFor, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, TYPE_LABELS_SHORT, dominantClientType, basisToClientType } from "./nameMatch.js";
+import { findMatch, multiFolderAccrualMatchesFor, isInternalFolder, CLIENT_TYPE_LABELS, CLIENT_TYPE_TONES, TYPE_LABELS_SHORT, dominantClientType, basisToClientType } from "./nameMatch.js";
 import { fetchClickupFromSupabase, fetchSyncMeta, triggerManualSync, LIVE_SYNC_LABEL } from "./clickupSync.js";
 import { fetchAccruedForReconciliation, ACCRUALS_LIVE_SYNC_LABEL } from "./accrualsSync.js";
 import { SEED_CLIENTS as CAP_SEED_CLIENTS, SEED_PEOPLE, loadKey as loadCapKey } from "./capacityData.js";
@@ -543,18 +543,17 @@ export default function PGReconciliation({ onNavigateClients }) {
     // separately claiming) the SAME accrued-sheet package -- e.g. Aus3C's four active
     // folders would all show "package 20h" as if each had its own independent 20h
     // commitment, instead of the four together sharing one.
+    // A folder deliberately EXCLUDED from a client's package/accrual math (e.g. Majestic
+    // Plumbing's "Quoted Web Project" -- real client work, billed separately from the
+    // retainer) is left completely alone here -- it stays its own normal map entry, which
+    // the existing capacity-group sibling nesting below (siblingsByPrimaryName) already
+    // renders directly under its cost-centre parent as a "Sub project" row. Only the
+    // accrual-eligible folders get folded into one merged row.
     const folderNames = [...map.keys()];
     for (const accName of accruedNames) {
       const accrualFolders = multiFolderAccrualMatchesFor(accName, folderNames);
       const matchedInMap = accrualFolders ? accrualFolders.filter((f) => map.has(f)) : [];
-      // A rule can also carry folders deliberately EXCLUDED from the package/accrual math
-      // (e.g. Majestic Plumbing's "Quoted Web Project" -- real client work, billed
-      // separately from the retainer) -- multiFolderMatchesFor (no exclusions) minus
-      // multiFolderAccrualMatchesFor gives exactly those, still shown under this client
-      // for visibility, just kept out of the worked/package/remaining math.
-      const allFolders = multiFolderMatchesFor(accName, folderNames) || [];
-      const excludedFolderNames = allFolders.filter((f) => map.has(f) && !matchedInMap.includes(f));
-      if (matchedInMap.length < 2 && !excludedFolderNames.length) continue;
+      if (matchedInMap.length < 2) continue;
       // The client's own registered ClickUp folder (set in the Clients module) is the
       // right "identity" folder for this roll-up -- picking whichever sibling folder
       // happens to have logged the most hours that month used to promote essentially
@@ -564,23 +563,21 @@ export default function PGReconciliation({ onNavigateClients }) {
       // another sub-project row -- backwards from what the roll-up is meant to show.
       const profile = pgClientByName.get(accName);
       let primary = (profile?.clickupFolder && matchedInMap.includes(profile.clickupFolder)) ? profile.clickupFolder : null;
-      if (!primary && matchedInMap.length) {
+      if (!primary) {
         primary = matchedInMap[0];
         for (const f of matchedInMap) if (map.get(f).totalMin > map.get(primary).totalMin) primary = f;
       }
-      // No accrual-eligible folder logged anything this month, but an excluded (billed-
-      // separately) one did -- still needs somewhere to anchor the roll-up, so fall back
-      // to the busiest excluded folder rather than dropping the client's hours entirely.
-      if (!primary) {
-        primary = excludedFolderNames[0];
-        for (const f of excludedFolderNames) if (map.get(f).totalMin > map.get(primary).totalMin) primary = f;
-      }
       const primaryEntry = map.get(primary);
-      const subFolders = [];
+      // Hours logged directly to the parent's own umbrella folder, before folding any
+      // sibling's minutes in -- shown as its own line item (labelled with the client's
+      // real name, not the raw folder name) alongside the sibling folders, so the
+      // breakdown accounts for every hour in "Total worked" instead of only the siblings.
+      const directHours = primaryEntry.totalMin / 60;
+      const lineItems = [{ name: accName, hours: directHours }];
       for (const f of matchedInMap) {
         if (f === primary) continue;
         const entry = map.get(f);
-        subFolders.push({ name: f, hours: entry.totalMin / 60 });
+        lineItems.push({ name: f, hours: entry.totalMin / 60 });
         primaryEntry.totalMin += entry.totalMin;
         for (const [task, min] of entry.tasksAll) primaryEntry.tasksAll.set(task, (primaryEntry.tasksAll.get(task) || 0) + min);
         for (const [u, min] of entry.userMinutes) primaryEntry.userMinutes.set(u, (primaryEntry.userMinutes.get(u) || 0) + min);
@@ -600,17 +597,10 @@ export default function PGReconciliation({ onNavigateClients }) {
         }
         map.delete(f);
       }
-      const excludedSubFolders = [];
-      for (const f of excludedFolderNames) {
-        if (f === primary) continue;
-        excludedSubFolders.push({ name: f, hours: map.get(f).totalMin / 60 });
-        map.delete(f);
-      }
-      subFolders.sort((a, b) => b.hours - a.hours);
-      excludedSubFolders.sort((a, b) => b.hours - a.hours);
+      lineItems.sort((a, b) => b.hours - a.hours);
       primaryEntry.costCentre = {
-        subFolders, excludedSubFolders, totalWorked: primaryEntry.totalMin / 60,
-        accrualFolderNames: [primary, ...subFolders.map((s) => s.name)],
+        lineItems, totalWorked: primaryEntry.totalMin / 60,
+        accrualFolderNames: matchedInMap,
       };
       // The merged entry's true identity is the accrued client itself, not whichever raw
       // ClickUp folder ended up "primary" -- e.g. Magain Real Estate's busiest folder is

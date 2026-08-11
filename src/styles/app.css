@@ -993,56 +993,29 @@ button { font: inherit; }
 /* ---- client invoicing: cost-centre roll-up -----------------------------------
    A "cost centre" client (Aus3C, Majestic Plumbing + CLT, ...) logs real work across
    several sibling ClickUp folders instead of one umbrella folder; multiFolderAccrualMatchesFor
-   already merges them into the parent row's package/worked/remaining figures — this panel
-   makes that merge visible, listing exactly which sub-projects contributed and how much,
-   instead of leaving a jump in the numbers with no explanation. Sits directly under the
-   parent row, same "continuous card" treatment as .pg-row-inline above. */
-.pg-tag--costcentre {
-  color: var(--accent); background: var(--accent-soft); border: 0; cursor: pointer;
-  gap: 4px; font: inherit; font-family: var(--font-mono); font-weight: 500; font-size: 10px;
-  letter-spacing: 0.08em; text-transform: uppercase;
-  transition: background var(--dur) var(--ease);
+   already merges them into the parent row's package/worked/remaining figures. This is
+   deliberately a footnote to that row, not a second peer card: a plain "Rolled Up"
+   toggle in place of the row's usual subtitle, and — when open — a minimal dot-and-line
+   timeline of exactly which folders (including hours logged directly under the parent
+   itself) added up to the total. A folder excluded from the accrual (billed separately)
+   never appears here; it stays its own ordinary row, nested underneath via the existing
+   sub-project mechanism (.pg-row--nested), so the two concepts never visually collide. */
+.pg-row__name-sub--toggle {
+  display: inline-flex; align-items: center; gap: 3px; background: none; border: 0; padding: 0;
+  cursor: pointer; color: var(--accent); font-family: var(--font-body); font-size: 11px;
 }
-.pg-tag--costcentre:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
-.pg-costcentre {
-  background: var(--bg-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--app-radius); box-shadow: var(--shadow-sm);
-  margin-top: 8px; overflow: hidden;
+.pg-row__name-sub--toggle:hover { text-decoration: underline; }
+.pg-costcentre-mini { display: flex; flex-direction: column; padding: 2px 18px 10px 46px; }
+.pg-costcentre-mini__row { display: flex; align-items: center; gap: 10px; padding: 6px 0; position: relative; }
+/* The connecting line runs from each dot's center down to the next one, so the whole
+   list reads as one continuous thread rather than isolated rows -- skipped on the last
+   item, which has nothing left to connect to. */
+.pg-costcentre-mini__row:not(:last-child)::before {
+  content: ""; position: absolute; left: 3px; top: 14px; bottom: -6px; width: 1px; background: var(--border-soft);
 }
-.pg-costcentre__head {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 12px 18px; background: var(--bg-elevated); border-bottom: 1px solid var(--border-subtle);
-}
-.pg-costcentre__head-label { display: flex; align-items: center; gap: 8px; font-family: var(--font-body); font-size: 12px; color: var(--fg-secondary); }
-.pg-costcentre__head-total { font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary); font-variant-numeric: tabular-nums; }
-.pg-costcentre__table { display: flex; flex-direction: column; }
-.pg-costcentre__row {
-  display: grid; grid-template-columns: minmax(0, 1.4fr) 90px 90px 90px 90px 90px;
-  align-items: center; gap: 16px; padding: 10px 18px; border-bottom: 1px solid var(--border-subtle);
-  font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary);
-}
-.pg-costcentre__row:last-of-type { border-bottom: 0; }
-/* Billed-separately sub-projects (e.g. Majestic Plumbing's Quoted Web Project) stay
-   listed under their cost centre for visibility, but read as distinct from the
-   accrual-eligible rows above them -- muted text + a dashed divider instead of the
-   solid one, so it's clear at a glance these hours aren't part of the package math. */
-.pg-costcentre__row--excluded { color: var(--fg-tertiary); border-top: 1px dashed var(--border-soft); }
-.pg-costcentre__row--excluded .pg-costcentre__name-main { color: var(--fg-secondary); }
-.pg-costcentre__row--header {
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-tertiary);
-}
-.pg-costcentre__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.pg-costcentre__name-main { font-family: var(--font-display); font-weight: 400; font-size: 14px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pg-costcentre__name-sub { font-family: var(--font-body); font-size: 11px; color: var(--fg-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pg-costcentre__footer {
-  display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(4, 1fr);
-  align-items: center; gap: 16px; padding: 14px 18px; background: var(--bg-elevated);
-}
-.pg-costcentre__footer-label { font-family: var(--font-body); font-size: 12px; color: var(--accent); line-height: 1.4; }
-@media (max-width: 900px) {
-  .pg-costcentre__row, .pg-costcentre__footer { grid-template-columns: 1fr; row-gap: 6px; text-align: left; }
-  .pg-costcentre__row--header { display: none; }
-}
+.pg-costcentre-mini__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); z-index: 1; }
+.pg-costcentre-mini__name { flex: 1 1 auto; min-width: 0; font-family: var(--font-body); font-size: 13px; color: var(--fg-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-costcentre-mini__hours { flex: none; font-family: var(--font-mono); font-size: 13px; color: var(--fg-primary); font-variant-numeric: tabular-nums; }
 
 /* ---- client invoicing: right-side drawer -----------------------------------
    Purple Giraffe Design OS §11.7 — client detail, opened alongside the list
