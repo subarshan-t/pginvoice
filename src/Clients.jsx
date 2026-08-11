@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Search, ArrowRight, Pencil, Check, AlertTriangle, Upload, X } from "lucide-react";
 import { fetchClients, fetchClientEvents, createClientEvent, applyDueClientEvents, updateClickupFolder, updateClientWebsite, updateClientLogo } from "./clientsSync.js";
+import { multiFolderMatchesFor, multiFolderAccrualMatchesFor } from "./nameMatch.js";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { CLICKUP_DB_KEY, PG_CLIENTS_KEY } from "./storageKeys.js";
 import { ClientAvatar, resizePhotoFile } from "./avatar.jsx";
@@ -270,6 +271,31 @@ export default function Clients() {
   const [editingLogo, setEditingLogo] = useState(null); // client name currently showing the logo popover
 
   const folderList = useMemo(() => (folderSet ? [...folderSet].sort((a, b) => a.localeCompare(b)) : []), [folderSet]);
+  // Reflects the cost-centre/sub-project relationships defined in nameMatch.js's
+  // MULTI_FOLDER_CLIENTS (the same rules Client Invoicing's roll-up and Client
+  // Accruals' accrual math both read) -- read-only here, since those rules are still
+  // code-defined, not stored data; this just makes them visible where a client's
+  // folder is otherwise managed, instead of leaving them undiscoverable outside the
+  // codebase. `info` maps a parent client -> its cost-centre folders (accrual-
+  // eligible siblings) and sub-project folders (billed separately, excluded from the
+  // accrual); `subProjectOf` is the reverse lookup, folder -> parent client name, so
+  // a sub-project's OWN row (e.g. BAMSS Childcare Security Services) can show which
+  // parent tile it rolls up under in Client Invoicing.
+  const costCentreInfo = useMemo(() => {
+    const info = new Map();
+    const subProjectOf = new Map();
+    if (!folderList.length) return { info, subProjectOf };
+    for (const c of clients) {
+      const all = multiFolderMatchesFor(c.client, folderList);
+      if (!all || all.length < 2) continue;
+      const accrual = multiFolderAccrualMatchesFor(c.client, folderList) || [];
+      const costCentres = all.filter((f) => f !== c.clickupFolder && accrual.includes(f));
+      const subProjects = all.filter((f) => !accrual.includes(f));
+      if (costCentres.length || subProjects.length) info.set(c.client, { costCentres, subProjects });
+      subProjects.forEach((f) => subProjectOf.set(f, c.client));
+    }
+    return { info, subProjectOf };
+  }, [clients, folderList]);
   const folderSuggestions = useMemo(() => {
     const q = draftFolder.trim().toLowerCase();
     const pool = q ? folderList.filter((f) => f.toLowerCase().includes(q)) : folderList;
@@ -453,6 +479,28 @@ export default function Clients() {
                         {unmatched && <AlertTriangle size={12} style={{ color: "var(--status-warn)" }} />}
                         <span style={{ flex: 1, color: c.clickupFolder ? undefined : "var(--fg-tertiary)" }}>{c.clickupFolder || "Not set"}</span>
                         <Pencil size={11} />
+                      </div>
+                    )}
+                    {costCentreInfo.info.has(c.client) && (() => {
+                      const { costCentres, subProjects } = costCentreInfo.info.get(c.client);
+                      return (
+                        <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.5 }}>
+                          {costCentres.length > 0 && (
+                            <div style={{ color: "var(--accent)" }} title={costCentres.join(", ")}>
+                              + {costCentres.length} cost centre{costCentres.length === 1 ? "" : "s"}: {costCentres.join(", ")}
+                            </div>
+                          )}
+                          {subProjects.length > 0 && (
+                            <div style={{ color: "var(--fg-tertiary)" }} title={subProjects.join(", ")}>
+                              + {subProjects.length} sub-project{subProjects.length === 1 ? "" : "s"}: {subProjects.join(", ")}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {c.clickupFolder && costCentreInfo.subProjectOf.has(c.clickupFolder) && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: "var(--fg-tertiary)" }}>
+                        Sub-project of {costCentreInfo.subProjectOf.get(c.clickupFolder)}
                       </div>
                     )}
                   </td>
