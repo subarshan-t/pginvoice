@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   normalizeName,
   tokenSim,
@@ -9,6 +9,8 @@ import {
   multiFolderMatchesFor,
   multiFolderAccrualMatchesFor,
   isInternalFolder,
+  setDynamicCostCentres,
+  isDynamicCostCentreClient,
 } from "./nameMatch.js";
 
 describe("findMatch", () => {
@@ -222,5 +224,45 @@ describe("findPersonMatch", () => {
     ];
     const m = findPersonMatch("Alex Brown", collidingPeople);
     expect(m).toEqual(collidingPeople[0]);
+  });
+});
+
+describe("dynamic cost centres (Clients module editable rules)", () => {
+  afterEach(() => setDynamicCostCentres([])); // module-level singleton -- reset between tests
+
+  it("is inert until populated", () => {
+    expect(isDynamicCostCentreClient("Aus 3C")).toBe(false);
+    // falls through to the hardcoded rule when no dynamic rows exist
+    const folders = ["Aus3C Cyber Battle", "Aus3C IRAP"];
+    expect(multiFolderMatchesFor("Aus3C", folders)).toEqual(folders);
+  });
+
+  it("takes priority over a hardcoded rule for the same client, by exact name", () => {
+    setDynamicCostCentres([{ client: "Aus 3C", folder: "Aus3C New Program", kind: "cost_centre" }]);
+    expect(isDynamicCostCentreClient("Aus 3C")).toBe(true);
+    // Only the dynamic folder -- the hardcoded prefix rule's other folders are NOT merged in.
+    const folders = ["Aus3C Cyber Battle", "Aus3C New Program", "Unrelated"];
+    expect(multiFolderMatchesFor("Aus 3C", folders)).toEqual(["Aus3C New Program"]);
+  });
+
+  it("excludes sub_project-kind folders from the accrual set but keeps them in the total", () => {
+    setDynamicCostCentres([
+      { client: "Test Client", folder: "Test Client Cost Centre A", kind: "cost_centre" },
+      { client: "Test Client", folder: "Test Client Quoted Bit", kind: "sub_project" },
+    ]);
+    const folders = ["Test Client Cost Centre A", "Test Client Quoted Bit"];
+    expect(multiFolderMatchesFor("Test Client", folders)).toEqual(folders);
+    expect(multiFolderAccrualMatchesFor("Test Client", folders)).toEqual(["Test Client Cost Centre A"]);
+  });
+
+  it("only returns folders actually present in the live folder list passed in", () => {
+    setDynamicCostCentres([{ client: "Test Client", folder: "Folder That No Longer Exists", kind: "cost_centre" }]);
+    expect(multiFolderMatchesFor("Test Client", ["Some Other Folder"])).toEqual([]);
+  });
+
+  it("a client with no dynamic rows at all is unaffected by another client's rows", () => {
+    setDynamicCostCentres([{ client: "Test Client", folder: "Test Client Cost Centre A", kind: "cost_centre" }]);
+    expect(isDynamicCostCentreClient("Some Other Client")).toBe(false);
+    expect(multiFolderMatchesFor("Some Other Client", ["Test Client Cost Centre A"])).toBeNull();
   });
 });

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Search, ArrowRight, Pencil, Check, AlertTriangle, Upload, X } from "lucide-react";
-import { fetchClients, fetchClientEvents, createClientEvent, applyDueClientEvents, updateClickupFolder, updateClientWebsite, updateClientLogo } from "./clientsSync.js";
-import { multiFolderMatchesFor, multiFolderAccrualMatchesFor } from "./nameMatch.js";
+import { fetchClients, fetchClientEvents, createClientEvent, applyDueClientEvents, updateClickupFolder, updateClientWebsite, updateClientLogo, fetchCostCentres, addCostCentreFolder, removeCostCentreFolder } from "./clientsSync.js";
+import { multiFolderMatchesFor, multiFolderAccrualMatchesFor, setDynamicCostCentres, isDynamicCostCentreClient } from "./nameMatch.js";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
-import { CLICKUP_DB_KEY, PG_CLIENTS_KEY } from "./storageKeys.js";
+import { CLICKUP_DB_KEY, PG_CLIENTS_KEY, PG_COST_CENTRES_KEY } from "./storageKeys.js";
 import { ClientAvatar, resizePhotoFile } from "./avatar.jsx";
 import { useDismissable } from "./useDismissable.js";
 
@@ -269,6 +269,16 @@ export default function Clients() {
   const [savingFolder, setSavingFolder] = useState(false);
   const [folderMenuOpen, setFolderMenuOpen] = useState(false);
   const [editingLogo, setEditingLogo] = useState(null); // client name currently showing the logo popover
+  const [managingCostCentres, setManagingCostCentres] = useState(null); // client name whose cost-centre list is expanded for editing
+  const [draftCostCentreFolder, setDraftCostCentreFolder] = useState("");
+  const [draftCostCentreKind, setDraftCostCentreKind] = useState("cost_centre");
+  const [savingCostCentre, setSavingCostCentre] = useState(false);
+  // nameMatch.js's dynamic cost-centre rules are a module-level singleton (see
+  // setDynamicCostCentres) fed by Shell.jsx, not React state -- costCentreInfo below reads
+  // them via a plain function call, so it has no way to know they changed on its own. This
+  // is bumped whenever the underlying table changes (via this tab's own edits or another
+  // tab's, both arrive as the same PG_DATA_EVENT) purely to force that useMemo to rerun.
+  const [costCentreVersion, setCostCentreVersion] = useState(0);
 
   const folderList = useMemo(() => (folderSet ? [...folderSet].sort((a, b) => a.localeCompare(b)) : []), [folderSet]);
   // Reflects the cost-centre/sub-project relationships defined in nameMatch.js's
@@ -300,7 +310,10 @@ export default function Clients() {
       subProjects.forEach((f) => subProjectOf.set(f, c.client));
     }
     return { info, subProjectOf };
-  }, [clients, folderList]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- costCentreVersion isn't read
+    // in the body; it's here purely to force a rerun when the dynamic table changes (see
+    // its declaration above).
+  }, [clients, folderList, costCentreVersion]);
   const folderSuggestions = useMemo(() => {
     const q = draftFolder.trim().toLowerCase();
     const pool = q ? folderList.filter((f) => f.toLowerCase().includes(q)) : folderList;
@@ -323,14 +336,28 @@ export default function Clients() {
     setFolderSet(new Set((cu?.rows || []).map((r) => r.folder).filter(Boolean)));
   }
 
+  // Fetched independently here (Shell.jsx also fetches this to feed every other module) rather
+  // than just relying on Shell's own fetch to finish and trusting the timing -- awaiting it
+  // directly before bumping costCentreVersion means this page's own display can never show a
+  // stale dynamic-rules snapshot after an edit, regardless of when Shell's fetch resolves.
+  async function loadCostCentres() {
+    try {
+      const rows = await fetchCostCentres();
+      setDynamicCostCentres(rows);
+      setCostCentreVersion((v) => v + 1);
+    } catch (e) {}
+  }
+
   useEffect(() => {
     load();
     loadFolders();
+    loadCostCentres();
     const onUpdate = (e) => {
       if (!e.detail || e.detail.key === CLICKUP_DB_KEY) loadFolders();
       // A consultant/status/new-client change made from Capacity Planning writes to the same
       // pginvoice_clients table -- refresh so it shows here without a full page reload.
       if (!e.detail || e.detail.key === PG_CLIENTS_KEY) load();
+      if (!e.detail || e.detail.key === PG_COST_CENTRES_KEY) loadCostCentres();
     };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
     return () => window.removeEventListener(PG_DATA_EVENT, onUpdate);
@@ -350,6 +377,35 @@ export default function Clients() {
       setLoadError("Couldn't save that ClickUp folder name: " + (e.message || e));
     } finally {
       setSavingFolder(false);
+    }
+  }
+
+  async function addCostCentre(client) {
+    if (!draftCostCentreFolder) return;
+    setSavingCostCentre(true);
+    try {
+      await addCostCentreFolder(client, draftCostCentreFolder, draftCostCentreKind);
+      // loadCostCentres() will run again from the PG_DATA_EVENT this dispatches, but that's
+      // async on its own schedule -- refresh directly too so the just-added folder appears
+      // in this same interaction instead of waiting on the event round-trip.
+      await loadCostCentres();
+      setDraftCostCentreFolder("");
+    } catch (e) {
+      setLoadError("Couldn't add that cost centre: " + (e.message || e));
+    } finally {
+      setSavingCostCentre(false);
+    }
+  }
+
+  async function removeCostCentre(client, folder) {
+    setSavingCostCentre(true);
+    try {
+      await removeCostCentreFolder(client, folder);
+      await loadCostCentres();
+    } catch (e) {
+      setLoadError("Couldn't remove that cost centre: " + (e.message || e));
+    } finally {
+      setSavingCostCentre(false);
     }
   }
 
@@ -486,19 +542,75 @@ export default function Clients() {
                         <Pencil size={11} />
                       </div>
                     )}
-                    {costCentreInfo.info.has(c.client) && (() => {
-                      const { costCentres, subProjects } = costCentreInfo.info.get(c.client);
+                    {(() => {
+                      const isDynamic = isDynamicCostCentreClient(c.client);
+                      const cc = costCentreInfo.info.get(c.client);
+                      // A client still running on a hardcoded MULTI_FOLDER_CLIENTS rule (not
+                      // yet given any explicit rows) is shown read-only -- adding even one
+                      // folder here would switch it to dynamic-only and silently drop every
+                      // other folder the hardcoded rule was matching (see nameMatch.js).
+                      if (cc && !isDynamic) {
+                        return (
+                          <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.5 }}>
+                            {cc.costCentres.length > 0 && (
+                              <div style={{ color: "var(--accent)" }} title={cc.costCentres.join(", ")}>
+                                + {cc.costCentres.length} cost centre{cc.costCentres.length === 1 ? "" : "s"}: {cc.costCentres.join(", ")}
+                              </div>
+                            )}
+                            {cc.subProjects.length > 0 && (
+                              <div style={{ color: "var(--fg-tertiary)" }} title={cc.subProjects.join(", ")}>
+                                + {cc.subProjects.length} sub-project{cc.subProjects.length === 1 ? "" : "s"}: {cc.subProjects.join(", ")}
+                              </div>
+                            )}
+                            <div style={{ color: "var(--fg-tertiary)", fontStyle: "italic" }}>
+                              Built into the app — ask to have this made editable
+                            </div>
+                          </div>
+                        );
+                      }
+                      const costCentres = cc?.costCentres || [];
+                      const subProjects = cc?.subProjects || [];
+                      const assigned = new Set([c.clickupFolder, ...costCentres, ...subProjects].filter(Boolean));
                       return (
-                        <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.5 }}>
-                          {costCentres.length > 0 && (
-                            <div style={{ color: "var(--accent)" }} title={costCentres.join(", ")}>
-                              + {costCentres.length} cost centre{costCentres.length === 1 ? "" : "s"}: {costCentres.join(", ")}
+                        <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.6 }}>
+                          {costCentres.map((f) => (
+                            <div key={f} style={{ color: "var(--accent)", display: "flex", alignItems: "center", gap: 4 }}>
+                              <span style={{ flex: 1 }}>Cost centre: {f}</span>
+                              <button type="button" className="pg-icon-btn-sm" style={{ padding: 0 }} title="Remove" disabled={savingCostCentre}
+                                onClick={() => removeCostCentre(c.client, f)}>
+                                <X size={10} />
+                              </button>
                             </div>
-                          )}
-                          {subProjects.length > 0 && (
-                            <div style={{ color: "var(--fg-tertiary)" }} title={subProjects.join(", ")}>
-                              + {subProjects.length} sub-project{subProjects.length === 1 ? "" : "s"}: {subProjects.join(", ")}
+                          ))}
+                          {subProjects.map((f) => (
+                            <div key={f} style={{ color: "var(--fg-tertiary)", display: "flex", alignItems: "center", gap: 4 }}>
+                              <span style={{ flex: 1 }}>Sub-project: {f}</span>
+                              <button type="button" className="pg-icon-btn-sm" style={{ padding: 0 }} title="Remove" disabled={savingCostCentre}
+                                onClick={() => removeCostCentre(c.client, f)}>
+                                <X size={10} />
+                              </button>
                             </div>
+                          ))}
+                          {managingCostCentres === c.client ? (
+                            <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap", marginTop: 2 }}>
+                              <select className="pg-input" style={{ maxWidth: 160, fontSize: 11 }}
+                                value={draftCostCentreFolder} onChange={(e) => setDraftCostCentreFolder(e.target.value)}>
+                                <option value="">Pick a folder…</option>
+                                {folderList.filter((f) => !assigned.has(f)).map((f) => <option key={f} value={f}>{f}</option>)}
+                              </select>
+                              <select className="pg-input" style={{ maxWidth: 120, fontSize: 11 }}
+                                value={draftCostCentreKind} onChange={(e) => setDraftCostCentreKind(e.target.value)}>
+                                <option value="cost_centre">Cost centre</option>
+                                <option value="sub_project">Sub-project</option>
+                              </select>
+                              <button className="pg-btn-ghost" disabled={!draftCostCentreFolder || savingCostCentre} onClick={() => addCostCentre(c.client)}><Check size={12} /></button>
+                              <button className="pg-btn-ghost" onClick={() => { setManagingCostCentres(null); setDraftCostCentreFolder(""); }}><X size={12} /></button>
+                            </div>
+                          ) : (
+                            <button type="button" className="pg-row-inline__more" style={{ fontSize: 11 }}
+                              onClick={() => { setManagingCostCentres(c.client); setDraftCostCentreFolder(""); setDraftCostCentreKind("cost_centre"); }}>
+                              + Add cost centre / sub-project
+                            </button>
                           )}
                         </div>
                       );

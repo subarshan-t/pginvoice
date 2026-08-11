@@ -11,6 +11,10 @@ import Clients from "./Clients.jsx";
 import TeamDashboard from "./TeamDashboard.jsx";
 import SettingsPage from "./Settings.jsx";
 import { supabase } from "./supabaseClient.js";
+import { fetchCostCentres } from "./clientsSync.js";
+import { setDynamicCostCentres } from "./nameMatch.js";
+import { PG_DATA_EVENT } from "./idbStore.js";
+import { PG_COST_CENTRES_KEY } from "./storageKeys.js";
 
 // Nav order/labels follow the approved Purple Giraffe Design OS mockup.
 const MODULES = [
@@ -133,6 +137,22 @@ export default function Shell() {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => setSession(newSession ?? false));
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  // The user-editable cost-centre/sub-project links (pginvoice_cost_centres, managed from
+  // the Clients module) -- fetched once here at the top, rather than by each page that
+  // needs it, since every page is mounted simultaneously (just hidden via CSS below) and
+  // nameMatch.js's matching functions are a synchronous singleton fed by setDynamicCostCentres,
+  // not something each caller fetches for itself. Requires a session (RLS needs an
+  // authenticated user), so this only runs once logged in.
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    const load = () => fetchCostCentres().then((rows) => { if (!cancelled) setDynamicCostCentres(rows); }).catch(() => {});
+    load();
+    const onUpdate = (e) => { if (!e.detail || e.detail.key === PG_COST_CENTRES_KEY) load(); };
+    window.addEventListener(PG_DATA_EVENT, onUpdate);
+    return () => { cancelled = true; window.removeEventListener(PG_DATA_EVENT, onUpdate); };
+  }, [session]);
 
   if (session === null) return null; // brief check, avoids a login-screen flash
   if (!session) return <LoginGate onSuccess={setSession} />;

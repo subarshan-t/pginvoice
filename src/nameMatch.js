@@ -183,9 +183,50 @@ const MULTI_FOLDER_CLIENTS = [
   { key: "vegetation solutions", prefixes: ["vegetation solutions"] },
 ];
 
+// User-editable cost-centre/sub-project links (Clients module -> pginvoice_cost_centres),
+// keyed by EXACT client name rather than a fuzzy substring like MULTI_FOLDER_CLIENTS below --
+// these are explicit, individually-added rows, so there's no ambiguity to resolve. Populated
+// once via setDynamicCostCentres (called from App.jsx/Clients.jsx after fetching the table);
+// every other module that imports multiFolderMatchesFor/multiFolderAccrualMatchesFor picks up
+// the same data automatically since this module is a singleton, without needing its own fetch
+// or becoming async. Starts empty, which is indistinguishable from "no dynamic rows for any
+// client yet" -- exactly what you want before the first fetch resolves.
+let DYNAMIC_COST_CENTRES = new Map(); // client name -> { folders: string[], excludeFromAccrual: string[] (real folder names, not prefixes) }
+
+// `rows`: [{ client, folder, kind }], kind is "cost_centre" or "sub_project" (see
+// pginvoice_cost_centres). Call with the full current table contents each time (not deltas)
+// -- this replaces the whole map, same pattern as the rest of the app's Supabase-backed state.
+export function setDynamicCostCentres(rows) {
+  const next = new Map();
+  for (const r of rows || []) {
+    if (!next.has(r.client)) next.set(r.client, { folders: [], excludeFromAccrual: [] });
+    const entry = next.get(r.client);
+    entry.folders.push(r.folder);
+    if (r.kind === "sub_project") entry.excludeFromAccrual.push(r.folder);
+  }
+  DYNAMIC_COST_CENTRES = next;
+}
+
+// Whether `name` currently has explicit rows in the user-editable table -- a client with
+// dynamic rows is fully managed through the Clients module UI (the hardcoded rule below, if
+// any, is ignored for it entirely); a client still running on a hardcoded MULTI_FOLDER_CLIENTS
+// rule has no dynamic rows to edit yet. The Clients module uses this to decide whether to
+// offer add/remove controls or just a read-only view with a note to have it converted --
+// adding even one folder for an still-hardcoded client would otherwise silently switch it to
+// dynamic-only and drop every other folder the hardcoded rule was matching.
+export function isDynamicCostCentreClient(name) {
+  return DYNAMIC_COST_CENTRES.has(name);
+}
+
 // Returns every real ClickUp folder belonging to a multi-folder client, or null if `name`
-// isn't one of them (meaning the caller should fall back to plain findMatch instead).
+// isn't one of them (meaning the caller should fall back to plain findMatch instead). Checks
+// the user-editable dynamic table first (exact name match) -- a client with explicit rows
+// there is fully managed through the Clients module UI, and the hardcoded MULTI_FOLDER_CLIENTS
+// prefix rule below (if any) is ignored for it entirely, rather than the two silently
+// combining into a confusing double-match.
 export function multiFolderMatchesFor(name, allFolders) {
+  const dynamic = DYNAMIC_COST_CENTRES.get(name);
+  if (dynamic) return allFolders.filter((f) => dynamic.folders.includes(f));
   const norm = normalizeName(name);
   const rule = MULTI_FOLDER_CLIENTS.find((r) => norm.includes(r.key));
   if (!rule) return null;
@@ -196,11 +237,14 @@ export function multiFolderMatchesFor(name, allFolders) {
   });
 }
 
-// Same as multiFolderMatchesFor, but drops any folder listed under the rule's
-// excludeFromAccrual prefixes — use this specifically for accrual/package-hours math
-// (recomputeAccruals), not for total-worked-hours views, which should keep using
-// multiFolderMatchesFor so those sub-project folders don't just vanish from reporting.
+// Same as multiFolderMatchesFor, but drops any folder marked "sub_project" in the dynamic
+// table (or listed under a hardcoded rule's excludeFromAccrual prefixes) — use this
+// specifically for accrual/package-hours math (recomputeAccruals), not for total-worked-hours
+// views, which should keep using multiFolderMatchesFor so those sub-project folders don't
+// just vanish from reporting.
 export function multiFolderAccrualMatchesFor(name, allFolders) {
+  const dynamic = DYNAMIC_COST_CENTRES.get(name);
+  if (dynamic) return allFolders.filter((f) => dynamic.folders.includes(f) && !dynamic.excludeFromAccrual.includes(f));
   const norm = normalizeName(name);
   const rule = MULTI_FOLDER_CLIENTS.find((r) => norm.includes(r.key));
   if (!rule) return null;

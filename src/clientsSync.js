@@ -5,7 +5,7 @@
 // math stays correct across a client's package changing mid-year.
 import { supabase } from "./supabaseClient.js";
 import { PG_DATA_EVENT } from "./idbStore.js";
-import { PG_CLIENTS_KEY } from "./storageKeys.js";
+import { PG_CLIENTS_KEY, PG_COST_CENTRES_KEY } from "./storageKeys.js";
 
 // Every module (Clients, Capacity Planning) that reads pginvoice_clients stays mounted for
 // the whole session rather than remounting on tab switch, so a change made in one won't be
@@ -13,6 +13,34 @@ import { PG_CLIENTS_KEY } from "./storageKeys.js";
 // the app already uses for cross-module refresh whenever this table changes.
 function notifyClientsChanged() {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PG_DATA_EVENT, { detail: { key: PG_CLIENTS_KEY } }));
+}
+function notifyCostCentresChanged() {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PG_DATA_EVENT, { detail: { key: PG_COST_CENTRES_KEY } }));
+}
+
+// The user-editable cost-centre/sub-project links (pginvoice_cost_centres) -- Shell.jsx
+// fetches this once at the top level (every page is mounted simultaneously, just hidden via
+// CSS, see Shell.jsx's `display: active === ... ? "block" : "none"` pattern) and feeds it into
+// nameMatch.js's setDynamicCostCentres, so multiFolderMatchesFor/multiFolderAccrualMatchesFor
+// pick it up everywhere without each caller needing its own fetch.
+export async function fetchCostCentres() {
+  const { data, error } = await supabase.from("pginvoice_cost_centres").select("*").order("client", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+// `kind`: "cost_centre" (counts toward the parent's package accrual) or "sub_project"
+// (billed separately, excluded from the accrual but still shown rolled up under the parent).
+export async function addCostCentreFolder(client, folder, kind) {
+  const { error } = await supabase.from("pginvoice_cost_centres").insert({ client, folder, kind });
+  if (error) throw error;
+  notifyCostCentresChanged();
+}
+
+export async function removeCostCentreFolder(client, folder) {
+  const { error } = await supabase.from("pginvoice_cost_centres").delete().eq("client", client).eq("folder", folder);
+  if (error) throw error;
+  notifyCostCentresChanged();
 }
 
 export async function fetchClients() {
