@@ -284,7 +284,12 @@ export default function Clients() {
   const costCentreInfo = useMemo(() => {
     const info = new Map();
     const subProjectOf = new Map();
-    if (!folderList.length) return { info, subProjectOf };
+    // `clients` starts null until fetchClients() resolves (see the useState above) --
+    // this ran unguarded against that null on first render, which is exactly what took
+    // the whole page down: iterating null throws immediately inside a useMemo, with no
+    // error boundary to catch it, so React unmounts everything -- the "loads then goes
+    // black" symptom, on every single load, since this runs before data ever arrives.
+    if (!clients || !folderList.length) return { info, subProjectOf };
     for (const c of clients) {
       const all = multiFolderMatchesFor(c.client, folderList);
       if (!all || all.length < 2) continue;
