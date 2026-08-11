@@ -7,6 +7,7 @@ import {
   basisToClientType,
   dominantClientType,
   multiFolderMatchesFor,
+  multiFolderAccrualMatchesFor,
   isInternalFolder,
 } from "./nameMatch.js";
 
@@ -120,6 +121,31 @@ describe("multiFolderMatchesFor", () => {
 
   it("returns null for a non-multi-folder name", () => {
     expect(multiFolderMatchesFor("Purple Giraffe", ["Purple Giraffe", "Aus3C Cyber Battle"])).toBeNull();
+  });
+});
+
+describe("multiFolderAccrualMatchesFor", () => {
+  it("keeps the quoted web project out of Majestic Plumbing's accrual folders", () => {
+    const folders = [
+      "Majestic Plumbing (WA)",
+      "Majestic Plumbing Quoted Web Project (WA)",
+      "MP - Commercial Leak Tech (WA)",
+      "Unrelated Folder",
+    ];
+    expect(multiFolderAccrualMatchesFor("Majestic Plumbing + CLT", folders)).toEqual([
+      "Majestic Plumbing (WA)",
+      "MP - Commercial Leak Tech (WA)",
+    ]);
+  });
+
+  it("still includes the quoted web project in the total-hours rollup", () => {
+    const folders = ["Majestic Plumbing (WA)", "Majestic Plumbing Quoted Web Project (WA)", "MP - Commercial Leak Tech (WA)"];
+    expect(multiFolderMatchesFor("Majestic Plumbing + CLT", folders)).toEqual(folders);
+  });
+
+  it("has no exclusions for clients without excludeFromAccrual, matching multiFolderMatchesFor", () => {
+    const folders = ["Aus3C Cyber Battle", "Aus3C IRAP"];
+    expect(multiFolderAccrualMatchesFor("Aus3C", folders)).toEqual(multiFolderMatchesFor("Aus3C", folders));
   });
 });
 

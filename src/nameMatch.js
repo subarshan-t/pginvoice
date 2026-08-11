@@ -149,13 +149,22 @@ export function dominantClientType(rows) {
 // Keyed by a normalized substring that identifies the client regardless of which system's
 // exact display name is passed in (SEED_CLIENTS vs pginvoice_clients spell some of these
 // differently).
+// `excludeFromAccrual` (optional): sub-project folders that genuinely belong to this
+// client and should stay rolled up under it everywhere hours are totalled (Capacity
+// Planning, Client Invoicing reconciliation), but are billed/quoted separately from the
+// retainer package and must NOT count toward the package's accrual math — e.g. Majestic
+// Plumbing's "Quoted Web Project" folder is client work, not retainer work; per the
+// existing accrual comment on file ("web project is separate"), only accrualMatchesFor
+// (used by recomputeAccruals) excludes these prefixes — multiFolderMatchesFor keeps
+// including them, since that function backs the "how much did we actually work for this
+// client in total" views, not the "are they over/under their package hours" one.
 const MULTI_FOLDER_CLIENTS = [
   { key: "apex comm", prefixes: ["apex comms "] },
   { key: "aus3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
   { key: "aus 3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
   { key: "clarke energy", prefixes: ["cea "], exact: ["clarke energy"] },
   { key: "magain", prefixes: ["magain "] },
-  { key: "majestic plumbing", prefixes: ["majestic plumbing", "mp "] },
+  { key: "majestic plumbing", prefixes: ["majestic plumbing", "mp "], excludeFromAccrual: ["majestic plumbing quoted web project"] },
 ];
 
 // Returns every real ClickUp folder belonging to a multi-folder client, or null if `name`
@@ -168,6 +177,23 @@ export function multiFolderMatchesFor(name, allFolders) {
     const nf = normalizeName(f);
     if (rule.exact && rule.exact.includes(nf)) return true;
     return rule.prefixes.some((p) => nf.startsWith(p));
+  });
+}
+
+// Same as multiFolderMatchesFor, but drops any folder listed under the rule's
+// excludeFromAccrual prefixes — use this specifically for accrual/package-hours math
+// (recomputeAccruals), not for total-worked-hours views, which should keep using
+// multiFolderMatchesFor so those sub-project folders don't just vanish from reporting.
+export function multiFolderAccrualMatchesFor(name, allFolders) {
+  const norm = normalizeName(name);
+  const rule = MULTI_FOLDER_CLIENTS.find((r) => norm.includes(r.key));
+  if (!rule) return null;
+  return allFolders.filter((f) => {
+    const nf = normalizeName(f);
+    const matched = (rule.exact && rule.exact.includes(nf)) || rule.prefixes.some((p) => nf.startsWith(p));
+    if (!matched) return false;
+    if (rule.excludeFromAccrual && rule.excludeFromAccrual.some((p) => nf.startsWith(p))) return false;
+    return true;
   });
 }
 

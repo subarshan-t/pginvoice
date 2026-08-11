@@ -4,7 +4,7 @@
 import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient.js";
 import { fetchClickupFromSupabase } from "./clickupSync.js";
-import { findMatch, multiFolderMatchesFor, isInternalFolder } from "./nameMatch.js";
+import { findMatch, multiFolderAccrualMatchesFor, isInternalFolder } from "./nameMatch.js";
 import { fetchClients, fetchClientEvents, typeForMonth } from "./clientsSync.js";
 import { monthLabel } from "./parsers.js";
 
@@ -171,7 +171,7 @@ export async function recomputeAccruals(clients) {
     // sibling ClickUp folders instead of one umbrella folder -- sum minutes across all of
     // them per month rather than picking a single best-match folder, which was silently
     // undercounting these clients' accruals.
-    const multi = multiFolderMatchesFor(c.client, folderNames);
+    const multi = multiFolderAccrualMatchesFor(c.client, folderNames);
     let folderMinutes = null;
     if (multi && multi.length) {
       folderMinutes = new Map();
