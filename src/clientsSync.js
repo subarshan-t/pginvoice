@@ -172,6 +172,19 @@ export async function createClientEvent(client, kind, effectiveDate, fields, not
   notifyClientsChanged();
 }
 
+// Only for events that haven't been applied yet (still-scheduled/future transitions) --
+// an already-applied event's mutation to the client's current row already happened, and
+// typeTimelineFor's replay of past months reads applied=true events specifically, so
+// deleting one after the fact would silently rewrite already-closed months' history. The
+// Clients module enforces this by only ever offering delete on pending rows; enforced here
+// too so any other future caller can't accidentally do it either.
+export async function deleteClientEvent(id, { applied }) {
+  if (applied) throw new Error("Can't delete an already-applied event -- it already changed the client's history.");
+  const { error } = await supabase.from("pginvoice_client_events").delete().eq("id", id).eq("applied", false);
+  if (error) throw error;
+  notifyClientsChanged();
+}
+
 // Applies any event whose effective date has arrived (<= today) and isn't applied
 // yet, mutating the client's current profile row. Safe to call on every module
 // load — already-applied events are a no-op via the `applied` guard.

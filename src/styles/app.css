@@ -895,12 +895,15 @@ button { font: inherit; }
 .pg-row-wrap.pg-row--nested { margin-left: 28px; }
 /* A client with a cost-centre breakdown and/or sub-projects (see App.jsx's visible.map)
    renders every one of those rows inside ONE of these instead of each getting its own
-   floating card -- overflow:hidden clips the first/last row's square corners to the
-   tile's own rounded ones, and .pg-row--in-tile below strips each row's individual
-   border/shadow/radius so only this outer edge reads as a card boundary. */
+   floating card -- .pg-row--in-tile below strips each row's individual border/shadow/
+   radius (but keeps the same background as this tile) so only this outer edge reads as
+   a card boundary; deliberately no overflow:hidden here (it clipped the "..." row menu
+   dropdown against the next row instead of letting it float above it) -- unnecessary
+   for corners anyway since every inner row shares this exact background color, so a
+   square corner poking past the rounded one is the same solid fill, not a visible seam. */
 .pg-tile {
   background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--app-radius);
-  box-shadow: var(--shadow-sm); overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 .pg-tile__row-wrap { width: 100%; }
 /* Both the header strip and each row share this exact column track list, so

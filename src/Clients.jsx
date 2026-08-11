@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Search, ArrowRight, Pencil, Check, AlertTriangle, Upload, X } from "lucide-react";
-import { fetchClients, fetchClientEvents, createClientEvent, applyDueClientEvents, updateClickupFolder, updateClientWebsite, updateClientLogo, fetchCostCentres, addCostCentreFolder, removeCostCentreFolder } from "./clientsSync.js";
+import { fetchClients, fetchClientEvents, createClientEvent, deleteClientEvent, applyDueClientEvents, updateClickupFolder, updateClientWebsite, updateClientLogo, fetchCostCentres, addCostCentreFolder, removeCostCentreFolder } from "./clientsSync.js";
 import { multiFolderMatchesFor, multiFolderAccrualMatchesFor, setDynamicCostCentres, isDynamicCostCentreClient } from "./nameMatch.js";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { CLICKUP_DB_KEY, PG_CLIENTS_KEY, PG_COST_CENTRES_KEY } from "./storageKeys.js";
@@ -118,16 +118,55 @@ function Stat({ value, label }) {
   );
 }
 
-function ModifyPanel({ client, onClose, onSaved }) {
+// One line of a client's transition history -- past (applied) or scheduled (pending).
+// Only pending rows get a delete button: an applied event already mutated the client's
+// current profile row, and typeTimelineFor's replay of past months reads applied=true
+// events specifically, so removing one after the fact would silently rewrite already-
+// closed months' history (see deleteClientEvent's guard in clientsSync.js).
+function EventRow({ event: e, onDelete, deleting }) {
+  const desc = e.kind === "type"
+    ? `→ ${TYPE_LABEL[e.new_type] || e.new_type}${isPackageLikeType(e.new_type) && e.new_agreed_hours != null ? ` (${e.new_agreed_hours} hrs)` : ""}`
+    : e.kind === "consultant" ? `→ ${e.new_consultant || "unassigned"}`
+    : e.kind === "offboarding" ? "Offboarded"
+    : e.kind === "reactivation" ? "Reactivated"
+    : e.kind;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12 }}>
+      <span style={{ color: "var(--fg-tertiary)", fontFamily: "var(--font-mono)", minWidth: 88 }}>{e.effective_date}</span>
+      <span className="pg-tag pg-tag--muted" style={{ minWidth: 76, textAlign: "center" }}>{e.kind}</span>
+      <span style={{ flex: 1 }}>{desc}{e.note ? ` — ${e.note}` : ""}</span>
+      <span className="pg-tag pg-tag--pill" style={{ color: e.applied ? "var(--status-ok)" : "var(--status-warn)" }}>
+        {e.applied ? "Applied" : "Pending"}
+      </span>
+      {!e.applied && onDelete && (
+        <button type="button" className="pg-icon-btn-sm" style={{ padding: 0 }} title="Remove this scheduled transition" disabled={deleting}
+          onClick={() => onDelete(e)}>
+          <X size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ModifyPanel({ client, events, onClose, onSaved, onEventsChanged }) {
   const [action, setAction] = useState(null); // "transition" | "consultant" | "offboarding"
   const [newType, setNewType] = useState(client.type);
   const [newHours, setNewHours] = useState(client.agreedHours ?? "");
   const [newConsultant, setNewConsultant] = useState(client.consultant || "");
   const [effectiveDate, setEffectiveDate] = useState(todayStr());
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [err, setErr] = useState(null);
 
   const isActive = client.status === "active";
+  const sortedEvents = useMemo(() => [...(events || [])].sort((a, b) => a.effective_date.localeCompare(b.effective_date) || a.id - b.id), [events]);
+  // Flags the exact conflict this was built for: two 'type' events sharing the same
+  // effective_date. typeTimelineFor sorts by date and, on a tie, falls back to array/
+  // insertion order to decide which one is "current" for that day -- which one wins is
+  // effectively arbitrary from the UI's point of view, not something you actually chose.
+  const dateConflict = action === "transition" && effectiveDate
+    ? sortedEvents.find((e) => e.kind === "type" && e.effective_date === effectiveDate)
+    : null;
 
   async function save() {
     // A blank hours field on a Package transition used to silently submit 0 -- a real,
@@ -159,8 +198,38 @@ function ModifyPanel({ client, onClose, onSaved }) {
     }
   }
 
+  async function removeEvent(e) {
+    setDeletingId(e.id);
+    setErr(null);
+    try {
+      await deleteClientEvent(e.id, { applied: e.applied });
+      await onEventsChanged?.();
+    } catch (err2) {
+      setErr(err2.message || String(err2));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="pg-cap-card" style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* Full transition history -- past and scheduled, all kinds, in one place -- since
+          the underlying event log already supports any number of type changes over time
+          (a client can go hourly -> package -> hourly again, each just its own dated row),
+          the missing piece was ever being able to SEE them all together, not the ability
+          to add more than one. Always visible, not just under "Transitioning", so a
+          Consultant Update or Offboarding scheduled earlier doesn't look like it vanished. */}
+      {sortedEvents.length > 0 && (
+        <div>
+          <div className="pg-field__label" style={{ marginBottom: 4 }}>History</div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {sortedEvents.map((e) => (
+              <EventRow key={e.id} event={e} onDelete={removeEvent} deleting={deletingId === e.id} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {!action && (
         <div style={{ display: "flex", gap: 8 }}>
           <button className="pg-btn-ghost" onClick={() => setAction("transition")}>Transitioning</button>
@@ -190,6 +259,11 @@ function ModifyPanel({ client, onClose, onSaved }) {
             <span className="pg-field__label">Effective date</span>
             <input className="pg-input" type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
           </label>
+          {dateConflict && (
+            <div className="pg-banner-warn">
+              Another transition is already scheduled for {effectiveDate} (→ {TYPE_LABEL[dateConflict.new_type] || dateConflict.new_type}). Two transitions on the same date is ambiguous — which one actually applies that day isn't well-defined. Pick a different date, or remove the existing one from the history above first.
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <button className="pg-btn" disabled={saving} onClick={save}>Save</button>
             <button className="pg-btn-ghost" onClick={() => setAction(null)}>Back</button>
@@ -258,6 +332,7 @@ function ModifyPanel({ client, onClose, onSaved }) {
 
 export default function Clients() {
   const [clients, setClients] = useState(null);
+  const [clientEvents, setClientEvents] = useState([]); // full history across all clients, filtered per-row when the Modify panel opens
   const [loadError, setLoadError] = useState(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
@@ -331,6 +406,16 @@ export default function Clients() {
     }
   }
 
+  async function loadEvents() {
+    try {
+      setClientEvents(await fetchClientEvents());
+    } catch (e) {
+      // Non-fatal -- the Modify panel just shows an empty history rather than
+      // taking the whole page down over a history fetch failing.
+      setClientEvents((prev) => prev ?? []);
+    }
+  }
+
   async function loadFolders() {
     const cu = await idbGet(CLICKUP_DB_KEY);
     setFolderSet(new Set((cu?.rows || []).map((r) => r.folder).filter(Boolean)));
@@ -352,11 +437,12 @@ export default function Clients() {
     load();
     loadFolders();
     loadCostCentres();
+    loadEvents();
     const onUpdate = (e) => {
       if (!e.detail || e.detail.key === CLICKUP_DB_KEY) loadFolders();
       // A consultant/status/new-client change made from Capacity Planning writes to the same
       // pginvoice_clients table -- refresh so it shows here without a full page reload.
-      if (!e.detail || e.detail.key === PG_CLIENTS_KEY) load();
+      if (!e.detail || e.detail.key === PG_CLIENTS_KEY) { load(); loadEvents(); }
       if (!e.detail || e.detail.key === PG_COST_CENTRES_KEY) loadCostCentres();
     };
     window.addEventListener(PG_DATA_EVENT, onUpdate);
@@ -593,11 +679,24 @@ export default function Clients() {
                           ))}
                           {managingCostCentres === c.client ? (
                             <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap", marginTop: 2 }}>
-                              <select className="pg-input" style={{ maxWidth: 160, fontSize: 11 }}
-                                value={draftCostCentreFolder} onChange={(e) => setDraftCostCentreFolder(e.target.value)}>
-                                <option value="">Pick a folder…</option>
-                                {folderList.filter((f) => !assigned.has(f)).map((f) => <option key={f} value={f}>{f}</option>)}
-                              </select>
+                              {/* A text input with a suggestion list, not a plain <select> --
+                                  folderList is only ever folders auto-detected from already-
+                                  synced ClickUp time entries, so a brand-new folder with no
+                                  hours logged yet wouldn't be selectable from a dropdown
+                                  restricted to that list. Typing the exact ClickUp folder name
+                                  connects it immediately; it'll show as unmatched (nothing
+                                  auto-fills the ✓) until real hours actually land in it. */}
+                              <input
+                                className="pg-input" style={{ maxWidth: 200, fontSize: 11 }}
+                                list={`cc-folders-${i}`}
+                                placeholder="Type or pick a ClickUp folder…"
+                                value={draftCostCentreFolder}
+                                onChange={(e) => setDraftCostCentreFolder(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter" && draftCostCentreFolder) addCostCentre(c.client); }}
+                              />
+                              <datalist id={`cc-folders-${i}`}>
+                                {folderList.filter((f) => !assigned.has(f)).map((f) => <option key={f} value={f} />)}
+                              </datalist>
                               <select className="pg-input" style={{ maxWidth: 120, fontSize: 11 }}
                                 value={draftCostCentreKind} onChange={(e) => setDraftCostCentreKind(e.target.value)}>
                                 <option value="cost_centre">Cost centre</option>
@@ -631,7 +730,12 @@ export default function Clients() {
                 </tr>
                 {openModify === c.client && (
                   <tr><td colSpan={10}>
-                    <ModifyPanel client={c} onClose={() => setOpenModify(null)} onSaved={() => { setOpenModify(null); load(); }} />
+                    <ModifyPanel
+                      client={c} events={clientEvents.filter((e) => e.client === c.client)}
+                      onClose={() => setOpenModify(null)}
+                      onSaved={() => { setOpenModify(null); load(); loadEvents(); }}
+                      onEventsChanged={loadEvents}
+                    />
                   </td></tr>
                 )}
               </React.Fragment>
