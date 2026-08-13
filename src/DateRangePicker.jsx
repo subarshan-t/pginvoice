@@ -53,29 +53,41 @@ export function DateRangePicker({ value, onChange, placeholder = "Pick a date ra
     : placeholder;
 
   return (
-    <div className="pg-daterange" ref={ref}>
+    <div className={"pg-input pg-daterange" + (value?.from ? "" : " pg-daterange--empty")} ref={ref}>
+      {/* A real button, not the outer div -- the Clear button below is a sibling of this,
+          not a child, so there's no interactive-content-inside-a-button nesting (invalid
+          HTML, unreliable for screen readers/tab order) between the two click targets. */}
       <button
-        type="button" className={"pg-input pg-daterange__trigger" + (value?.from ? "" : " pg-daterange__trigger--empty")}
+        type="button" className="pg-daterange__trigger"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="dialog" aria-expanded={open}
       >
         <CalendarIcon size={14} />
         <span>{label}</span>
-        {value?.from && (
-          <span
-            role="button" tabIndex={0} aria-label="Clear date range"
-            className="pg-daterange__clear"
-            onClick={(e) => { e.stopPropagation(); onChange({ from: null, to: null }); }}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onChange({ from: null, to: null }); } }}
-          >
-            <X size={12} />
-          </span>
-        )}
       </button>
+      {value?.from && (
+        <button
+          type="button" aria-label="Clear date range"
+          className="pg-daterange__clear"
+          onClick={() => onChange({ from: null, to: null })}
+        >
+          <X size={12} />
+        </button>
+      )}
       {open && (
         <div className={`pg-daterange__popover pg-daterange__popover--${align}`} role="dialog" aria-label="Choose a date range">
           <DayPicker
             mode="range"
+            // `required` -- without it, re-clicking the SAME day you just picked (the
+            // natural "confirm this single day" gesture, since the first click already
+            // sets to=from -- see the onSelect comment below) hits react-day-picker's
+            // isSameDay(from,date) && isSameDay(to,date) branch, which DESELECTS
+            // (range becomes undefined) rather than confirming -- silently wiping a
+            // deliberately-picked one-day range back to empty. `required` changes that
+            // one branch to keep {from, to} instead of clearing it; every other
+            // click-ordering case (earlier-first, later-first, extending, shrinking) is
+            // unaffected, since none of those branches read `required` at all.
+            required
             selected={selected}
             onSelect={(range) => {
               // react-day-picker's own range logic sets `to` equal to `from` on the very
@@ -83,7 +95,8 @@ export function DateRangePicker({ value, onChange, placeholder = "Pick a date ra
               // second click. So "from and to are both set" alone can't be the close
               // signal, or the popover would close after every single click including the
               // first. Only the SECOND click of a two-click flow -- i.e. one landing on an
-              // already-non-empty selection -- should close it.
+              // already-non-empty selection (including a re-click of the same day, now that
+              // `required` keeps that as {from,to} instead of clearing it) -- should close it.
               const wasEmpty = !value?.from;
               onChange({ from: civilDateStr(range?.from), to: civilDateStr(range?.to) });
               if (!wasEmpty && range?.from && range?.to) setOpen(false);

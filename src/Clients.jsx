@@ -467,10 +467,11 @@ export default function Clients() {
   }
 
   async function addCostCentre(client) {
-    if (!draftCostCentreFolder) return;
+    const folder = draftCostCentreFolder.trim();
+    if (!folder) return;
     setSavingCostCentre(true);
     try {
-      await addCostCentreFolder(client, draftCostCentreFolder, draftCostCentreKind);
+      await addCostCentreFolder(client, folder, draftCostCentreKind);
       // loadCostCentres() will run again from the PG_DATA_EVENT this dispatches, but that's
       // async on its own schedule -- refresh directly too so the just-added folder appears
       // in this same interaction instead of waiting on the event round-trip.
@@ -692,7 +693,7 @@ export default function Clients() {
                                 placeholder="Type or pick a ClickUp folder…"
                                 value={draftCostCentreFolder}
                                 onChange={(e) => setDraftCostCentreFolder(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter" && draftCostCentreFolder) addCostCentre(c.client); }}
+                                onKeyDown={(e) => { if (e.key === "Enter" && draftCostCentreFolder.trim()) addCostCentre(c.client); }}
                               />
                               <datalist id={`cc-folders-${i}`}>
                                 {folderList.filter((f) => !assigned.has(f)).map((f) => <option key={f} value={f} />)}
@@ -702,7 +703,7 @@ export default function Clients() {
                                 <option value="cost_centre">Cost centre</option>
                                 <option value="sub_project">Sub-project</option>
                               </select>
-                              <button className="pg-btn-ghost" disabled={!draftCostCentreFolder || savingCostCentre} onClick={() => addCostCentre(c.client)}><Check size={12} /></button>
+                              <button className="pg-btn-ghost" disabled={!draftCostCentreFolder.trim() || savingCostCentre} onClick={() => addCostCentre(c.client)}><Check size={12} /></button>
                               <button className="pg-btn-ghost" onClick={() => { setManagingCostCentres(null); setDraftCostCentreFolder(""); }}><X size={12} /></button>
                             </div>
                           ) : (

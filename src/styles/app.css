@@ -942,6 +942,13 @@ button { font: inherit; }
 .pg-row--in-tile:hover { box-shadow: none; background: var(--bg-elevated); }
 .pg-row--in-tile.pg-row--active { background: var(--bg-elevated); }
 .pg-row--in-tile.pg-row--divider { border-bottom: 1px solid var(--border-subtle); }
+/* Hover/active swap to --bg-elevated, a different fill than the tile's own --bg-card --
+   unlike the plain resting state, a square corner poking past the tile's rounded edge
+   here IS a visible seam (mismatched colors, not the same solid fill). Rounding the
+   first/last row-wrap to match the tile's own radius keeps that fill inside the curve,
+   without relying on overflow:hidden on .pg-tile (which clipped the "..." row menu). */
+.pg-tile__row-wrap:first-child .pg-row--in-tile { border-top-left-radius: var(--app-radius); border-top-right-radius: var(--app-radius); }
+.pg-tile__row-wrap:last-child .pg-row--in-tile { border-bottom-left-radius: var(--app-radius); border-bottom-right-radius: var(--app-radius); }
 .pg-row__index { font-family: var(--font-mono); font-size: 12px; color: var(--fg-tertiary); }
 .pg-row__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pg-row__name-main { font-family: var(--font-display); font-weight: 400; font-size: 16px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
