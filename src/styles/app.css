@@ -1199,3 +1199,63 @@ button { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .pg-panel, .pg-cap-card, .pg-cap-stat, .pg-kpi-card, .pg-row, .pg-client, .pg-filecard { animation: none; }
 }
+
+/* ---- date range picker (DateRangePicker.jsx) -------------------------------
+   Popover + Calendar pattern (shadcn/ui convention): a plain trigger button,
+   click opens a floating panel with react-day-picker's DayPicker in mode="range".
+   The library ships its own stylesheet (imported in the component) defining
+   structural CSS -- everything below is theming it onto our own tokens via its
+   --rdp-* custom properties, plus our own popover chrome around it. */
+.pg-daterange { position: relative; display: inline-block; }
+.pg-daterange__trigger {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  font-family: var(--font-mono); font-size: 13px; white-space: nowrap;
+}
+.pg-daterange__trigger--empty { color: var(--fg-tertiary); }
+.pg-daterange__clear {
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-left: 2px; padding: 2px; border-radius: 50%; color: var(--fg-tertiary); cursor: pointer;
+}
+.pg-daterange__clear:hover { color: var(--fg-primary); background: var(--bg-elevated); }
+.pg-daterange__popover {
+  position: absolute; top: calc(100% + 8px); z-index: 30;
+  background: var(--bg-card); border: 1px solid var(--border-soft); border-radius: var(--app-radius);
+  box-shadow: var(--shadow-md); padding: 14px;
+}
+.pg-daterange__popover--left { left: 0; }
+.pg-daterange__popover--right { right: 0; }
+@media (max-width: 640px) {
+  /* Two side-by-side months don't fit a phone-width popover -- collapse to one,
+     same DayPicker instance, just fewer months rendered. */
+  .pg-daterange__popover { left: 50%; right: auto; transform: translateX(-50%); max-width: calc(100vw - 32px); overflow-x: auto; }
+}
+.pg-daterange__calendar.rdp-root {
+  --rdp-accent-color: var(--accent);
+  --rdp-accent-background-color: var(--accent-soft);
+  --rdp-today-color: var(--accent);
+  --rdp-range_middle-background-color: var(--accent-soft);
+  --rdp-range_middle-color: var(--fg-primary);
+  --rdp-range_start-color: var(--fg-on-accent, #fff);
+  --rdp-range_end-color: var(--fg-on-accent, #fff);
+  --rdp-range_start-date-background-color: var(--accent);
+  --rdp-range_end-date-background-color: var(--accent);
+  --rdp-selected-border: 2px solid var(--accent);
+  --rdp-day-width: 38px; --rdp-day-height: 38px;
+  --rdp-day_button-width: 34px; --rdp-day_button-height: 34px;
+  --rdp-nav_button-width: 28px; --rdp-nav_button-height: 28px;
+  color: var(--fg-primary); font-family: var(--font-body);
+}
+.pg-daterange__calendar .rdp-month_caption { font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
+.pg-daterange__calendar .rdp-weekday { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+.pg-daterange__calendar .rdp-button_previous,
+.pg-daterange__calendar .rdp-button_next {
+  border-radius: var(--app-radius-pill); color: var(--fg-secondary);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.pg-daterange__calendar .rdp-button_previous:hover:not(:disabled),
+.pg-daterange__calendar .rdp-button_next:hover:not(:disabled) { background: var(--bg-elevated); color: var(--fg-primary); }
+.pg-daterange__calendar .rdp-day_button:hover:not([disabled]) { background: var(--bg-elevated); }
+.pg-daterange__calendar .rdp-selected:not(.rdp-range_middle) .rdp-day_button { font-weight: 600; }
+/* DayPicker's own focus ring is a plain browser outline -- swap it for the same
+   accent ring every other focusable control in this app uses (.pg-input:focus). */
+.pg-daterange__calendar .rdp-day_button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
