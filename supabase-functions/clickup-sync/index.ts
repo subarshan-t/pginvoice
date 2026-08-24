@@ -286,6 +286,58 @@ Deno.serve(async (req: Request) => {
       if (deleteError) throw deleteError;
     }
 
+    // Keeps every consultant/coordinator's ClickUp-derived client access current
+    // with what they've actually logged time against, all-time (not just this
+    // month) -- a newly-worked folder gets auto-granted, one they've stopped
+    // logging to gets auto-revoked. Runs on every sync (every 20 min for the
+    // current month) so this stays close to live without a separate job.
+    // source='manual'/'capacity_lead' rows are untouched: only source='clickup'
+    // rows are ever added or removed here.
+    try {
+      const { data: profiles } = await supabase
+        .from("pginvoice_profiles")
+        .select("user_id, clickup_user_name")
+        .in("role", ["consultant", "coordinator"])
+        .not("clickup_user_name", "is", null);
+      for (const p of profiles || []) {
+        const { data: userEntries } = await supabase
+          .from("pginvoice_clickup_entries")
+          .select("folder")
+          .ilike("user_name", p.clickup_user_name);
+        const folders = [...new Set((userEntries || []).map((e: any) => e.folder).filter(Boolean))];
+        let clients: string[] = [];
+        if (folders.length) {
+          const [{ data: directClients }, { data: costCentres }] = await Promise.all([
+            supabase.from("pginvoice_clients").select("client, clickup_folder").in("clickup_folder", folders),
+            supabase.from("pginvoice_cost_centres").select("client, folder").in("folder", folders),
+          ]);
+          const set = new Set<string>();
+          for (const c of directClients || []) if (c.client) set.add(c.client);
+          for (const c of costCentres || []) if (c.client) set.add(c.client);
+          clients = [...set];
+        }
+        const { data: existingRows } = await supabase
+          .from("pginvoice_user_clients")
+          .select("client")
+          .eq("user_id", p.user_id)
+          .eq("source", "clickup");
+        const existingSet = new Set((existingRows || []).map((r: any) => r.client));
+        const desiredSet = new Set(clients);
+        const toDelete = [...existingSet].filter((c) => !desiredSet.has(c));
+        const toInsert = clients.filter((c) => !existingSet.has(c));
+        if (toDelete.length) {
+          await supabase.from("pginvoice_user_clients").delete().eq("user_id", p.user_id).eq("source", "clickup").in("client", toDelete);
+        }
+        if (toInsert.length) {
+          await supabase.from("pginvoice_user_clients").insert(toInsert.map((client) => ({ user_id: p.user_id, client, source: "clickup" })));
+        }
+      }
+    } catch (reconcileErr) {
+      // Entries already upserted successfully above -- a reconciliation hiccup
+      // shouldn't fail the whole sync, just gets logged for visibility.
+      console.error("clickup-derived client assignment reconciliation failed:", reconcileErr);
+    }
+
     // Not start.toISOString() -- that's a UTC instant which, for a target month's
     // Adelaide-local midnight, can land on the previous UTC calendar date/month
     // entirely (e.g. Jan 1 00:00 ACDT is Dec 31 13:30 UTC), which would mislabel

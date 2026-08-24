@@ -1,9 +1,12 @@
-import React, { useEffect, useId, useState } from "react";
-import { Users as UsersIcon, Trash2, Loader2, ShieldCheck } from "lucide-react";
-import { fetchUsers, createUser, updateUserRoleAndClients, deleteUser, ROLES, ROLE_LABELS, CLIENT_SCOPED_ROLES } from "./usersSync.js";
+import React, { useEffect, useId, useMemo, useState } from "react";
+import { Users as UsersIcon, Trash2, Loader2, ShieldCheck, AlertTriangle } from "lucide-react";
+import {
+  fetchUsers, createUser, updateUserRoleAndClients, deleteUser, fetchClickupUserNames,
+  ROLES, ROLE_LABELS, CLIENT_SCOPED_ROLES, CLICKUP_REQUIRED_ROLES, CLIENT_SOURCE_LABELS,
+} from "./usersSync.js";
 import { fetchClients } from "./clientsSync.js";
 
-const emptyDraft = { email: "", password: "", role: "consultant", clients: [] };
+const emptyDraft = { email: "", password: "", role: "consultant", clients: [], clickupUserName: "" };
 
 // Shared between the "add user" form and each row's edit mode — was two
 // near-identical blocks that only differed in which draft/setter they wrote to.
@@ -23,12 +26,49 @@ function ClientCheckboxList({ label, options, selected, onToggle }) {
   );
 }
 
+// Autocompletes against ClickUp's own logged names (via a <datalist>, so typing
+// still works freely) and flags — hard-blocking submit, per how this is meant to
+// be used — a name that doesn't match anything ClickUp has ever seen, for the
+// roles whose client access is mostly derived from it. Admin-tier roles get the
+// same field but it's optional and never blocks.
+function ClickupNameField({ id, listId, value, onChange, clickupNames, required }) {
+  const trimmed = value.trim();
+  const matched = !trimmed || clickupNames.some((n) => n.toLowerCase() === trimmed.toLowerCase());
+  const showFlag = required && trimmed && !matched;
+  const showRequiredFlag = required && !trimmed;
+  return (
+    <label className="pg-field" htmlFor={id}>
+      <span className="pg-field__label">ClickUp name{required ? "" : " (optional)"}</span>
+      <input
+        id={id}
+        className="pg-input"
+        type="text"
+        list={listId}
+        autoComplete="off"
+        placeholder="Start typing to match their ClickUp name…"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <datalist id={listId}>
+        {clickupNames.map((n) => <option key={n} value={n} />)}
+      </datalist>
+      {(showFlag || showRequiredFlag) && (
+        <span className="pg-footnote" style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--status-warn, var(--status-over))" }}>
+          <AlertTriangle size={12} />
+          {showRequiredFlag ? "Required for this role." : `No ClickUp user named "${trimmed}" found in synced time entries.`}
+        </span>
+      )}
+    </label>
+  );
+}
+
 // Super Admin + Admin only (enforced both by Shell.jsx's nav gating and,
 // for real, by the manage-users Edge Function checking the caller's role
 // server-side before touching anything).
 export default function Users({ ownRole, ownUserId }) {
   const [users, setUsers] = useState(null);
   const [allClients, setAllClients] = useState([]);
+  const [clickupNames, setClickupNames] = useState([]);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [draft, setDraft] = useState(emptyDraft);
@@ -38,6 +78,8 @@ export default function Users({ ownRole, ownUserId }) {
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const editRoleId = useId();
+  const createClickupId = useId();
+  const editClickupId = useId();
 
   // Any in-flight save/delete blocks starting a different one — otherwise
   // clicking Edit on user B while user A's save is still resolving lets A's
@@ -46,9 +88,10 @@ export default function Users({ ownRole, ownUserId }) {
 
   async function load() {
     try {
-      const [u, c] = await Promise.all([fetchUsers(), fetchClients()]);
+      const [u, c, names] = await Promise.all([fetchUsers(), fetchClients(), fetchClickupUserNames()]);
       setUsers(u);
       setAllClients((c || []).map((row) => row.client).sort());
+      setClickupNames(names);
       setError(null);
     } catch (e) {
       setError(e.message || String(e));
@@ -57,9 +100,15 @@ export default function Users({ ownRole, ownUserId }) {
 
   useEffect(() => { load(); }, []);
 
+  const createClickupValid = useMemo(() => {
+    if (!CLICKUP_REQUIRED_ROLES.has(draft.role)) return true;
+    const trimmed = draft.clickupUserName.trim();
+    return !!trimmed && clickupNames.some((n) => n.toLowerCase() === trimmed.toLowerCase());
+  }, [draft.role, draft.clickupUserName, clickupNames]);
+
   async function handleCreate(e) {
     e.preventDefault();
-    if (!draft.email.trim() || draft.password.length < 8) return;
+    if (!draft.email.trim() || draft.password.length < 8 || !createClickupValid) return;
     setCreating(true);
     setError(null);
     setNotice(null);
@@ -69,6 +118,7 @@ export default function Users({ ownRole, ownUserId }) {
         password: draft.password,
         role: draft.role,
         clients: CLIENT_SCOPED_ROLES.has(draft.role) ? draft.clients : [],
+        clickupUserName: draft.clickupUserName.trim(),
       });
       setDraft(emptyDraft);
       setNotice(`${draft.email.trim()} was added.`);
@@ -83,10 +133,22 @@ export default function Users({ ownRole, ownUserId }) {
   function startEdit(u) {
     if (busy) return;
     setEditingId(u.id);
-    setEditDraft({ role: u.role, clients: u.clients || [] });
+    // Only the manual-source subset -- saving re-writes source='manual' rows
+    // wholesale from this list, so seeding it with ClickUp/Capacity-derived
+    // clients too would silently convert them into permanent manual grants,
+    // immune to the auto-revoke those sources are supposed to have.
+    const manualClients = (u.clientDetails || []).filter((cd) => cd.source === "manual").map((cd) => cd.client);
+    setEditDraft({ role: u.role, clients: manualClients, clickupUserName: u.clickupUserName || "" });
   }
 
+  const editClickupValid = useMemo(() => {
+    if (!editDraft || !CLICKUP_REQUIRED_ROLES.has(editDraft.role)) return true;
+    const trimmed = editDraft.clickupUserName.trim();
+    return !!trimmed && clickupNames.some((n) => n.toLowerCase() === trimmed.toLowerCase());
+  }, [editDraft, clickupNames]);
+
   async function saveEdit(userId) {
+    if (!editClickupValid) return;
     setSavingEdit(true);
     setError(null);
     setNotice(null);
@@ -95,6 +157,7 @@ export default function Users({ ownRole, ownUserId }) {
         userId,
         role: editDraft.role,
         clients: CLIENT_SCOPED_ROLES.has(editDraft.role) ? editDraft.clients : [],
+        clickupUserName: editDraft.clickupUserName.trim(),
       });
       setEditingId(null);
       setNotice("Role updated.");
@@ -171,15 +234,28 @@ export default function Users({ ownRole, ownUserId }) {
                 ))}
               </select>
             </label>
+            <ClickupNameField
+              id={createClickupId}
+              listId={`${createClickupId}-list`}
+              value={draft.clickupUserName}
+              onChange={(v) => setDraft((d) => ({ ...d, clickupUserName: v }))}
+              clickupNames={clickupNames}
+              required={CLICKUP_REQUIRED_ROLES.has(draft.role)}
+            />
+            {CLICKUP_REQUIRED_ROLES.has(draft.role) && (
+              <p className="pg-footnote">
+                Matching a ClickUp name auto-assigns the clients they've logged time against — pick from the list below if you'd also like to grant one they haven't worked on yet.
+              </p>
+            )}
             {CLIENT_SCOPED_ROLES.has(draft.role) && (
               <ClientCheckboxList
-                label="Assigned clients"
+                label="Also grant these clients manually"
                 options={allClients}
                 selected={draft.clients}
                 onToggle={(c) => setDraft((d) => ({ ...d, clients: toggleClient(d.clients, c) }))}
               />
             )}
-            <button className="pg-btn" type="submit" disabled={creating || !draft.email.trim() || draft.password.length < 8} style={{ justifyContent: "center", gap: 6 }}>
+            <button className="pg-btn" type="submit" disabled={creating || !draft.email.trim() || draft.password.length < 8 || !createClickupValid} style={{ justifyContent: "center", gap: 6 }}>
               {creating && <Loader2 size={13} style={{ animation: "pg-spin 1s linear infinite" }} />}
               {creating ? "Creating…" : "Create user"}
             </button>
@@ -202,13 +278,26 @@ export default function Users({ ownRole, ownUserId }) {
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 600 }}>{u.email}{isSelf ? " (you)" : ""}</div>
                         <div className="pg-footnote">
-                          {editingId === u.id ? "Editing…" : `${ROLE_LABELS[u.role] || u.role}${u.clients?.length ? ` · ${u.clients.length} client(s)` : ""}`}
+                          {editingId === u.id ? "Editing…" : (
+                            <>
+                              {ROLE_LABELS[u.role] || u.role}
+                              {u.clickupUserName ? ` · ClickUp: ${u.clickupUserName}` : ""}
+                              {CLICKUP_REQUIRED_ROLES.has(u.role) && !u.clickupUserName && (
+                                <span style={{ color: "var(--status-warn, var(--status-over))" }}> · no ClickUp name flagged</span>
+                              )}
+                            </>
+                          )}
                         </div>
+                        {editingId !== u.id && u.clientDetails?.length > 0 && (
+                          <div className="pg-footnote" style={{ marginTop: 2 }}>
+                            {u.clientDetails.map((cd) => `${cd.client} (${CLIENT_SOURCE_LABELS[cd.source] || cd.source})`).join(", ")}
+                          </div>
+                        )}
                       </div>
                       <div style={{ display: "flex", gap: 6 }}>
                         {editingId === u.id ? (
                           <>
-                            <button className="pg-btn" type="button" disabled={savingEdit} onClick={() => saveEdit(u.id)}>{savingEdit ? "Saving…" : "Save"}</button>
+                            <button className="pg-btn" type="button" disabled={savingEdit || !editClickupValid} onClick={() => saveEdit(u.id)}>{savingEdit ? "Saving…" : "Save"}</button>
                             <button className="pg-btn pg-btn--ghost" type="button" disabled={savingEdit} onClick={() => setEditingId(null)}>Cancel</button>
                           </>
                         ) : (
@@ -244,9 +333,17 @@ export default function Users({ ownRole, ownUserId }) {
                             ))}
                           </select>
                         </label>
+                        <ClickupNameField
+                          id={editClickupId}
+                          listId={`${editClickupId}-list`}
+                          value={editDraft.clickupUserName}
+                          onChange={(v) => setEditDraft((d) => ({ ...d, clickupUserName: v }))}
+                          clickupNames={clickupNames}
+                          required={CLICKUP_REQUIRED_ROLES.has(editDraft.role)}
+                        />
                         {CLIENT_SCOPED_ROLES.has(editDraft.role) && (
                           <ClientCheckboxList
-                            label="Assigned clients"
+                            label="Also grant these clients manually"
                             options={allClients}
                             selected={editDraft.clients}
                             onToggle={(c) => setEditDraft((d) => ({ ...d, clients: toggleClient(d.clients, c) }))}

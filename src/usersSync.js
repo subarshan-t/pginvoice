@@ -17,6 +17,11 @@ export const ROLE_LABELS = {
 // Roles scoped to only their assigned clients, rather than the whole client base.
 export const CLIENT_SCOPED_ROLES = new Set(["consultant", "coordinator"]);
 export const ADMIN_TIER_ROLES = new Set(["super_admin", "admin"]);
+// These two need a linked ClickUp identity -- it's how their client access
+// mostly gets derived. Admin-tier roles see everything regardless, so it's
+// optional for them.
+export const CLICKUP_REQUIRED_ROLES = new Set(["consultant", "coordinator"]);
+export const CLIENT_SOURCE_LABELS = { manual: "manual", clickup: "via ClickUp", capacity_lead: "via Capacity lead" };
 
 // Called once per session (Shell.jsx) to know what nav/data this signed-in
 // user gets. Returns null if the user has no pginvoice_profiles row yet
@@ -71,14 +76,31 @@ export async function fetchUsers() {
   return body.users || [];
 }
 
-export async function createUser({ email, password, role, clients }) {
-  return callManageUsers({ action: "create", email, password, role, clients });
+export async function createUser({ email, password, role, clients, clickupUserName }) {
+  return callManageUsers({ action: "create", email, password, role, clients, clickupUserName });
 }
 
-export async function updateUserRoleAndClients({ userId, role, clients }) {
-  return callManageUsers({ action: "update_role_and_clients", userId, role, clients });
+export async function updateUserRoleAndClients({ userId, role, clients, clickupUserName }) {
+  return callManageUsers({ action: "update_role_and_clients", userId, role, clients, clickupUserName });
 }
 
 export async function deleteUser(userId) {
   return callManageUsers({ action: "delete", userId });
+}
+
+// Only Users.jsx calls this (admin-tier), reading pginvoice_clickup_entries
+// directly rather than through the Edge Function -- its RLS policy still
+// allows any authenticated read (it was never scoped per-client like the
+// billing tables), so there's no need to round-trip through manage-users
+// just to list distinct ClickUp names for the autocomplete.
+export async function fetchClickupUserNames() {
+  const { data, error } = await supabase.from("pginvoice_clickup_entries").select("user_name");
+  if (error) throw error;
+  return [...new Set((data || []).map((r) => r.user_name).filter(Boolean))].sort();
+}
+
+// CapacityDashboard.jsx calls this whenever an active project's lead changes --
+// assignments is [{ client, lead }] for active (non-offboarded) projects only.
+export async function syncCapacityLeads(assignments) {
+  return callManageUsers({ action: "sync_capacity_leads", assignments });
 }

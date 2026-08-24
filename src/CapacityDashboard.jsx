@@ -15,6 +15,7 @@ import {
 } from "./capacityData.js";
 import { useDismissable } from "./useDismissable.js";
 import { LeaveEditor } from "./LeaveEditor.jsx";
+import { syncCapacityLeads } from "./usersSync.js";
 import {
   CLICKUP_DB_KEY, CAP_CLIENTS_KEY, CAP_PEOPLE_KEY, CAP_SUPPORT_KEY,
   CAP_NOTES_KEY, CAP_LEAVES_KEY, CAP_OVERRIDES_KEY, PG_CLIENTS_KEY,
@@ -236,6 +237,28 @@ function CapacityDashboardInner({ onNavigateTeam }) {
   }, []);
   useEffect(() => { if (loaded) guardedSave(CAP_PEOPLE_KEY, people); }, [people, loaded, guardedSave]);
   useEffect(() => { if (loaded) guardedSave(CAP_CLIENTS_KEY, clients); }, [clients, loaded, guardedSave]);
+
+  // Reconciles Consultant/Coordinator client access with whoever's currently
+  // lead on an active project here (point 7 of the RBAC/ClickUp assignment
+  // feature) -- debounced since `clients` can change on every keystroke while
+  // editing an unrelated field (agreed hours, notes, etc), and this doesn't
+  // need to fire that often. Offboarded projects are left out on purpose: an
+  // offboarded client's lead shouldn't keep RBAC access to it just because
+  // they were last assigned before it went inactive.
+  const leadSyncTimer = useRef(null);
+  useEffect(() => {
+    if (!loaded) return;
+    if (leadSyncTimer.current) clearTimeout(leadSyncTimer.current);
+    leadSyncTimer.current = setTimeout(() => {
+      const assignments = clients.filter((c) => c.status !== "inactive").map((c) => ({ client: c.client, lead: c.lead }));
+      syncCapacityLeads(assignments).catch(() => {
+        // Best-effort -- RBAC assignment lagging behind an edit here shouldn't
+        // block or error out Capacity Planning itself, which already saved fine
+        // via guardedSave above regardless of whether this succeeds.
+      });
+    }, 1500);
+    return () => { if (leadSyncTimer.current) clearTimeout(leadSyncTimer.current); };
+  }, [clients, loaded]);
   useEffect(() => { if (loaded) guardedSave(CAP_SUPPORT_KEY, support); }, [support, loaded, guardedSave]);
   useEffect(() => { if (loaded) guardedSave(CAP_NOTES_KEY, notes); }, [notes, loaded, guardedSave]);
   useEffect(() => { if (loaded) guardedSave(CAP_LEAVES_KEY, leaves); }, [leaves, loaded, guardedSave]);
