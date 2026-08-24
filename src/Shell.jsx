@@ -11,6 +11,7 @@ import Clients from "./Clients.jsx";
 import TeamDashboard from "./TeamDashboard.jsx";
 import SettingsPage from "./Settings.jsx";
 import UsersPage from "./Users.jsx";
+import ForcePasswordChange from "./ForcePasswordChange.jsx";
 import { supabase } from "./supabaseClient.js";
 import { fetchCostCentres } from "./clientsSync.js";
 import { setDynamicCostCentres } from "./nameMatch.js";
@@ -158,8 +159,13 @@ export default function Shell() {
   useEffect(() => {
     if (!session) { setProfile(session === false ? false : null); return; }
     let cancelled = false;
-    fetchOwnProfile().then((p) => { if (!cancelled) setProfile(p ?? false); });
-    return () => { cancelled = true; };
+    const reload = () => fetchOwnProfile().then((p) => { if (!cancelled) setProfile(p ?? false); });
+    reload();
+    // An admin changing someone's role while they have a tab open otherwise leaves
+    // that tab's nav stale until a manual reload -- refetch on refocus so the common
+    // case (switch away, come back) picks it up without needing a realtime subscription.
+    window.addEventListener("focus", reload);
+    return () => { cancelled = true; window.removeEventListener("focus", reload); };
   }, [session]);
 
   // The user-editable cost-centre/sub-project links (pginvoice_cost_centres, managed from
@@ -190,6 +196,9 @@ export default function Shell() {
         </div>
       </div>
     );
+  }
+  if (profile.mustChangePassword) {
+    return <ForcePasswordChange userId={profile.userId} onDone={() => setProfile((p) => ({ ...p, mustChangePassword: false }))} />;
   }
 
   const isClientScoped = CLIENT_SCOPED_ROLES.has(profile.role);
@@ -312,7 +321,7 @@ export default function Shell() {
           <div style={{ display: active === "help" ? "block" : "none" }}>
             <PlaceholderPage title="Help." subtitle="Documentation and support aren't built yet." icon={HelpCircle} empty="Help module coming soon." />
           </div>
-          {isAdminTier && <div style={{ display: active === "users" ? "block" : "none" }}><UsersPage ownRole={profile.role} /></div>}
+          {isAdminTier && <div style={{ display: active === "users" ? "block" : "none" }}><UsersPage ownRole={profile.role} ownUserId={profile.userId} /></div>}
         </>}
       </main>
       {/* Mobile only (see .pg-bottom-nav's media query) -- a persistent bottom

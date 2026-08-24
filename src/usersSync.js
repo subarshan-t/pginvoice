@@ -7,8 +7,6 @@
 // only it holds the service-role key needed to touch auth.users.
 import { supabase } from "./supabaseClient.js";
 
-const FUNCTIONS_URL = "https://fzvlnzlecchsubkpsmew.supabase.co/functions/v1/manage-users";
-
 export const ROLES = ["super_admin", "admin", "consultant", "coordinator"];
 export const ROLE_LABELS = {
   super_admin: "Super Admin",
@@ -30,7 +28,7 @@ export async function fetchOwnProfile() {
   if (userErr || !userData?.user) return null;
   const { data, error } = await supabase
     .from("pginvoice_profiles")
-    .select("user_id, role")
+    .select("user_id, role, must_change_password")
     .eq("user_id", userData.user.id)
     .maybeSingle();
   if (error || !data) return null;
@@ -40,21 +38,32 @@ export async function fetchOwnProfile() {
     const { data: rows } = await supabase.from("pginvoice_user_clients").select("client").eq("user_id", data.user_id);
     clients = (rows || []).map((r) => r.client);
   }
-  return { userId: data.user_id, role: data.role, clients };
+  return { userId: data.user_id, role: data.role, mustChangePassword: !!data.must_change_password, clients };
 }
 
+// After a successful password change, clear the flag so LoginGate/Shell.jsx
+// stop showing the forced-change screen on future logins.
+export async function clearMustChangePassword(userId) {
+  const { error } = await supabase.from("pginvoice_profiles").update({ must_change_password: false }).eq("user_id", userId);
+  if (error) throw error;
+}
+
+// Routes through supabase-js's own functions.invoke, matching every other
+// Edge Function call in this codebase (clickupSync.js) — it resolves the
+// project URL from the client config and attaches the caller's auth header
+// automatically, rather than this module hand-rolling a fetch against a
+// hardcoded URL that would silently point at the wrong project anywhere but
+// production.
 async function callManageUsers(payload) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData?.session?.access_token;
-  if (!token) throw new Error("Not signed in.");
-  const res = await fetch(FUNCTIONS_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify(payload),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || body.ok === false) throw new Error(body.error || `Request failed (${res.status})`);
-  return body;
+  const { data, error } = await supabase.functions.invoke("manage-users", { body: payload });
+  if (error) {
+    // FunctionsHttpError carries the real JSON body (our `{ ok:false, error }`)
+    // on error.context; supabase-js doesn't parse it for us.
+    const parsed = await error.context?.json?.().catch(() => null);
+    throw new Error(parsed?.error || error.message || "Request failed.");
+  }
+  if (data?.ok === false) throw new Error(data.error || "Request failed.");
+  return data;
 }
 
 export async function fetchUsers() {

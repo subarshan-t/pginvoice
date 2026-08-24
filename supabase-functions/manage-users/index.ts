@@ -49,8 +49,27 @@ Deno.serve(async (req: Request) => {
 
   // Service-role client -- only used for the pieces an admin/authenticated
   // client genuinely can't do (creating the auth user itself, listing all
-  // auth.users for the roster).
+  // auth.users for the roster, writing audit rows).
   const admin = createClient(supabaseUrl, serviceRoleKey);
+
+  async function logAudit(action: string, target: { userId?: string; email?: string }, detail?: Record<string, unknown>) {
+    await admin.from("pginvoice_audit_log").insert({
+      actor_user_id: callerUser.user.id,
+      actor_email: callerUser.user.email,
+      action,
+      target_user_id: target.userId ?? null,
+      target_email: target.email ?? null,
+      detail: detail ?? null,
+    });
+  }
+
+  async function superAdminCount(excludingUserId?: string): Promise<number> {
+    let q = admin.from("pginvoice_profiles").select("user_id", { count: "exact", head: true }).eq("role", "super_admin");
+    if (excludingUserId) q = q.neq("user_id", excludingUserId);
+    const { count, error } = await q;
+    if (error) throw error;
+    return count ?? 0;
+  }
 
   let body: any = {};
   try { body = await req.json(); } catch (_) { return bad("Invalid request body."); }
@@ -60,12 +79,12 @@ Deno.serve(async (req: Request) => {
     if (action === "list") {
       const { data: authList, error: authListErr } = await admin.auth.admin.listUsers({ perPage: 1000 });
       if (authListErr) throw authListErr;
-      const { data: profiles, error: profilesErr } = await admin.from("pginvoice_profiles").select("user_id, role");
+      const { data: profiles, error: profilesErr } = await admin.from("pginvoice_profiles").select("user_id, role, must_change_password");
       if (profilesErr) throw profilesErr;
       const { data: assignments, error: assignErr } = await admin.from("pginvoice_user_clients").select("user_id, client");
       if (assignErr) throw assignErr;
 
-      const roleByUser = new Map((profiles || []).map((p: any) => [p.user_id, p.role]));
+      const profileByUser = new Map((profiles || []).map((p: any) => [p.user_id, p]));
       const clientsByUser = new Map<string, string[]>();
       for (const a of assignments || []) {
         const list = clientsByUser.get(a.user_id) || [];
@@ -74,11 +93,12 @@ Deno.serve(async (req: Request) => {
       }
 
       const users = (authList.users || [])
-        .filter((u: any) => roleByUser.has(u.id)) // only users provisioned into pginvoice's role system
+        .filter((u: any) => profileByUser.has(u.id)) // only users provisioned into pginvoice's role system
         .map((u: any) => ({
           id: u.id,
           email: u.email,
-          role: roleByUser.get(u.id),
+          role: profileByUser.get(u.id)?.role,
+          mustChangePassword: !!profileByUser.get(u.id)?.must_change_password,
           clients: clientsByUser.get(u.id) || [],
           createdAt: u.created_at,
           lastSignInAt: u.last_sign_in_at,
@@ -107,15 +127,27 @@ Deno.serve(async (req: Request) => {
       if (createErr) throw createErr;
       const newUserId = created.user!.id;
 
-      const { error: profileErr } = await admin.from("pginvoice_profiles").insert({ user_id: newUserId, email, role });
-      if (profileErr) throw profileErr;
+      // From here on, any failure needs to unwind the auth user we just created --
+      // otherwise it's stranded: invisible in `list` (which only shows users with a
+      // profile row) but "already registered" on retry, with no way to fix it from
+      // this UI. Wrap the rest of setup and roll back on any error.
+      try {
+        const { error: profileErr } = await admin
+          .from("pginvoice_profiles")
+          .insert({ user_id: newUserId, email, role, must_change_password: true });
+        if (profileErr) throw profileErr;
 
-      if ((role === "consultant" || role === "coordinator") && clients.length) {
-        const rows = clients.map((client) => ({ user_id: newUserId, client }));
-        const { error: assignErr } = await admin.from("pginvoice_user_clients").insert(rows);
-        if (assignErr) throw assignErr;
+        if ((role === "consultant" || role === "coordinator") && clients.length) {
+          const rows = clients.map((client) => ({ user_id: newUserId, client }));
+          const { error: assignErr } = await admin.from("pginvoice_user_clients").insert(rows);
+          if (assignErr) throw assignErr;
+        }
+      } catch (setupErr) {
+        await admin.auth.admin.deleteUser(newUserId).catch(() => {});
+        throw setupErr;
       }
 
+      await logAudit("create_user", { userId: newUserId, email }, { role, clients });
       return new Response(JSON.stringify({ ok: true, userId: newUserId }), { headers: JSON_HEADERS });
     }
 
@@ -125,8 +157,24 @@ Deno.serve(async (req: Request) => {
       const clients: string[] = Array.isArray(body.clients) ? body.clients.filter((c: any) => typeof c === "string") : [];
       if (!targetUserId) return bad("Missing userId.");
       if (!ROLES.includes(role)) return bad("Invalid role.");
+      if (targetUserId === callerUser.user.id) {
+        return bad("You can't change your own role — ask another Super Admin or Admin to do it.");
+      }
       if (role === "super_admin" && callerRole !== "super_admin") {
         return bad("Only a Super Admin can grant the Super Admin role.", 403);
+      }
+
+      const { data: targetProfile, error: targetErr } = await admin
+        .from("pginvoice_profiles")
+        .select("role, email")
+        .eq("user_id", targetUserId)
+        .maybeSingle();
+      if (targetErr) throw targetErr;
+      if (!targetProfile) return bad("User not found.", 404);
+
+      if (targetProfile.role === "super_admin" && role !== "super_admin") {
+        const remaining = await superAdminCount(targetUserId);
+        if (remaining === 0) return bad("Can't remove the last Super Admin — promote someone else first.");
       }
 
       const { error: updErr } = await admin
@@ -143,6 +191,13 @@ Deno.serve(async (req: Request) => {
         if (insErr) throw insErr;
       }
 
+      // A role change invalidates whatever the old token could do -- without this,
+      // a demoted/promoted user keeps their previous effective access until their
+      // token naturally expires, since RLS is checked per-request but the token
+      // itself isn't re-issued.
+      await admin.auth.admin.signOut(targetUserId, "global").catch(() => {});
+
+      await logAudit("update_role", { userId: targetUserId, email: targetProfile.email }, { from: targetProfile.role, to: role, clients });
       return new Response(JSON.stringify({ ok: true }), { headers: JSON_HEADERS });
     }
 
@@ -151,11 +206,25 @@ Deno.serve(async (req: Request) => {
       if (!targetUserId) return bad("Missing userId.");
       if (targetUserId === callerUser.user.id) return bad("You can't remove your own account.");
 
+      const { data: targetProfile } = await admin
+        .from("pginvoice_profiles")
+        .select("role, email")
+        .eq("user_id", targetUserId)
+        .maybeSingle();
+
+      if (targetProfile?.role === "super_admin") {
+        const remaining = await superAdminCount(targetUserId);
+        if (remaining === 0) return bad("Can't remove the last Super Admin — promote someone else first.");
+      }
+
       const { error: authDelErr } = await admin.auth.admin.deleteUser(targetUserId);
       if (authDelErr) throw authDelErr;
-      // pginvoice_profiles / pginvoice_user_clients rows cascade via FK on auth.users delete? No --
-      // pginvoice_profiles references auth.users with ON DELETE CASCADE, so this is enough.
+      // pginvoice_profiles references auth.users(id) ON DELETE CASCADE, and
+      // pginvoice_user_clients references pginvoice_profiles(user_id) ON DELETE
+      // CASCADE in turn (see the pginvoice_rbac_users migration) -- both rows
+      // are cleaned up by the delete above, nothing further to do here.
 
+      await logAudit("delete_user", { userId: targetUserId, email: targetProfile?.email }, { role: targetProfile?.role });
       return new Response(JSON.stringify({ ok: true }), { headers: JSON_HEADERS });
     }
 
