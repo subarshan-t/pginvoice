@@ -26,36 +26,23 @@ function ClientCheckboxList({ label, options, selected, onToggle }) {
   );
 }
 
-// Autocompletes against ClickUp's own logged names (via a <datalist>, so typing
-// still works freely) and flags — hard-blocking submit, per how this is meant to
-// be used — a name that doesn't match anything ClickUp has ever seen, for the
-// roles whose client access is mostly derived from it. Admin-tier roles get the
-// same field but it's optional and never blocks.
-function ClickupNameField({ id, listId, value, onChange, clickupNames, required }) {
-  const trimmed = value.trim();
-  const matched = !trimmed || clickupNames.some((n) => n.toLowerCase() === trimmed.toLowerCase());
-  const showFlag = required && trimmed && !matched;
-  const showRequiredFlag = required && !trimmed;
+// Picks a real ClickUp person from the roster (rather than free-text) — picking
+// from the list makes an unmatched name impossible by construction, so the only
+// thing left to flag is leaving it unset on a role that requires one.
+function TeamMemberField({ id, value, onChange, clickupNames, required }) {
+  const showRequiredFlag = required && !value;
   return (
     <label className="pg-field" htmlFor={id}>
-      <span className="pg-field__label">ClickUp name{required ? "" : " (optional)"}</span>
-      <input
-        id={id}
-        className="pg-input"
-        type="text"
-        list={listId}
-        autoComplete="off"
-        placeholder="Start typing to match their ClickUp name…"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <datalist id={listId}>
-        {clickupNames.map((n) => <option key={n} value={n} />)}
-      </datalist>
-      {(showFlag || showRequiredFlag) && (
+      <span className="pg-field__label">Team member{required ? "" : " (optional)"}</span>
+      <select id={id} className="pg-input" value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{required ? "Select who this is…" : "— none —"}</option>
+        {clickupNames.map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+      <span className="pg-footnote">This is who they are in ClickUp — it's how their worked-on clients get auto-assigned.</span>
+      {showRequiredFlag && (
         <span className="pg-footnote" style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--status-warn, var(--status-over))" }}>
           <AlertTriangle size={12} />
-          {showRequiredFlag ? "Required for this role." : `No ClickUp user named "${trimmed}" found in synced time entries.`}
+          Required for this role.
         </span>
       )}
     </label>
@@ -218,15 +205,6 @@ export default function Users({ ownRole, ownUserId }) {
           </div>
           <form onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <label className="pg-field">
-              <span className="pg-field__label">Email</span>
-              <input className="pg-input" type="email" autoComplete="off" value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} />
-            </label>
-            <label className="pg-field">
-              <span className="pg-field__label">Temporary password</span>
-              <input className="pg-input" type="text" autoComplete="off" placeholder="At least 8 characters" value={draft.password} onChange={(e) => setDraft((d) => ({ ...d, password: e.target.value }))} />
-            </label>
-            <p className="pg-footnote">They'll be asked to set their own password the first time they sign in.</p>
-            <label className="pg-field">
               <span className="pg-field__label">Role</span>
               <select className="pg-input" value={draft.role} onChange={(e) => setDraft((d) => ({ ...d, role: e.target.value, clients: [] }))}>
                 {ROLES.filter((r) => r !== "super_admin" || ownRole === "super_admin").map((r) => (
@@ -234,9 +212,8 @@ export default function Users({ ownRole, ownUserId }) {
                 ))}
               </select>
             </label>
-            <ClickupNameField
+            <TeamMemberField
               id={createClickupId}
-              listId={`${createClickupId}-list`}
               value={draft.clickupUserName}
               onChange={(v) => setDraft((d) => ({ ...d, clickupUserName: v }))}
               clickupNames={clickupNames}
@@ -244,9 +221,18 @@ export default function Users({ ownRole, ownUserId }) {
             />
             {CLICKUP_REQUIRED_ROLES.has(draft.role) && (
               <p className="pg-footnote">
-                Matching a ClickUp name auto-assigns the clients they've logged time against — pick from the list below if you'd also like to grant one they haven't worked on yet.
+                Picking a team member auto-assigns the clients they've logged time against — tick more below if you'd also like to grant one they haven't worked on yet.
               </p>
             )}
+            <label className="pg-field">
+              <span className="pg-field__label">Email address</span>
+              <input className="pg-input" type="email" autoComplete="off" value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} />
+            </label>
+            <label className="pg-field">
+              <span className="pg-field__label">Temp password</span>
+              <input className="pg-input" type="text" autoComplete="off" placeholder="At least 8 characters" value={draft.password} onChange={(e) => setDraft((d) => ({ ...d, password: e.target.value }))} />
+            </label>
+            <p className="pg-footnote">They'll be asked to set their own password the first time they sign in.</p>
             {CLIENT_SCOPED_ROLES.has(draft.role) && (
               <ClientCheckboxList
                 label="Also grant these clients manually"
@@ -333,9 +319,8 @@ export default function Users({ ownRole, ownUserId }) {
                             ))}
                           </select>
                         </label>
-                        <ClickupNameField
+                        <TeamMemberField
                           id={editClickupId}
-                          listId={`${editClickupId}-list`}
                           value={editDraft.clickupUserName}
                           onChange={(v) => setEditDraft((d) => ({ ...d, clickupUserName: v }))}
                           clickupNames={clickupNames}
