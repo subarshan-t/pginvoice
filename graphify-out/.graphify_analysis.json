@@ -1,0 +1,371 @@
+{
+  "communities": {
+    "0": [
+      "src_app",
+      "src_app_buildprinthtml",
+      "src_app_classifyclient",
+      "src_app_clientcard",
+      "src_app_datekeystr",
+      "src_app_esc",
+      "src_app_exportitem",
+      "src_app_filecard",
+      "src_app_findheader",
+      "src_app_fmt",
+      "src_app_formattaskusers",
+      "src_app_metric",
+      "src_app_month_index",
+      "src_app_month_names",
+      "src_app_monthkey",
+      "src_app_monthlabel",
+      "src_app_mstominutes",
+      "src_app_pacestatus",
+      "src_app_packagebar",
+      "src_app_parseaccruedworkbook",
+      "src_app_parseclickupcsv",
+      "src_app_parseheadertomonth",
+      "src_app_parsestarttextmonth",
+      "src_app_parsetimetexttominutes",
+      "src_app_pgreconciliation",
+      "src_app_prevmonthkeystr",
+      "src_app_print",
+      "src_app_printclientpdf",
+      "src_app_skip_folders",
+      "src_app_stat",
+      "src_app_timeago",
+      "src_app_type_labels",
+      "src_app_type_tones",
+      "src_clickupsync",
+      "src_clickupsync_fetchclickupfromsupabase",
+      "src_clickupsync_fetchsyncmeta",
+      "src_clickupsync_triggermanualsync",
+      "src_supabaseclient",
+      "src_supabaseclient_supabase"
+    ],
+    "1": [
+      "src_capacitydashboard",
+      "src_capacitydashboard_c",
+      "src_capacitydashboard_capacitydashboardinner",
+      "src_capacitydashboard_capacitydashboardinner_demandfor",
+      "src_capacitydashboard_capacitydashboardinner_demandforgroup",
+      "src_capacitydashboard_capacitydashboardinner_exportxlsx",
+      "src_capacitydashboard_capacitydashboardinner_proposedhours",
+      "src_capacitydashboard_capacitydashboardinner_submitallocation",
+      "src_capacitydashboard_capacitydashboardinner_trailingaverage",
+      "src_capacitydashboard_capacitydashboardinner_wouldexceed",
+      "src_capacitydashboard_fixed_bases",
+      "src_capacitydashboard_holidaysinmonthgrouped",
+      "src_capacitydashboard_last6monthkeys",
+      "src_capacitydashboard_month_labels",
+      "src_capacitydashboard_months",
+      "src_capacitydashboard_owners",
+      "src_capacitydashboard_picker",
+      "src_capacitydashboard_picker_ondoc",
+      "src_capacitydashboard_public_holidays",
+      "src_capacitydashboard_publicholidaydays",
+      "src_capacitydashboard_savekey",
+      "src_capacitydashboard_searchbox",
+      "src_capacitydashboard_seed_clients",
+      "src_capacitydashboard_seed_people",
+      "src_capacitydashboard_seed_support",
+      "src_capacitydashboard_uid",
+      "src_capacitydashboard_variable_bases",
+      "src_capacitydashboard_weekdaysinmonth"
+    ],
+    "2": [
+      "src_namematch",
+      "src_namematch_findmatch",
+      "src_namematch_internal_keywords",
+      "src_namematch_isinternalfolder",
+      "src_namematch_normalizename",
+      "src_namematch_tokens",
+      "src_namematch_tokensim",
+      "src_performancescorecard",
+      "src_performancescorecard_fmt0",
+      "src_performancescorecard_fmt1",
+      "src_performancescorecard_linechart",
+      "src_performancescorecard_linechart_handlemove",
+      "src_performancescorecard_monthlabelshort",
+      "src_performancescorecard_notespanel",
+      "src_performancescorecard_performanceinner",
+      "src_performancescorecard_performanceinner_expandingavgat",
+      "src_performancescorecard_performanceinner_exportxlsx",
+      "src_performancescorecard_performanceinner_groupmeta",
+      "src_performancescorecard_picker",
+      "src_performancescorecard_picker_ondoc",
+      "src_performancescorecard_searchbox",
+      "src_performancescorecard_searchbox_ondoc",
+      "src_performancescorecard_statrow",
+      "src_performancescorecard_uid"
+    ],
+    "3": [
+      "src_capacitydashboard_loadkey",
+      "src_letterheadfooter",
+      "src_letterheadfooter_letterhead_footer_b64",
+      "src_timesheetsummary",
+      "src_timesheetsummary_buildtimesheetprinthtml",
+      "src_timesheetsummary_computeweeks",
+      "src_timesheetsummary_datelabel",
+      "src_timesheetsummary_daysinmonthof",
+      "src_timesheetsummary_esc",
+      "src_timesheetsummary_fmt2",
+      "src_timesheetsummary_monthkeyof",
+      "src_timesheetsummary_monthlabelof",
+      "src_timesheetsummary_print",
+      "src_timesheetsummary_printtimesheetpdf",
+      "src_timesheetsummary_searchbox",
+      "src_timesheetsummary_searchbox_ondoc",
+      "src_timesheetsummary_timesheetinner",
+      "src_timesheetsummary_weekdayshort"
+    ],
+    "4": [
+      "package",
+      "package_devdependencies",
+      "package_devdependencies_playwright",
+      "package_devdependencies_vite",
+      "package_devdependencies_vitejs_plugin_react",
+      "package_name",
+      "package_private",
+      "package_scripts",
+      "package_scripts_build",
+      "package_scripts_dev",
+      "package_scripts_preview",
+      "package_type",
+      "package_version",
+      "playwright",
+      "vite",
+      "vitejs_plugin_react"
+    ],
+    "5": [
+      "lucide_react",
+      "package_dependencies",
+      "package_dependencies_lucide_react",
+      "package_dependencies_papaparse",
+      "package_dependencies_react",
+      "package_dependencies_react_dom",
+      "package_dependencies_supabase_supabase_js",
+      "package_dependencies_xlsx",
+      "papaparse",
+      "react",
+      "react_dom",
+      "supabase_supabase_js",
+      "xlsx"
+    ],
+    "6": [
+      "supabase_functions_clickup_sync_index",
+      "supabase_functions_clickup_sync_index_clickupfetch",
+      "supabase_functions_clickup_sync_index_fetchallteammemberids",
+      "supabase_functions_clickup_sync_index_internal_keywords",
+      "supabase_functions_clickup_sync_index_isinternalfolder",
+      "supabase_functions_clickup_sync_index_localdateparts",
+      "supabase_functions_clickup_sync_index_monthkeyof",
+      "supabase_functions_clickup_sync_index_monthlabelof",
+      "supabase_functions_clickup_sync_index_months_back",
+      "supabase_functions_clickup_sync_index_resolvefoldername",
+      "supabase_functions_clickup_sync_index_resolvetaskname",
+      "supabase_functions_clickup_sync_index_resolveteamid",
+      "supabase_functions_clickup_sync_index_resolveusername"
+    ],
+    "7": [
+      "src_capacitydashboard_capacitydashboard",
+      "src_main",
+      "src_performancescorecard_performancescorecard",
+      "src_shell",
+      "src_shell_modules",
+      "src_shell_shell",
+      "src_timesheetsummary_timesheetsummary"
+    ],
+    "8": [
+      "src_idbstore",
+      "src_idbstore_idbdel",
+      "src_idbstore_idbget",
+      "src_idbstore_idbset",
+      "src_idbstore_opendb",
+      "src_idbstore_pg_data_event"
+    ],
+    "9": [
+      "src_capacitydashboard_errorboundary",
+      "src_capacitydashboard_errorboundary_componentdidcatch",
+      "src_capacitydashboard_errorboundary_constructor",
+      "src_capacitydashboard_errorboundary_getderivedstatefromerror",
+      "src_capacitydashboard_errorboundary_render"
+    ],
+    "10": [
+      "src_performancescorecard_errorboundary",
+      "src_performancescorecard_errorboundary_componentdidcatch",
+      "src_performancescorecard_errorboundary_constructor",
+      "src_performancescorecard_errorboundary_getderivedstatefromerror",
+      "src_performancescorecard_errorboundary_render"
+    ],
+    "11": [
+      "src_timesheetsummary_errorboundary",
+      "src_timesheetsummary_errorboundary_componentdidcatch",
+      "src_timesheetsummary_errorboundary_constructor",
+      "src_timesheetsummary_errorboundary_getderivedstatefromerror",
+      "src_timesheetsummary_errorboundary_render"
+    ],
+    "12": [
+      "vite_config"
+    ]
+  },
+  "cohesion": {
+    "0": 0.09716599190283401,
+    "1": 0.09788359788359788,
+    "2": 0.13768115942028986,
+    "3": 0.20261437908496732,
+    "4": 0.125,
+    "5": 0.15384615384615385,
+    "6": 0.1794871794871795,
+    "7": 0.3333333333333333,
+    "8": 0.5333333333333333,
+    "9": 0.4,
+    "10": 0.4,
+    "11": 0.4,
+    "12": 1.0
+  },
+  "gods": [
+    {
+      "id": "src_capacitydashboard_capacitydashboardinner",
+      "label": "CapacityDashboardInner()",
+      "degree": 18
+    },
+    {
+      "id": "src_app_pgreconciliation",
+      "label": "PGReconciliation()",
+      "degree": 16
+    },
+    {
+      "id": "src_performancescorecard_performanceinner",
+      "label": "PerformanceInner()",
+      "degree": 12
+    },
+    {
+      "id": "src_namematch_findmatch",
+      "label": "findMatch()",
+      "degree": 11
+    },
+    {
+      "id": "src_app_parseclickupcsv",
+      "label": "parseClickupCsv()",
+      "degree": 10
+    },
+    {
+      "id": "src_idbstore_idbget",
+      "label": "idbGet()",
+      "degree": 10
+    },
+    {
+      "id": "src_timesheetsummary_timesheetinner",
+      "label": "TimesheetInner()",
+      "degree": 9
+    },
+    {
+      "id": "src_namematch_isinternalfolder",
+      "label": "isInternalFolder()",
+      "degree": 7
+    },
+    {
+      "id": "src_app_fmt",
+      "label": "fmt()",
+      "degree": 6
+    },
+    {
+      "id": "src_capacitydashboard_loadkey",
+      "label": "loadKey()",
+      "degree": 6
+    }
+  ],
+  "surprises": [
+    {
+      "source": "parseClickupCsv()",
+      "target": "isInternalFolder()",
+      "source_files": [
+        "src/App.jsx",
+        "src/nameMatch.js"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "bridges separate communities"
+    },
+    {
+      "source": "PGReconciliation()",
+      "target": "idbGet()",
+      "source_files": [
+        "src/App.jsx",
+        "src/idbStore.js"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "bridges separate communities"
+    },
+    {
+      "source": "PGReconciliation()",
+      "target": "idbSet()",
+      "source_files": [
+        "src/App.jsx",
+        "src/idbStore.js"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "bridges separate communities"
+    },
+    {
+      "source": "PGReconciliation()",
+      "target": "findMatch()",
+      "source_files": [
+        "src/App.jsx",
+        "src/nameMatch.js"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "bridges separate communities"
+    },
+    {
+      "source": "CapacityDashboardInner()",
+      "target": "idbGet()",
+      "source_files": [
+        "src/CapacityDashboard.jsx",
+        "src/idbStore.js"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "bridges separate communities"
+    }
+  ],
+  "questions": [
+    {
+      "type": "bridge_node",
+      "question": "Why does `CapacityDashboardInner()` connect `CapacityDashboard.jsx` to `idbGet`, `PerformanceScorecard.jsx`, `TimesheetSummary.jsx`?",
+      "why": "High betweenness centrality (0.064) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `findMatch()` connect `PerformanceScorecard.jsx` to `App.jsx`, `CapacityDashboard.jsx`, `TimesheetSummary.jsx`?",
+      "why": "High betweenness centrality (0.064) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `idbGet()` connect `idbGet` to `App.jsx`, `CapacityDashboard.jsx`, `PerformanceScorecard.jsx`, `TimesheetSummary.jsx`?",
+      "why": "High betweenness centrality (0.058) - this node is a cross-community bridge."
+    },
+    {
+      "type": "isolated_nodes",
+      "question": "What connects `MONTH_INDEX`, `MONTH_NAMES`, `PRINT` to the rest of the system?",
+      "why": "33 weakly-connected nodes found - possible documentation gaps or missing edges."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `App.jsx` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.09716599190283401 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `CapacityDashboard.jsx` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.09788359788359788 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `PerformanceScorecard.jsx` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.13768115942028986 - nodes in this community are weakly interconnected."
+    }
+  ]
+}
