@@ -25,6 +25,31 @@ function bad(message: string, status = 400) {
   return new Response(JSON.stringify({ ok: false, error: message }), { status, headers: JSON_HEADERS });
 }
 
+const PAGE_SIZE = 1000; // PostgREST's default row cap per request -- paginate past it
+
+// PostgREST caps a single request at PAGE_SIZE rows regardless of role/RLS --
+// several people here have well over 1000 logged entries (Alexander: 6851,
+// Vinavie: 4687, Holly: 4644, ...), so an unpaginated select silently missed
+// every folder past the first page, which meant this whole feature under-
+// assigned clients for exactly the busiest consultants.
+async function fetchAllFolders(admin: any, clickupUserName: string): Promise<string[]> {
+  const folders = new Set<string>();
+  let from = 0;
+  while (true) {
+    const { data, error } = await admin
+      .from("pginvoice_clickup_entries")
+      .select("folder")
+      .ilike("user_name", clickupUserName)
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || !data.length) break;
+    for (const e of data) if (e.folder) folders.add(e.folder);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return [...folders];
+}
+
 // Resolves a ClickUp person's worked folders (all-time, not just recent syncs)
 // into real pginvoice_clients client names -- via the two exact-match columns
 // that already link a folder to a client (pginvoice_clients.clickup_folder for
@@ -35,12 +60,7 @@ function bad(message: string, status = 400) {
 // (an admin can still tick the client manually) rather than porting that whole
 // matcher into this Deno runtime.
 async function resolveClickupClients(admin: any, clickupUserName: string): Promise<string[]> {
-  const { data: entries, error: entriesErr } = await admin
-    .from("pginvoice_clickup_entries")
-    .select("folder")
-    .ilike("user_name", clickupUserName);
-  if (entriesErr) throw entriesErr;
-  const folders = [...new Set((entries || []).map((e: any) => e.folder).filter(Boolean))];
+  const folders = await fetchAllFolders(admin, clickupUserName);
   if (!folders.length) return [];
 
   const [{ data: directClients, error: dcErr }, { data: costCentres, error: ccErr }] = await Promise.all([

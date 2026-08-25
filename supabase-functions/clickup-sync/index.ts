@@ -300,11 +300,24 @@ Deno.serve(async (req: Request) => {
         .in("role", ["consultant", "coordinator"])
         .not("clickup_user_name", "is", null);
       for (const p of profiles || []) {
-        const { data: userEntries } = await supabase
-          .from("pginvoice_clickup_entries")
-          .select("folder")
-          .ilike("user_name", p.clickup_user_name);
-        const folders = [...new Set((userEntries || []).map((e: any) => e.folder).filter(Boolean))];
+        // Paginated -- PostgREST caps a single request at 1000 rows, and several
+        // people here log well over that many entries all-time (Alexander: 6851,
+        // Vinavie: 4687, ...), so an unpaginated select silently missed every
+        // folder past the first page.
+        const folderSet = new Set<string>();
+        let pageFrom = 0;
+        while (true) {
+          const { data: page } = await supabase
+            .from("pginvoice_clickup_entries")
+            .select("folder")
+            .ilike("user_name", p.clickup_user_name)
+            .range(pageFrom, pageFrom + 999);
+          if (!page || !page.length) break;
+          for (const e of page) if (e.folder) folderSet.add(e.folder);
+          if (page.length < 1000) break;
+          pageFrom += 1000;
+        }
+        const folders = [...folderSet];
         let clients: string[] = [];
         if (folders.length) {
           const [{ data: directClients }, { data: costCentres }] = await Promise.all([

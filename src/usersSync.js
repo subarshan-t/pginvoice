@@ -93,10 +93,27 @@ export async function deleteUser(userId) {
 // allows any authenticated read (it was never scoped per-client like the
 // billing tables), so there's no need to round-trip through manage-users
 // just to list distinct ClickUp names for the autocomplete.
+//
+// Paginated (PostgREST caps a single request at 1000 rows) -- with 49k+
+// entries in this table, an unpaginated select only ever saw whichever
+// person's rows happened to fall in that first 1000, silently hiding
+// everyone else from the picker.
+const PAGE_SIZE = 1000;
 export async function fetchClickupUserNames() {
-  const { data, error } = await supabase.from("pginvoice_clickup_entries").select("user_name");
-  if (error) throw error;
-  return [...new Set((data || []).map((r) => r.user_name).filter(Boolean))].sort();
+  const names = new Set();
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("pginvoice_clickup_entries")
+      .select("user_name")
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || !data.length) break;
+    for (const r of data) if (r.user_name) names.add(r.user_name);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return [...names].sort();
 }
 
 // CapacityDashboard.jsx calls this whenever an active project's lead changes --
