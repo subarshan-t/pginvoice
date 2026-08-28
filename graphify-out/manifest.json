@@ -1,0 +1,86 @@
+{
+  "package.json": {
+    "mtime": 1787644073.5333574,
+    "seen": 1787644527.3690932,
+    "ast_hash": "60dda9f1be90b9aca129882d4c4964b5",
+    "semantic_hash": "60dda9f1be90b9aca129882d4c4964b5"
+  },
+  "src/App.jsx": {
+    "mtime": 1787644073.5413573,
+    "seen": 1787644527.3690968,
+    "ast_hash": "6fafc6d1438ec3ce5316d0d4df0f7c4e",
+    "semantic_hash": "6fafc6d1438ec3ce5316d0d4df0f7c4e"
+  },
+  "src/CapacityDashboard.jsx": {
+    "mtime": 1787644073.545835,
+    "seen": 1787644527.369099,
+    "ast_hash": "33581ca4a53ed2d4d8f003e4ce30243c",
+    "semantic_hash": "33581ca4a53ed2d4d8f003e4ce30243c"
+  },
+  "src/PerformanceScorecard.jsx": {
+    "mtime": 1787644073.545835,
+    "seen": 1787644527.369101,
+    "ast_hash": "c7b509845648cac8a62d6f908529d3e8",
+    "semantic_hash": "c7b509845648cac8a62d6f908529d3e8"
+  },
+  "src/Shell.jsx": {
+    "mtime": 1787644073.545835,
+    "seen": 1787644527.3691025,
+    "ast_hash": "3616152efd54117d06ce3b1c16e712d3",
+    "semantic_hash": "3616152efd54117d06ce3b1c16e712d3"
+  },
+  "src/TimesheetSummary.jsx": {
+    "mtime": 1787644073.545835,
+    "seen": 1787644527.3691044,
+    "ast_hash": "3cb93411aad74eb519a094e9eeb7d060",
+    "semantic_hash": "3cb93411aad74eb519a094e9eeb7d060"
+  },
+  "src/clickupSync.js": {
+    "mtime": 1787644073.545835,
+    "seen": 1787644527.3691063,
+    "ast_hash": "68c99f28d37a59a8f297790d38f45fdd",
+    "semantic_hash": "68c99f28d37a59a8f297790d38f45fdd"
+  },
+  "src/idbStore.js": {
+    "mtime": 1787644073.545835,
+    "seen": 1787644527.3691158,
+    "ast_hash": "8434d9b18c865b3719ef80a5eb693dc6",
+    "semantic_hash": "8434d9b18c865b3719ef80a5eb693dc6"
+  },
+  "src/letterheadFooter.js": {
+    "mtime": 1787644073.545835,
+    "seen": 1787644527.3691185,
+    "ast_hash": "505b54647852b5d8db2f23f5f0da23bf",
+    "semantic_hash": "505b54647852b5d8db2f23f5f0da23bf"
+  },
+  "src/main.jsx": {
+    "mtime": 1787644073.545835,
+    "seen": 1787644527.3691204,
+    "ast_hash": "f7c9fdfa1ab91a4e426ba42d0de4977b",
+    "semantic_hash": "f7c9fdfa1ab91a4e426ba42d0de4977b"
+  },
+  "src/nameMatch.js": {
+    "mtime": 1787644073.545835,
+    "seen": 1787644527.3691216,
+    "ast_hash": "92a870ffb16b68df045667c82b582e18",
+    "semantic_hash": "92a870ffb16b68df045667c82b582e18"
+  },
+  "src/supabaseClient.js": {
+    "mtime": 1787644073.5515258,
+    "seen": 1787644527.369123,
+    "ast_hash": "7f9c46705a7423a4dac76768f9c5002e",
+    "semantic_hash": "7f9c46705a7423a4dac76768f9c5002e"
+  },
+  "supabase-functions/clickup-sync/index.ts": {
+    "mtime": 1787644073.5524144,
+    "seen": 1787644527.3691244,
+    "ast_hash": "d8911333579c334f220ab86d04e91006",
+    "semantic_hash": "d8911333579c334f220ab86d04e91006"
+  },
+  "vite.config.js": {
+    "mtime": 1787644073.5524144,
+    "seen": 1787644527.3691256,
+    "ast_hash": "2dc51eadd3ccf3ed74f72d3e85c05442",
+    "semantic_hash": "2dc51eadd3ccf3ed74f72d3e85c05442"
+  }
+}
