@@ -36,11 +36,16 @@ export function findMatch(name, candidates) {
     const na = normalizeName(a);
     if (na && (norm.includes(na) || na.includes(norm))) return { name: a, confidence: 0.85, method: "substring" };
   }
-  let best = null;
+  let best = null, runnerUp = null;
   for (const a of candidates) {
     const sim = tokenSim(name, a);
-    if (sim > (best?.confidence ?? 0)) best = { name: a, confidence: sim, method: "tokens" };
+    if (sim > (best?.confidence ?? 0)) { runnerUp = best; best = { name: a, confidence: sim, method: "tokens" }; }
+    else if (sim > (runnerUp?.confidence ?? 0)) runnerUp = { name: a, confidence: sim, method: "tokens" };
   }
+  // A near-tie between the top two candidates (e.g. two similarly-named clients, or two
+  // consultants sharing a first name) means the fuzzy score can't reliably tell them apart
+  // -- guessing would silently misattribute hours, so refuse the match instead.
+  if (best && runnerUp && best.confidence - runnerUp.confidence < 0.05) return null;
   if (best && best.confidence >= 0.5) return best;
   return null;
 }

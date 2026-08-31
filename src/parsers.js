@@ -17,8 +17,10 @@ export function parseTimeTextToMinutes(raw) {
   }
   const n = parseFloat(s.replace(/,/g, ""));
   if (isNaN(n)) return 0;
-  if (n > 0 && n < 1) return n * 24 * 60;
-  return n;
+  // No h/m/s suffix or colon means this is a plain hour count (e.g. "0.5" = 30 minutes),
+  // not an Excel day-fraction serial — this field is a CSV export's display string, never
+  // a raw spreadsheet cell value, so there's no day-fraction encoding to undo here.
+  return n * 60;
 }
 export function msToMinutes(raw) {
   const n = parseFloat(String(raw).replace(/,/g, ""));

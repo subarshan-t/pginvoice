@@ -15,7 +15,16 @@ import { findMatch, multiFolderMatchesFor, isInternalFolder } from "./nameMatch.
    MONTHS / CONSTANTS
 ============================================================ */
 export const MONTHS = ["2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"];
-export const CURRENT_MONTH = "2026-07";
+// Derived from the real date rather than hardcoded, so "now" doesn't silently drift
+// stale as months pass. Clamped into MONTHS since PUBLIC_HOLIDAYS (and the rest of the
+// capacity data below) only covers this range — extend both together when adding a year.
+function computeCurrentMonth() {
+  const key = new Date().toISOString().slice(0, 7);
+  if (key < MONTHS[0]) return MONTHS[0];
+  if (key > MONTHS[MONTHS.length - 1]) return MONTHS[MONTHS.length - 1];
+  return key;
+}
+export const CURRENT_MONTH = computeCurrentMonth();
 export const MONTH_LABELS = { "2025-12": "Dec 25", "2026-01": "Jan 26", "2026-02": "Feb 26", "2026-03": "Mar 26", "2026-04": "Apr 26", "2026-05": "May 26", "2026-06": "Jun 26", "2026-07": "Jul 26", "2026-08": "Aug 26", "2026-09": "Sep 26", "2026-10": "Oct 26", "2026-11": "Nov 26", "2026-12": "Dec 26" };
 
 // Real, named public holidays for SA/WA/QLD, weekdays only (weekend-falling holidays

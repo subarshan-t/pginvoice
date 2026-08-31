@@ -514,7 +514,10 @@ export default function PGReconciliation({ onNavigateClients }) {
     for (const r of clickup.rows) {
       if (clickup.hasBillable && billableOnly && !r.billable) continue;
       if (r.isInternal) continue;
-      if (monthKey && r.monthKey && r.monthKey !== monthKey) continue;
+      // A row with no detected month (e.g. an older export missing "Start Text") must
+      // still be excluded once a specific reporting period is selected — otherwise its
+      // hours silently leak into every period's totals instead of just the unfiltered view.
+      if (monthKey && r.monthKey !== monthKey) continue;
       if (!map.has(r.folder))
         map.set(r.folder, { name: r.folder, totalMin: 0, tasksAll: new Map(), userMinutes: new Map(), tasksByUser: new Map(), taskUsers: new Map(), taskIds: new Map() });
       const c = map.get(r.folder);
@@ -701,9 +704,14 @@ export default function PGReconciliation({ onNavigateClients }) {
       // ClickUp data we have for that month right now. A mismatch usually means ClickUp
       // entries were edited after the accrued sheet was last updated for that period.
       let priorMismatch = null;
-      if (!priorBalanceEstimated && pkg !== null && pkg > 0 && priorBalance !== null && monthWorked) {
+      const priorPriorKey = prevMonthKeyStr(priorKey);
+      // Only cross-check when the sheet actually has a column for the month before that —
+      // treating a genuinely missing column as a 0 balance (rather than skipping the check)
+      // would flag a false mismatch for any client whose accrued sheet starts mid-year.
+      const hasPriorPriorBalance = !!accruedClient && Object.prototype.hasOwnProperty.call(accruedClient.balances, priorPriorKey);
+      if (!priorBalanceEstimated && pkg !== null && pkg > 0 && priorBalance !== null && monthWorked && hasPriorPriorBalance) {
         const priorWorkedH = priorMonthWorkedMin / 60;
-        const priorPriorBalance = accruedClient.balances[prevMonthKeyStr(priorKey)] ?? 0;
+        const priorPriorBalance = accruedClient.balances[priorPriorKey] ?? 0;
         const recomputed = priorWorkedH - pkg + priorPriorBalance;
         if (Math.abs(recomputed - priorBalance) > MISMATCH_TOLERANCE_H) {
           priorMismatch = { sheetValue: priorBalance, recomputed };
@@ -810,7 +818,7 @@ export default function PGReconciliation({ onNavigateClients }) {
     const set = new Set();
     for (const r of clickup.rows) {
       if (r.isInternal) continue;
-      if (dataMonthKey && r.monthKey && r.monthKey !== dataMonthKey) continue;
+      if (dataMonthKey && r.monthKey !== dataMonthKey) continue;
       if (r.user) set.add(r.user);
     }
     return [...set].sort();
@@ -836,7 +844,7 @@ export default function PGReconciliation({ onNavigateClients }) {
     for (const r of clickup.rows) {
       if (!r.isInternal) continue;
       if (clickup.hasBillable && billableOnly && !r.billable) continue;
-      if (dataMonthKey && r.monthKey && r.monthKey !== dataMonthKey) continue;
+      if (dataMonthKey && r.monthKey !== dataMonthKey) continue;
       byFolder.set(r.folder, (byFolder.get(r.folder) || 0) + r.minutes);
     }
     const folders = [...byFolder.entries()].map(([folder, min]) => ({ folder, hours: min / 60 })).sort((a, b) => b.hours - a.hours);

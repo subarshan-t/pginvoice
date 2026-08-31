@@ -182,6 +182,26 @@ Deno.serve(async (req: Request) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+  // Platform JWT verification alone isn't enough here: it only proves the caller has
+  // SOME valid JWT, and the publishable anon key (shipped to every browser, unauthenticated
+  // or not — see supabaseClient.js) is itself a valid JWT. Without this check, anyone who
+  // opens devtools can call this function directly and trigger unlimited org-wide ClickUp
+  // pulls, bypassing the app's login screen entirely (the pg_cron trigger, which never sends
+  // an Authorization header a real user could produce, calls with the service role key instead
+  // and is exempt from this check).
+  const cronSecret = Deno.env.get("CLICKUP_SYNC_CRON_SECRET");
+  const isCron = !!cronSecret && req.headers.get("x-cron-secret") === cronSecret;
+  if (!isCron) {
+    const authHeader = req.headers.get("Authorization") || "";
+    const userToken = authHeader.replace(/^Bearer\s+/i, "");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const authClient = createClient(supabaseUrl, anonKey);
+    const { data: userData, error: userErr } = userToken ? await authClient.auth.getUser(userToken) : { data: null, error: new Error("missing token") };
+    if (userErr || !userData?.user) {
+      return new Response(JSON.stringify({ ok: false, error: "Not authenticated." }), { status: 401, headers: JSON_HEADERS });
+    }
+  }
+
   // A key saved from Settings (pginvoice_secrets, written by the clickup-key
   // function) takes priority over the CLICKUP_API_TOKEN Edge Function secret --
   // that's the whole point of letting it be set from the UI: it's how someone
