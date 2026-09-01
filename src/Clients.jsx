@@ -889,7 +889,19 @@ export default function Clients() {
     if (!clients || !folderList.length) return { info, subProjectOf };
     for (const c of clients) {
       const all = multiFolderMatchesFor(c.client, folderList);
-      if (!all || all.length < 2) continue;
+      if (!all) continue;
+      // The `< 2` floor only makes sense for a hardcoded MULTI_FOLDER_CLIENTS rule, where
+      // `all` naturally includes the client's own primary folder alongside any real
+      // siblings -- a bare match with nothing else is just the client matching its own
+      // rule, not an actual cost centre. A DYNAMIC client's `all` is exclusively the rows
+      // explicitly added via this module's Cost Centres/Sub Project editors (it never
+      // includes the client's own registered clickupFolder at all -- see
+      // multiFolderMatchesFor in nameMatch.js), so even a single dynamic row is a real,
+      // deliberately-added link and must never be silently dropped here. Without this
+      // split, adding exactly one sub-project to a client with no other cost centres
+      // (e.g. ARAS + its Website Optimisation Project) always failed this guard and
+      // showed as "None yet" despite being saved correctly.
+      if (!isDynamicCostCentreClient(c.client) && all.length < 2) continue;
       const accrual = multiFolderAccrualMatchesFor(c.client, folderList) || [];
       const costCentres = all.filter((f) => f !== c.clickupFolder && accrual.includes(f));
       const subProjects = all.filter((f) => !accrual.includes(f));
