@@ -80,11 +80,19 @@ export async function fetchAccruedForReconciliation() {
     // viewed, not whichever row happened to be scanned last when the client-level value
     // was set (see the c.agreedHpm comment in rowsToClients -- that was the exact bug that
     // left a client's now-hourly folder still showing its old package figure forever).
+    // Set for every month that has a row at all, even when its own value is null (a
+    // client genuinely off-package that month) -- the caller (App.jsx) needs to tell
+    // "no data for this month, fall back to the client-level scalar" apart from "this
+    // month has a row and it says no package," which an `if (agreedHpm !== null)` guard
+    // here can't distinguish (a `key in object` check on the sparse result reads the
+    // same either way). Omitting the false case was the exact bug that left ARAS -- off
+    // package since August, no row written for August's agreed_hpm -- still showing its
+    // old 32 hr/month figure, pulled from the stale client-level scalar as a fallback.
     const agreedByMonth = {};
     for (const [mk, cell] of Object.entries(c.months)) {
       monthSet.add(mk);
       if (cell.accrualValue !== null) balances[mk] = cell.accrualValue;
-      if (cell.agreedHpm !== null) agreedByMonth[mk] = parseAgreedHours(cell.agreedHpm);
+      agreedByMonth[mk] = cell.agreedHpm !== null ? parseAgreedHours(cell.agreedHpm) : null;
     }
     return { name: c.client, package: parseAgreedHours(c.agreedHpm), agreedByMonth, balances };
   });
