@@ -1274,7 +1274,7 @@ button { font: inherit; }
 .pg-client-list__head,
 .pg-client-list__row {
   display: grid;
-  grid-template-columns: 1.6fr 1.3fr 1.2fr 1.3fr 20px;
+  grid-template-columns: 1.6fr 1.4fr 1.3fr 130px 20px;
   align-items: center;
   gap: 16px;
   min-width: 640px;
@@ -1294,15 +1294,11 @@ button { font: inherit; }
 .pg-client-list__client { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .pg-client-list__client-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pg-client-list__name { font-family: var(--font-display); font-size: 14px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pg-client-list__statustag { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-tertiary); }
 .pg-client-list__arrangement { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pg-client-list__arrangement-text { font-size: 12px; color: var(--fg-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-client-list__owner { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--fg-primary); }
 .pg-client-list__owner span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pg-client-list__project { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-.pg-client-list__project-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.pg-client-list__project-name { font-size: 13px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pg-client-list__project-sub { font-size: 11px; color: var(--fg-tertiary); }
+.pg-client-list__expand { display: flex; align-items: center; justify-content: center; }
 
 .pg-drawer-tabs { display: flex; gap: 18px; margin-top: 18px; border-bottom: 1px solid var(--border-subtle); }
 .pg-drawer-tabs__tab {

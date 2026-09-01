@@ -18,6 +18,29 @@ function notifyCostCentresChanged() {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PG_DATA_EVENT, { detail: { key: PG_COST_CENTRES_KEY } }));
 }
 
+// Every mutation below writes one row to pginvoice_client_history so the drawer's
+// History section can show a single chronological "who changed what, when" feed
+// across transitions, consultant updates, folder edits, cost-centre changes, and
+// notes -- rather than each kind of change living in its own untracked place (as
+// folder edits and cost-centre add/remove did before this table existed).
+async function logClientHistory(client, action, summary, detail) {
+  const { data: userData } = await supabase.auth.getUser();
+  const { error } = await supabase.from("pginvoice_client_history").insert({
+    client, action, actor_email: userData?.user?.email || null, actor_user_id: userData?.user?.id || null,
+    detail: { summary, ...(detail || {}) },
+  });
+  // Best-effort -- a history-logging failure shouldn't roll back or block the
+  // actual change it's describing (which has already committed by the time this
+  // runs in every caller below).
+  if (error) console.error("Couldn't log client history:", error);
+}
+
+export async function fetchClientHistory(client) {
+  const { data, error } = await supabase.from("pginvoice_client_history").select("*").eq("client", client).order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
 // The user-editable cost-centre/sub-project links (pginvoice_cost_centres) -- Shell.jsx
 // fetches this once at the top level (every page is mounted simultaneously, just hidden via
 // CSS, see Shell.jsx's `display: active === ... ? "block" : "none"` pattern) and feeds it into
@@ -35,12 +58,16 @@ export async function addCostCentreFolder(client, folder, kind) {
   const { error } = await supabase.from("pginvoice_cost_centres").insert({ client, folder, kind });
   if (error) throw error;
   notifyCostCentresChanged();
+  const label = kind === "sub_project" ? "sub-project" : "cost centre";
+  logClientHistory(client, "cost_centre_add", `Added ${label}: ${folder}`, { folder, kind });
 }
 
-export async function removeCostCentreFolder(client, folder) {
+export async function removeCostCentreFolder(client, folder, kind) {
   const { error } = await supabase.from("pginvoice_cost_centres").delete().eq("client", client).eq("folder", folder);
   if (error) throw error;
   notifyCostCentresChanged();
+  const label = kind === "sub_project" ? "sub-project" : "cost centre";
+  logClientHistory(client, "cost_centre_remove", `Removed ${label}: ${folder}`, { folder, kind });
 }
 
 export async function fetchClients() {
@@ -76,10 +103,12 @@ function rowToClient(r) {
 // The ClickUp folder name this client's real hours are logged under -- not part of the
 // scheduled-event lifecycle (type/consultant/offboarding), just editable metadata, so it's
 // a direct update rather than an event.
-export async function updateClickupFolder(client, folder) {
+export async function updateClickupFolder(client, folder, { previousFolder } = {}) {
   const { error } = await supabase.from("pginvoice_clients").update({ clickup_folder: folder || null }).eq("client", client);
   if (error) throw error;
   notifyClientsChanged();
+  const summary = folder ? `Set ClickUp folder to "${folder}"` : "Cleared ClickUp folder";
+  logClientHistory(client, "folder_change", summary, { from: previousFolder || null, to: folder || null });
 }
 
 // Saves the client's website URL and, when `autoLogo` is true, derives a logo
@@ -165,11 +194,20 @@ export async function fetchClientEvents(client) {
   return data || [];
 }
 
+const EVENT_KIND_LABEL = {
+  type: "Transition", consultant: "Consultant update", offboarding: "Offboarding",
+  reactivation: "Reactivation", hold: "Put on hold", resume: "Resume",
+};
 export async function createClientEvent(client, kind, effectiveDate, fields, note) {
   const row = { client, kind, effective_date: effectiveDate, note: note || null, applied: false, ...fields };
   const { error } = await supabase.from("pginvoice_client_events").insert(row);
   if (error) throw error;
   notifyClientsChanged();
+  const label = EVENT_KIND_LABEL[kind] || kind;
+  const detailBits = kind === "type" ? `→ ${fields.new_type}${fields.new_agreed_hours != null ? ` (${fields.new_agreed_hours} hrs)` : ""}`
+    : kind === "consultant" ? `→ ${fields.new_consultant || "unassigned"}`
+    : "";
+  logClientHistory(client, `event_${kind}`, `Scheduled ${label}${detailBits ? ` ${detailBits}` : ""}, effective ${effectiveDate}`, { kind, effectiveDate, ...fields, note: note || null });
 }
 
 // Only for events that haven't been applied yet (still-scheduled/future transitions) --
@@ -178,11 +216,12 @@ export async function createClientEvent(client, kind, effectiveDate, fields, not
 // deleting one after the fact would silently rewrite already-closed months' history. The
 // Clients module enforces this by only ever offering delete on pending rows; enforced here
 // too so any other future caller can't accidentally do it either.
-export async function deleteClientEvent(id, { applied }) {
+export async function deleteClientEvent(id, { applied, client, kind } = {}) {
   if (applied) throw new Error("Can't delete an already-applied event -- it already changed the client's history.");
   const { error } = await supabase.from("pginvoice_client_events").delete().eq("id", id).eq("applied", false);
   if (error) throw error;
   notifyClientsChanged();
+  if (client) logClientHistory(client, `event_${kind}_removed`, `Removed scheduled ${EVENT_KIND_LABEL[kind] || kind}`, { kind });
 }
 
 // Applies any event whose effective date has arrived (<= today) and isn't applied
@@ -235,6 +274,39 @@ export function typeTimelineFor(client, events) {
     .sort((a, b) => a.effective_date.localeCompare(b.effective_date));
   for (const e of typeEvents) segments.push({ from: e.effective_date, type: e.new_type, agreedHours: e.new_agreed_hours === null ? null : Number(e.new_agreed_hours), note: e.note || null });
   return segments;
+}
+
+// Multiple dated notes per client -- each independently editable/deletable, not
+// a single overwritten scratchpad. Every add/edit/delete also lands in the
+// client's History feed via logClientHistory.
+export async function fetchClientNotes(client) {
+  const { data, error } = await supabase.from("pginvoice_client_notes").select("*").eq("client", client).order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function addClientNote(client, text) {
+  const { data: userData } = await supabase.auth.getUser();
+  const { error } = await supabase.from("pginvoice_client_notes").insert({
+    client, text, author_email: userData?.user?.email || null, author_user_id: userData?.user?.id || null,
+  });
+  if (error) throw error;
+  notifyClientsChanged();
+  logClientHistory(client, "note_add", `Added a note`, { text });
+}
+
+export async function updateClientNote(id, client, text) {
+  const { error } = await supabase.from("pginvoice_client_notes").update({ text, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) throw error;
+  notifyClientsChanged();
+  logClientHistory(client, "note_edit", `Edited a note`, { text });
+}
+
+export async function deleteClientNote(id, client) {
+  const { error } = await supabase.from("pginvoice_client_notes").delete().eq("id", id);
+  if (error) throw error;
+  notifyClientsChanged();
+  logClientHistory(client, "note_delete", `Deleted a note`, {});
 }
 
 export function typeForMonth(client, events, monthKey) {

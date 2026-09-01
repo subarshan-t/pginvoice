@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Search, ArrowRight, Pencil, Check, AlertTriangle, Upload, X, ChevronRight, ArrowLeft } from "lucide-react";
-import { fetchClients, fetchClientEvents, createClientEvent, deleteClientEvent, applyDueClientEvents, updateClickupFolder, updateClientWebsite, updateClientLogo, fetchCostCentres, addCostCentreFolder, removeCostCentreFolder } from "./clientsSync.js";
+import { Search, ArrowRight, Pencil, Check, AlertTriangle, Upload, X, ChevronRight, ArrowLeft, Plus, Trash2 } from "lucide-react";
+import {
+  fetchClients, fetchClientEvents, createClientEvent, deleteClientEvent, applyDueClientEvents,
+  updateClickupFolder, updateClientWebsite, updateClientLogo, fetchCostCentres, addCostCentreFolder, removeCostCentreFolder,
+  fetchClientHistory, fetchClientNotes, addClientNote, updateClientNote, deleteClientNote,
+} from "./clientsSync.js";
 import { multiFolderMatchesFor, multiFolderAccrualMatchesFor, setDynamicCostCentres, isDynamicCostCentreClient, findPersonMatch } from "./nameMatch.js";
 import { idbGet, PG_DATA_EVENT } from "./idbStore.js";
 import { CLICKUP_DB_KEY, PG_CLIENTS_KEY, PG_COST_CENTRES_KEY, CAP_PEOPLE_KEY } from "./storageKeys.js";
@@ -122,6 +126,33 @@ function arrangementTagLabel(c) {
   return TYPE_LABEL[c.type] || c.type;
 }
 
+const STATUS_LABEL = { active: "Active", on_hold: "On Hold", offboarded: "Offboarded", archived: "Archived" };
+const STATUS_TONE = {
+  active: "var(--status-ok)", on_hold: "var(--status-warn)",
+  offboarded: "var(--fg-tertiary)", archived: "var(--status-over)",
+};
+function StatusBalloon({ status }) {
+  return (
+    <span className="pg-tag pg-tag--pill" style={{ color: STATUS_TONE[status] || "var(--fg-tertiary)", background: "var(--bg-elevated)" }}>
+      {STATUS_LABEL[status] || status}
+    </span>
+  );
+}
+
+function timeAgo(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const diffMs = Date.now() - d.getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return d.toISOString().slice(0, 10);
+}
+
 function Stat({ value, label }) {
   return (
     <div>
@@ -230,7 +261,7 @@ function ModifyPanel({ client, events, onSaved, onEventsChanged }) {
     setDeletingId(e.id);
     setErr(null);
     try {
-      await deleteClientEvent(e.id, { applied: e.applied });
+      await deleteClientEvent(e.id, { applied: e.applied, client: client.client, kind: e.kind });
       await onEventsChanged?.();
     } catch (err2) {
       setErr(err2.message || String(err2));
@@ -239,18 +270,19 @@ function ModifyPanel({ client, events, onSaved, onEventsChanged }) {
     }
   }
 
+  // Pending (not-yet-applied) scheduled changes only -- a quick "what's coming up"
+  // list right in the edit popover. The full applied+pending log lives in the
+  // drawer's own History section now, reading from pginvoice_client_history
+  // instead of duplicating it here.
+  const pendingEvents = useMemo(() => sortedEvents.filter((e) => !e.applied), [sortedEvents]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {/* Full transition history -- past and scheduled, all kinds, in one place -- since
-          the underlying event log already supports any number of type changes over time
-          (a client can go hourly -> package -> hourly again, each just its own dated row),
-          the missing piece was ever being able to SEE them all together, not the ability
-          to add more than one. */}
-      {sortedEvents.length > 0 && (
+      {pendingEvents.length > 0 && (
         <div>
-          <div className="pg-field__label" style={{ marginBottom: 4 }}>History</div>
+          <div className="pg-field__label" style={{ marginBottom: 4 }}>Scheduled</div>
           <div style={{ display: "flex", flexDirection: "column" }}>
-            {sortedEvents.map((e) => (
+            {pendingEvents.map((e) => (
               <EventRow key={e.id} event={e} onDelete={removeEvent} deleting={deletingId === e.id} />
             ))}
           </div>
@@ -398,10 +430,32 @@ function ModifyPanel({ client, events, onSaved, onEventsChanged }) {
   );
 }
 
+// Pencil button next to the client's name -- opens a popover offering the same
+// lifecycle actions the old inline Modify panel had (Transitioning, Consultant
+// Update, Offboarding/Put on Hold, contextually Resume/Reactivate), rendering the
+// chosen action's fields right inside the same popover instead of navigating away.
+function EditPopover({ client, events, onSaved, onEventsChanged }) {
+  const [open, setOpen] = useState(false);
+  const ref = useDismissable(() => setOpen(false));
+  return (
+    <div style={{ position: "relative" }} ref={open ? ref : undefined}>
+      <button type="button" className="pg-drawer__icon-btn" title="Edit client" aria-label="Edit client" onClick={() => setOpen((o) => !o)}>
+        <Pencil size={15} />
+      </button>
+      {open && (
+        <div className="pg-menu" style={{ top: "calc(100% + 4px)", right: 0, left: "auto", width: 340, padding: 14 }} onClick={(e) => e.stopPropagation()}>
+          <ModifyPanel client={client} events={events} onSaved={() => { setOpen(false); onSaved(); }} onEventsChanged={onEventsChanged} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Right-side drawer -- one client's full profile: engagement/service arrangement,
-// account owner (consultant), status/lifecycle actions, ClickUp folder, and its
-// cost centres / sub-projects. Everything that used to live in the table's inline
-// expand-on-row now lives here instead, reached by clicking a row in the list.
+// account owner (consultant), status/lifecycle actions (via the pencil popover),
+// ClickUp folder, cost centres/sub-projects, notes, and a full change history.
+// Everything that used to live in the table's inline expand-on-row now lives here
+// instead, reached by clicking a row in the list.
 function ClientProfileDrawer({
   client: c, events, folderSet, folderList, costCentreInfo, isDynamic, capPeople,
   editingFolder, draftFolder, savingFolder, folderMenuOpen, folderSuggestions,
@@ -426,9 +480,12 @@ function ClientProfileDrawer({
         <button className="pg-drawer__icon-btn" onClick={onClose} aria-label="Back" title="Back">
           <ArrowLeft size={16} />
         </button>
-        <button className="pg-drawer__icon-btn" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Close" title="Close">
-          <X size={16} />
-        </button>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
+          <EditPopover client={c} events={events} onSaved={onSaved} onEventsChanged={onEventsChanged} />
+          <button className="pg-drawer__icon-btn" onClick={onClose} aria-label="Close" title="Close">
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       <div className="pg-drawer__title-row">
@@ -441,8 +498,8 @@ function ClientProfileDrawer({
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="pg-drawer__name">{c.client}</div>
-          <div className="pg-drawer__sub">
-            {c.status === "on_hold" ? "On Hold" : c.status === "offboarded" ? "Offboarded" : c.status === "archived" ? "Archived (unverified)" : "Active"}
+          <div className="pg-drawer__sub" style={{ marginTop: 4 }}>
+            <StatusBalloon status={c.status} />
           </div>
         </div>
       </div>
@@ -475,7 +532,7 @@ function ClientProfileDrawer({
       </div>
 
       <div className="pg-drawer__section">
-        <div className="pg-drawer__section-title">Account owner</div>
+        <div className="pg-drawer__section-title">Consultant</div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <PersonAvatar name={c.consultant} photo={owner?.photo} size={36} />
           <div style={{ minWidth: 0 }}>
@@ -526,15 +583,9 @@ function ClientProfileDrawer({
         )}
       </div>
 
-      <div className="pg-drawer__section">
-        <div className="pg-drawer__section-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span>Cost centres {costCentres.length + subProjects.length > 0 ? `(${costCentres.length + subProjects.length})` : ""}</span>
-          {!isDynamic && costCentres.length + subProjects.length === 0 && !managingCostCentres && (
-            <button className="pg-btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }} onClick={onStartManageCostCentres}>Add cost centre</button>
-          )}
-        </div>
-
-        {isDynamic === false && costCentres.length + subProjects.length > 0 ? (
+      {isDynamic === false && costCentres.length + subProjects.length > 0 ? (
+        <div className="pg-drawer__section">
+          <div className="pg-drawer__section-title">Cost centres & sub-projects</div>
           <div style={{ fontSize: 11, lineHeight: 1.6 }}>
             {costCentres.length > 0 && (
               <div style={{ color: "var(--accent)" }}>+ {costCentres.length} cost centre{costCentres.length === 1 ? "" : "s"}: {costCentres.join(", ")}</div>
@@ -544,67 +595,227 @@ function ClientProfileDrawer({
             )}
             <div style={{ color: "var(--fg-tertiary)", fontStyle: "italic", marginTop: 4 }}>Built into the app — ask to have this made editable</div>
           </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {costCentres.map((f) => (
-              <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
-                <span style={{ flex: "none", color: "var(--accent)" }}><Pencil size={0} /></span>
-                <span style={{ flex: 1, fontSize: 13, color: "var(--fg-primary)" }}>{f}</span>
-                <span className="pg-tag pg-tag--muted">Cost centre</span>
-                <button type="button" className="pg-icon-btn-sm" style={{ padding: 0 }} title="Remove" disabled={savingCostCentre} onClick={() => onRemoveCostCentre(f)}>
-                  <X size={10} />
-                </button>
-              </div>
-            ))}
-            {subProjects.map((f) => (
-              <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
-                <span style={{ flex: 1, fontSize: 13, color: "var(--fg-secondary)" }}>{f}</span>
-                <span className="pg-tag pg-tag--muted">Sub-project</span>
-                <button type="button" className="pg-icon-btn-sm" style={{ padding: 0 }} title="Remove" disabled={savingCostCentre} onClick={() => onRemoveCostCentre(f)}>
-                  <X size={10} />
-                </button>
-              </div>
-            ))}
-            {costCentres.length + subProjects.length === 0 && (
-              <div style={{ fontSize: 12, color: "var(--fg-tertiary)" }}>No cost centres yet.</div>
-            )}
-            {managingCostCentres ? (
-              <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
-                <input
-                  className="pg-input" style={{ flex: 1, minWidth: 160, fontSize: 12 }}
-                  list="cc-folders-drawer"
-                  placeholder="Type or pick a ClickUp folder…"
-                  value={draftCostCentreFolder}
-                  onChange={(e) => onDraftCostCentreFolderChange(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && draftCostCentreFolder.trim()) onAddCostCentre(); }}
-                />
-                <datalist id="cc-folders-drawer">
-                  {folderList.filter((f) => !assigned.has(f)).map((f) => <option key={f} value={f} />)}
-                </datalist>
-                <select className="pg-input" style={{ maxWidth: 130, fontSize: 12 }}
-                  value={draftCostCentreKind} onChange={(e) => onDraftCostCentreKindChange(e.target.value)}>
-                  <option value="cost_centre">Cost centre</option>
-                  <option value="sub_project">Sub-project</option>
-                </select>
-                <button className="pg-btn-ghost" disabled={!draftCostCentreFolder.trim() || savingCostCentre} onClick={onAddCostCentre}><Check size={12} /></button>
-                <button className="pg-btn-ghost" onClick={onCancelManageCostCentres}><X size={12} /></button>
-              </div>
-            ) : (
-              costCentres.length + subProjects.length > 0 && (
-                <button type="button" className="pg-row-inline__more" style={{ fontSize: 11, marginTop: 4 }} onClick={onStartManageCostCentres}>
-                  + Add cost centre / sub-project
-                </button>
-              )
-            )}
+        </div>
+      ) : (
+        <>
+          <CostCentreSection
+            title="Cost Centres" kind="cost_centre" items={costCentres} assigned={assigned} folderList={folderList}
+            managing={managingCostCentres === "cost_centre"} draftFolder={draftCostCentreFolder} savingCostCentre={savingCostCentre}
+            onStart={() => onStartManageCostCentres("cost_centre")} onCancel={onCancelManageCostCentres}
+            onDraftFolderChange={onDraftCostCentreFolderChange} onAdd={onAddCostCentre} onRemove={(f) => onRemoveCostCentre(f, "cost_centre")}
+          />
+          <CostCentreSection
+            title="Sub Project" kind="sub_project" items={subProjects} assigned={assigned} folderList={folderList}
+            managing={managingCostCentres === "sub_project"} draftFolder={draftCostCentreFolder} savingCostCentre={savingCostCentre}
+            onStart={() => onStartManageCostCentres("sub_project")} onCancel={onCancelManageCostCentres}
+            onDraftFolderChange={onDraftCostCentreFolderChange} onAdd={onAddCostCentre} onRemove={(f) => onRemoveCostCentre(f, "sub_project")}
+          />
+        </>
+      )}
+
+      <NotesSection client={c.client} />
+
+      <HistorySection client={c.client} />
+    </aside>
+  );
+}
+
+// One cost-centre or sub-project list, each with its own inline "add" affordance --
+// split into two sections (rather than one combined list with a kind tag on each
+// row) so Cost Centres and Sub Project read as the two distinct things they are,
+// matching the drawer's field order.
+function CostCentreSection({ title, kind, items, assigned, folderList, managing, draftFolder, savingCostCentre, onStart, onCancel, onDraftFolderChange, onAdd, onRemove }) {
+  const datalistId = `cc-folders-${kind}`;
+  return (
+    <div className="pg-drawer__section">
+      <div className="pg-drawer__section-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>{title} {items.length > 0 ? `(${items.length})` : ""}</span>
+        {!managing && (
+          <button className="pg-btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }} onClick={onStart}>Add</button>
+        )}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {items.map((f) => (
+          <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+            <span style={{ flex: 1, fontSize: 13, color: "var(--fg-primary)" }}>{f}</span>
+            <button type="button" className="pg-icon-btn-sm" style={{ padding: 0 }} title="Remove" disabled={savingCostCentre} onClick={() => onRemove(f)}>
+              <X size={10} />
+            </button>
+          </div>
+        ))}
+        {items.length === 0 && !managing && (
+          <div style={{ fontSize: 12, color: "var(--fg-tertiary)" }}>None yet.</div>
+        )}
+        {managing && (
+          <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+            <input
+              className="pg-input" autoFocus style={{ flex: 1, minWidth: 160, fontSize: 12 }}
+              list={datalistId}
+              placeholder="Type or pick a ClickUp folder…"
+              value={draftFolder}
+              onChange={(e) => onDraftFolderChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && draftFolder.trim()) onAdd(); if (e.key === "Escape") onCancel(); }}
+            />
+            <datalist id={datalistId}>
+              {folderList.filter((f) => !assigned.has(f)).map((f) => <option key={f} value={f} />)}
+            </datalist>
+            <button className="pg-btn-ghost" disabled={!draftFolder.trim() || savingCostCentre} onClick={onAdd}><Check size={12} /></button>
+            <button className="pg-btn-ghost" onClick={onCancel}><X size={12} /></button>
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
-      <div className="pg-drawer__section">
-        <div className="pg-drawer__section-title">Modify</div>
-        <ModifyPanel client={c} events={events} onSaved={onSaved} onEventsChanged={onEventsChanged} />
+// Multiple dated notes -- "Add notes" while empty (or to append another), each
+// existing note gets its own "Modify" toggle to edit its text or delete it.
+function NotesSection({ client }) {
+  const [notes, setNotes] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  async function load() {
+    try { setNotes(await fetchClientNotes(client)); } catch (e) { setErr(e.message || String(e)); setNotes((n) => n ?? []); }
+  }
+  useEffect(() => { load(); }, [client]);
+
+  async function save() {
+    if (!draft.trim()) return;
+    setBusy(true); setErr(null);
+    try { await addClientNote(client, draft.trim()); setDraft(""); setAdding(false); await load(); }
+    catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); }
+  }
+  async function saveEdit(id) {
+    if (!editDraft.trim()) return;
+    setBusy(true); setErr(null);
+    try { await updateClientNote(id, client, editDraft.trim()); setEditingId(null); await load(); }
+    catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); }
+  }
+  async function remove(id) {
+    setBusy(true); setErr(null);
+    try { await deleteClientNote(id, client); setEditingId(null); await load(); }
+    catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="pg-drawer__section">
+      <div className="pg-drawer__section-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>Notes {notes && notes.length > 0 ? `(${notes.length})` : ""}</span>
+        {!adding && (
+          <button className="pg-btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }} onClick={() => setAdding(true)}><Plus size={11} /> Add notes</button>
+        )}
       </div>
-    </aside>
+      {adding && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+          <textarea className="pg-input" rows={3} autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Note…" />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="pg-btn" disabled={busy || !draft.trim()} onClick={save}>Save</button>
+            <button className="pg-btn-ghost" onClick={() => { setAdding(false); setDraft(""); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {notes === null ? (
+        <div style={{ fontSize: 12, color: "var(--fg-tertiary)" }}>Loading…</div>
+      ) : notes.length === 0 && !adding ? (
+        <div style={{ fontSize: 12, color: "var(--fg-tertiary)" }}>No notes yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {notes.map((n) => (
+            <div key={n.id} style={{ borderBottom: "1px dashed var(--border-subtle)", paddingBottom: 8 }}>
+              {editingId === n.id ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <textarea className="pg-input" rows={3} autoFocus value={editDraft} onChange={(e) => setEditDraft(e.target.value)} />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="pg-btn" disabled={busy || !editDraft.trim()} onClick={() => saveEdit(n.id)}>Save</button>
+                    <button className="pg-btn-ghost" disabled={busy} onClick={() => remove(n.id)}><Trash2 size={12} /> Delete</button>
+                    <button className="pg-btn-ghost" onClick={() => setEditingId(null)}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, color: "var(--fg-primary)", whiteSpace: "pre-wrap" }}>{n.text}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                    <span style={{ fontSize: 11, color: "var(--fg-tertiary)" }}>
+                      {n.author_email || "unknown"} · {timeAgo(n.updated_at || n.created_at)}
+                    </span>
+                    <button type="button" className="pg-row-inline__more" style={{ fontSize: 11, padding: 0 }}
+                      onClick={() => { setEditingId(n.id); setEditDraft(n.text); }}>Modify</button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {err && <div className="pg-banner-warn" style={{ marginTop: 8 }}>{err}</div>}
+    </div>
+  );
+}
+
+const HISTORY_ICON_LABEL = {
+  event_type: "Transition", event_type_removed: "Transition cancelled",
+  event_consultant: "Consultant update", event_consultant_removed: "Consultant update cancelled",
+  event_offboarding: "Offboarding", event_offboarding_removed: "Offboarding cancelled",
+  event_reactivation: "Reactivation", event_reactivation_removed: "Reactivation cancelled",
+  event_hold: "Put on hold", event_hold_removed: "Hold cancelled",
+  event_resume: "Resume", event_resume_removed: "Resume cancelled",
+  folder_change: "ClickUp folder", cost_centre_add: "Cost centre", cost_centre_remove: "Cost centre",
+  note_add: "Note", note_edit: "Note", note_delete: "Note",
+};
+
+// Full chronological log of everything that's happened to this client -- every
+// scheduled/cancelled lifecycle change, folder edit, cost-centre/sub-project
+// add/remove, and note edit, each tagged with who made it and when. Reads from
+// pginvoice_client_history, which every mutation in clientsSync.js writes to.
+function HistorySection({ client }) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState(null);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchClientHistory(client).then((r) => { if (!cancelled) setRows(r); }).catch((e) => { if (!cancelled) { setErr(e.message || String(e)); setRows([]); } });
+    return () => { cancelled = true; };
+  }, [client]);
+
+  const shown = rows ? (expanded ? rows : rows.slice(0, 8)) : [];
+
+  return (
+    <div className="pg-drawer__section">
+      <div className="pg-drawer__section-title">History</div>
+      {err && <div className="pg-banner-warn">{err}</div>}
+      {rows === null ? (
+        <div style={{ fontSize: 12, color: "var(--fg-tertiary)" }}>Loading…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ fontSize: 12, color: "var(--fg-tertiary)" }}>No changes recorded yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {shown.map((r) => (
+            <div key={r.id} style={{ display: "flex", gap: 10 }}>
+              <span className="pg-tag pg-tag--muted" style={{ flex: "none", minWidth: 92, textAlign: "center", height: "fit-content" }}>
+                {HISTORY_ICON_LABEL[r.action] || r.action}
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: "var(--fg-primary)" }}>{r.detail?.summary || r.action}</div>
+                <div style={{ fontSize: 11, color: "var(--fg-tertiary)", marginTop: 2 }}>
+                  {r.actor_email || "unknown"} · {timeAgo(r.created_at)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {rows && rows.length > 8 && (
+        <button className="pg-manual-note" style={{ background: "none", border: 0, cursor: "pointer", padding: 0, marginTop: 10 }} onClick={() => setExpanded((o) => !o)}>
+          <span style={{ color: "var(--accent)" }}>{expanded ? "Show fewer" : `View all ${rows.length} changes`}</span>
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -750,9 +961,10 @@ export default function Clients() {
     // just before calling this wouldn't be visible yet — state updates aren't synchronous)
     // and otherwise falls back to whatever's currently in the draft input.
     const folder = (folderOverride ?? draftFolder).trim();
+    const previousFolder = clients.find((c) => c.client === client)?.clickupFolder || null;
     setSavingFolder(true);
     try {
-      await updateClickupFolder(client, folder);
+      await updateClickupFolder(client, folder, { previousFolder });
       setClients((prev) => prev.map((c) => (c.client !== client ? c : { ...c, clickupFolder: folder || null })));
       setEditingFolder(false);
       setFolderMenuOpen(false);
@@ -781,10 +993,10 @@ export default function Clients() {
     }
   }
 
-  async function removeCostCentre(client, folder) {
+  async function removeCostCentre(client, folder, kind) {
     setSavingCostCentre(true);
     try {
-      await removeCostCentreFolder(client, folder);
+      await removeCostCentreFolder(client, folder, kind);
       await loadCostCentres();
     } catch (e) {
       setLoadError("Couldn't remove that cost centre: " + (e.message || e));
@@ -863,15 +1075,13 @@ export default function Clients() {
         <div className="pg-cap-card pg-client-list">
           <div className="pg-client-list__head">
             <span>Client</span>
-            <span>Service arrangement</span>
-            <span>Account owner</span>
-            <span>Project setup</span>
+            <span>Service Arrangement</span>
+            <span>Consultant</span>
+            <span>Client Status</span>
             <span />
           </div>
           {filtered.map((c) => {
             const owner = c.consultant ? findPersonMatch(c.consultant, capPeople) : null;
-            const cc = costCentreInfo.info.get(c.client);
-            const ccCount = (cc?.costCentres.length || 0) + (cc?.subProjects.length || 0);
             const active = openClient === c.client;
             return (
               <button type="button" key={c.client} className={"pg-client-list__row" + (active ? " pg-client-list__row--active" : "")} onClick={() => openDrawer(c.client)}>
@@ -879,11 +1089,6 @@ export default function Clients() {
                   <ClientAvatar name={c.client} logo={c.logoUrl} size={32} />
                   <span className="pg-client-list__client-text">
                     <span className="pg-client-list__name">{c.client}</span>
-                    {c.status !== "active" && (
-                      <span className="pg-client-list__statustag">
-                        {c.status === "on_hold" ? "On Hold" : c.status === "offboarded" ? "Offboarded" : "Archived"}
-                      </span>
-                    )}
                   </span>
                 </span>
                 <span className="pg-client-list__arrangement">
@@ -898,14 +1103,12 @@ export default function Clients() {
                     </>
                   ) : <span style={{ color: "var(--fg-tertiary)" }}>Unassigned</span>}
                 </span>
-                <span className="pg-client-list__project">
-                  <span className="pg-client-list__project-text">
-                    <span className="pg-client-list__project-name">{c.client}</span>
-                    <span className="pg-client-list__project-sub">{ccCount + 1} cost centre{ccCount + 1 === 1 ? "" : "s"}</span>
-                  </span>
-                  <ChevronRight size={14} style={{ color: "var(--fg-tertiary)" }} />
+                <span>
+                  <StatusBalloon status={c.status} />
                 </span>
-                <span />
+                <span className="pg-client-list__expand">
+                  <ChevronRight size={16} style={{ color: "var(--fg-tertiary)" }} />
+                </span>
               </button>
             );
           })}
@@ -938,12 +1141,12 @@ export default function Clients() {
           draftCostCentreFolder={draftCostCentreFolder}
           draftCostCentreKind={draftCostCentreKind}
           savingCostCentre={savingCostCentre}
-          onStartManageCostCentres={() => { setManagingCostCentres(true); setDraftCostCentreFolder(""); setDraftCostCentreKind("cost_centre"); }}
+          onStartManageCostCentres={(kind) => { setManagingCostCentres(kind); setDraftCostCentreFolder(""); setDraftCostCentreKind(kind); }}
           onCancelManageCostCentres={() => { setManagingCostCentres(false); setDraftCostCentreFolder(""); }}
           onDraftCostCentreFolderChange={setDraftCostCentreFolder}
           onDraftCostCentreKindChange={setDraftCostCentreKind}
           onAddCostCentre={() => addCostCentre(openC.client)}
-          onRemoveCostCentre={(f) => removeCostCentre(openC.client, f)}
+          onRemoveCostCentre={(f, kind) => removeCostCentre(openC.client, f, kind)}
           editingLogo={editingLogo}
           onToggleLogoEditor={() => setEditingLogo((o) => !o)}
           onLogoSaved={(patch) => {
