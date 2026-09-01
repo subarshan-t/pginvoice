@@ -580,7 +580,31 @@ export default function PGReconciliation({ onNavigateClients }) {
         if (matchedInMap.includes(f) || !map.has(f)) continue;
         map.get(f).costCentreParentAccName = accName;
       }
-      if (matchedInMap.length < 1) continue;
+      if (matchedInMap.length < 1) {
+        // No accrual-eligible sibling this month -- true for any client whose dynamic
+        // cost-centre rows are ALL sub-projects (billed separately, excluded from the
+        // accrual by definition -- see multiFolderAccrualMatchesFor), since a dynamic
+        // client's own registered clickupFolder is never itself part of its
+        // multiFolderMatchesFor/AccrualMatchesFor result (unlike a hardcoded
+        // MULTI_FOLDER_CLIENTS prefix rule, whose match set naturally includes the
+        // primary folder alongside real siblings). Below, the rest of this branch
+        // renames the primary folder's row to `accName` and stamps costCentreAccruedName
+        // so a sibling lookup keyed by the client's real name (allSiblingsFor(c.name),
+        // and the accrued-sheet match below) still finds this row and its just-tagged
+        // sub-project(s) -- without this, the tag above is written but orphaned: the
+        // parent row keeps showing under its raw ClickUp folder name, which nothing
+        // else in the app is looking up, so the tagged sub-project never renders nested
+        // under it (e.g. ARAS's own folder never gets renamed off of "Aged Rights
+        // Advocacy Services", so its Website Optimisation Project sub-project silently
+        // has nowhere to attach).
+        const profile = pgClientByName.get(accName);
+        if (profile?.clickupFolder && map.has(profile.clickupFolder) && !map.get(profile.clickupFolder).costCentreParentAccName) {
+          const entry = map.get(profile.clickupFolder);
+          entry.name = accName;
+          entry.costCentreAccruedName = accName;
+        }
+        continue;
+      }
       // The client's own registered ClickUp folder (set in the Clients module) is the
       // right "identity" folder for this roll-up when it actually logged hours this month
       // -- picking whichever sibling folder happens to have logged the most hours instead
