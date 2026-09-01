@@ -168,10 +168,10 @@ const MULTI_FOLDER_CLIENTS = [
   { key: "aus3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
   { key: "aus 3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
   // BAMSS Childcare Security Services is its own registered client (with its own type
-  // history and a scheduled reactivation) -- it keeps that identity, but its folder is
-  // billed separately from the Brisbane Alarm Monitoring retainer, so it's excluded from
-  // the accrual and shown as a sub-project the same way Majestic Plumbing's web project is.
-  { key: "brisbane alarm monitoring", prefixes: ["brisbane alarm monitoring", "bamss"], excludeFromAccrual: ["bamss childcare"] },
+  // history and a scheduled reactivation), but its hours count toward the SAME 22 hr/month
+  // package as Brisbane Alarm Monitoring (one combined retainer, confirmed by the user) --
+  // included in the accrual, not excluded like a billed-separately sub-project.
+  { key: "brisbane alarm monitoring", prefixes: ["brisbane alarm monitoring", "bamss"] },
   { key: "clarke energy", prefixes: ["cea "], exact: ["clarke energy"] },
   { key: "magain", prefixes: ["magain "] },
   { key: "majestic plumbing", prefixes: ["majestic plumbing", "mp "], excludeFromAccrual: ["majestic plumbing quoted web project"] },
