@@ -68,3 +68,4 @@ __pycache__/
 
 # graphify knowledge-graph output (regenerated locally via `graphify .`)
 graphify-out/
+coverage
