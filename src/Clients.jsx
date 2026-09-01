@@ -624,27 +624,50 @@ function ClientProfileDrawer({
 // split into two sections (rather than one combined list with a kind tag on each
 // row) so Cost Centres and Sub Project read as the two distinct things they are,
 // matching the drawer's field order.
+const COST_CENTRE_COLLAPSE_AT = 4;
+
+// One cost-centre or sub-project list. Plain view shows just the first 4 names,
+// collapsed behind a "+N more" toggle once there are more than that -- editing
+// (add/remove) only happens once "Edit" is clicked, which also expands the full
+// list so nothing being removed is hidden behind the collapse.
 function CostCentreSection({ title, kind, items, assigned, folderList, managing, draftFolder, savingCostCentre, onStart, onCancel, onDraftFolderChange, onAdd, onRemove }) {
+  const [expanded, setExpanded] = useState(false);
   const datalistId = `cc-folders-${kind}`;
+  const showAll = expanded || managing || items.length <= COST_CENTRE_COLLAPSE_AT;
+  const shown = showAll ? items : items.slice(0, COST_CENTRE_COLLAPSE_AT);
+  const hiddenCount = items.length - shown.length;
+
   return (
     <div className="pg-drawer__section">
       <div className="pg-drawer__section-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span>{title} {items.length > 0 ? `(${items.length})` : ""}</span>
-        {!managing && (
-          <button className="pg-btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }} onClick={onStart}>Add</button>
-        )}
+        <button className="pg-btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }} onClick={() => (managing ? onCancel() : onStart())}>
+          {managing ? "Done" : "Edit"}
+        </button>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {items.map((f) => (
+        {shown.map((f) => (
           <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
             <span style={{ flex: 1, fontSize: 13, color: "var(--fg-primary)" }}>{f}</span>
-            <button type="button" className="pg-icon-btn-sm" style={{ padding: 0 }} title="Remove" disabled={savingCostCentre} onClick={() => onRemove(f)}>
-              <X size={10} />
-            </button>
+            {managing && (
+              <button type="button" className="pg-icon-btn-sm" style={{ padding: 0 }} title="Remove" disabled={savingCostCentre} onClick={() => onRemove(f)}>
+                <X size={10} />
+              </button>
+            )}
           </div>
         ))}
-        {items.length === 0 && !managing && (
+        {items.length === 0 && (
           <div style={{ fontSize: 12, color: "var(--fg-tertiary)" }}>None yet.</div>
+        )}
+        {hiddenCount > 0 && (
+          <button type="button" className="pg-row-inline__more" style={{ fontSize: 11, marginTop: 2 }} onClick={() => setExpanded(true)}>
+            +{hiddenCount} more
+          </button>
+        )}
+        {expanded && !managing && items.length > COST_CENTRE_COLLAPSE_AT && (
+          <button type="button" className="pg-row-inline__more" style={{ fontSize: 11, marginTop: 2 }} onClick={() => setExpanded(false)}>
+            Show fewer
+          </button>
         )}
         {managing && (
           <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
@@ -660,7 +683,6 @@ function CostCentreSection({ title, kind, items, assigned, folderList, managing,
               {folderList.filter((f) => !assigned.has(f)).map((f) => <option key={f} value={f} />)}
             </datalist>
             <button className="pg-btn-ghost" disabled={!draftFolder.trim() || savingCostCentre} onClick={onAdd}><Check size={12} /></button>
-            <button className="pg-btn-ghost" onClick={onCancel}><X size={12} /></button>
           </div>
         )}
       </div>
