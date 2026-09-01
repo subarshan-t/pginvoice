@@ -703,7 +703,16 @@ export default function PGReconciliation({ onNavigateClients }) {
           const profileName = pgProfileByFolder.get(c.name).client;
           accruedClient = accrued.clients.find((a) => a.name === profileName) || null;
           if (accruedClient) matchInfo = { name: accruedClient.name, confidence: 1, method: "client-folder" };
-        } else {
+        } else if (!c.costCentreParentAccName) {
+          // A row already tagged as another client's sub-project (see costCentreParentAccName
+          // above) must NEVER fall through to fuzzy name matching -- its folder name often
+          // shares words with its own parent's name by construction (e.g. "ARAS Website
+          // Optimisation Project" vs. accrued client "ARAS"), so findMatch would confidently
+          // "match" it to the parent (or some unrelated client) and silently overwrite its
+          // displayName with the parent's -- exactly the bug that made ARAS's sub-project
+          // display as plain "ARAS" instead of its own name. A sub-project keeps showing
+          // under its own real folder name unless it has its own EXPLICIT registration
+          // (pgProfileByFolder above), which is a name collision fuzzy matching can't cause.
           const m = findMatch(c.name, accruedNames);
           if (m) { accruedClient = accrued.clients.find((a) => a.name === m.name) || null; matchInfo = m; }
         }
