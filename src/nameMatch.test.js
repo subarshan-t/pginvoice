@@ -158,11 +158,9 @@ describe("multiFolderAccrualMatchesFor", () => {
     ]);
   });
 
-  it("keeps BAMSS Childcare out of Brisbane Alarm Monitoring's accrual folders but still rolls it up", () => {
+  it("rolls BAMSS Childcare into Brisbane Alarm Monitoring's accrual folders -- one shared package", () => {
     const folders = ["Brisbane Alarm Monitoring Security Services (Qld)", "BAMSS Childcare Security Services (Qld)"];
-    expect(multiFolderAccrualMatchesFor("Brisbane Alarm Monitoring Security Services (Qld)", folders)).toEqual([
-      "Brisbane Alarm Monitoring Security Services (Qld)",
-    ]);
+    expect(multiFolderAccrualMatchesFor("Brisbane Alarm Monitoring Security Services (Qld)", folders)).toEqual(folders);
     expect(multiFolderMatchesFor("Brisbane Alarm Monitoring Security Services (Qld)", folders)).toEqual(folders);
   });
 
