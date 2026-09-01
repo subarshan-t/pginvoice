@@ -164,6 +164,21 @@ export async function recomputeAccruals(clients) {
   const updatedRows = [];
   const nextClients = clients.map((c) => ({ ...c, months: { ...c.months } }));
 
+  // This only ever updated clients that already had at least one row in
+  // pginvoice_accruals -- a package/strategy client added straight through the Clients
+  // module (never uploaded via the accrued workbook) had no starting row to update, so it
+  // silently never got one at all: correctly typed "Package" everywhere else, but
+  // permanently "No package on file" in Client Invoicing. Seed an empty entry for every
+  // active-or-on-hold package/strategy profile missing from the table so the loop below
+  // computes its first row same as any other.
+  const existingClientNames = new Set(nextClients.map((c) => c.client));
+  for (const p of profiles) {
+    if (existingClientNames.has(p.client)) continue;
+    if (p.status !== "active" && p.status !== "on_hold") continue;
+    if (p.type !== "package" && p.type !== "strategy") continue;
+    nextClients.push({ client: p.client, manager: null, agreedHpm: p.agreedHours ?? null, months: {} });
+  }
+
   for (const c of nextClients) {
     const profile = profileByClient.get(c.client);
     if (!profile) continue; // no client profile on file — nothing to compute against
@@ -251,7 +266,15 @@ export async function recomputeAccruals(clients) {
         c.months[mk] = cell;
         if (changed) {
           updatedRows.push({
-            client: c.client, account_manager: c.manager || null, agreed_hpm: c.agreedHpm || null,
+            // The client's *current-month* agreed hours (from typeForMonth, same value
+            // agreedNum above was computed from) -- not c.agreedHpm, a stale snapshot set
+            // once from whichever row happened to be scanned first in rowsToClients() and
+            // never updated after. Writing that instead of agreedNum meant a package's
+            // displayed hours figure could get stuck at an old value forever after a type
+            // event changed it (Amorim Cork stuck at 0 after a Jul 2025 event raised it to
+            // 16; Warrina Homes stuck at 24 after an Aug 2026 event dropped it to 13) even
+            // though the accrual math itself (which does use agreedNum) was already correct.
+            client: c.client, account_manager: c.manager || null, agreed_hpm: String(agreedNum),
             month_key: mk, accrual_value: accrualValue, accrual_note: null, pct_over_under: pct,
             comment: cell.comment, worked_hours: workedHours, is_override: false, hours_flagged: hoursFlagged,
           });

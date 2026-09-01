@@ -129,6 +129,8 @@ function EventRow({ event: e, onDelete, deleting }) {
     : e.kind === "consultant" ? `→ ${e.new_consultant || "unassigned"}`
     : e.kind === "offboarding" ? "Offboarded"
     : e.kind === "reactivation" ? "Reactivated"
+    : e.kind === "hold" ? "On Hold"
+    : e.kind === "resume" ? "Resumed"
     : e.kind;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12 }}>
@@ -153,6 +155,7 @@ function ModifyPanel({ client, events, onClose, onSaved, onEventsChanged }) {
   const [newType, setNewType] = useState(client.type);
   const [newHours, setNewHours] = useState(client.agreedHours ?? "");
   const [newConsultant, setNewConsultant] = useState(client.consultant || "");
+  const [holdNote, setHoldNote] = useState("");
   const [effectiveDate, setEffectiveDate] = useState(todayStr());
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
@@ -188,6 +191,10 @@ function ModifyPanel({ client, events, onClose, onSaved, onEventsChanged }) {
         await createClientEvent(client.client, "offboarding", effectiveDate, {});
       } else if (action === "reactivate") {
         await createClientEvent(client.client, "reactivation", effectiveDate, {});
+      } else if (action === "hold") {
+        await createClientEvent(client.client, "hold", effectiveDate, {}, holdNote || null);
+      } else if (action === "resume") {
+        await createClientEvent(client.client, "resume", effectiveDate, {});
       }
       await applyDueClientEvents();
       onSaved();
@@ -234,9 +241,10 @@ function ModifyPanel({ client, events, onClose, onSaved, onEventsChanged }) {
         <div style={{ display: "flex", gap: 8 }}>
           <button className="pg-btn-ghost" onClick={() => setAction("transition")}>Transitioning</button>
           <button className="pg-btn-ghost" onClick={() => setAction("consultant")}>Consultant Update</button>
-          {isActive ? (
-            <button className="pg-btn-ghost" onClick={() => setAction("offboarding")}>Offboarding</button>
-          ) : (
+          {isActive && <button className="pg-btn-ghost" onClick={() => setAction("offboarding")}>Offboarding</button>}
+          {isActive && <button className="pg-btn-ghost" onClick={() => setAction("hold")}>Put On Hold</button>}
+          {client.status === "on_hold" && <button className="pg-btn-ghost" onClick={() => setAction("resume")}>Resume</button>}
+          {(client.status === "offboarded" || client.status === "archived") && (
             <button className="pg-btn-ghost" onClick={() => setAction("reactivate")}>Reactivate</button>
           )}
           <button className="pg-btn-ghost" style={{ marginLeft: "auto" }} onClick={onClose}>Cancel</button>
@@ -293,6 +301,47 @@ function ModifyPanel({ client, events, onClose, onSaved, onEventsChanged }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <label className="pg-field">
             <span className="pg-field__label">Offboarding date</span>
+            <input className="pg-input" type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="pg-btn" disabled={saving} onClick={save}>Save</button>
+            <button className="pg-btn-ghost" onClick={() => setAction(null)}>Back</button>
+          </div>
+        </div>
+      )}
+
+      {action === "hold" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="pg-tag">Active</span>
+            <ArrowRight size={14} />
+            <span className="pg-tag pg-tag--muted">On Hold</span>
+          </div>
+          <label className="pg-field">
+            <span className="pg-field__label">Hold date</span>
+            <input className="pg-input" type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
+          </label>
+          <label className="pg-field">
+            <span className="pg-field__label">Reason (optional)</span>
+            <input className="pg-input" value={holdNote} onChange={(e) => setHoldNote(e.target.value)} placeholder="e.g. paused pending payment of $X owing" />
+          </label>
+          <p className="pg-footnote">Type and agreed hours stay as they are — this only flags the client as paused. Use Resume once work starts again.</p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="pg-btn" disabled={saving} onClick={save}>Save</button>
+            <button className="pg-btn-ghost" onClick={() => setAction(null)}>Back</button>
+          </div>
+        </div>
+      )}
+
+      {action === "resume" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="pg-tag pg-tag--muted">On Hold</span>
+            <ArrowRight size={14} />
+            <span className="pg-tag">Active</span>
+          </div>
+          <label className="pg-field">
+            <span className="pg-field__label">Resume date</span>
             <input className="pg-input" type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
           </label>
           <div style={{ display: "flex", gap: 8 }}>
@@ -543,6 +592,7 @@ export default function Clients() {
           <span className="pg-field__label">Status</span>
           <select className="pg-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="active">Active</option>
+            <option value="on_hold">On Hold</option>
             <option value="offboarded">Offboarded</option>
             <option value="archived">Archived (unverified)</option>
             <option value="all">All</option>
@@ -725,6 +775,7 @@ export default function Clients() {
                   <td>{c.endDate || "—"}</td>
                   <td>
                     {c.status === "offboarded" && <span className="pg-tag pg-tag--muted">Offboarded</span>}
+                    {c.status === "on_hold" && <span className="pg-tag pg-tag--muted" style={{ color: "var(--status-warn)" }} title="Paused -- not actively worked or billed until resumed">On Hold</span>}
                     {c.status === "archived" && <span className="pg-tag pg-tag--muted" title="Not found in any of the PG Four Lists (Active/Inactive/Hours Changed/Type Changed) as of the 31 Jul 2026 refresh -- status unverified, needs manual confirmation.">Archived (unverified)</span>}
                   </td>
                   <td><button className="pg-btn" onClick={() => setOpenModify(openModify === c.client ? null : c.client)}>Modify</button></td>

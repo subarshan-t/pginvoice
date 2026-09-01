@@ -211,6 +211,10 @@ export async function applyDueClientEvents() {
     else if (ev.kind === "consultant") { patch.consultant = ev.new_consultant; }
     else if (ev.kind === "offboarding") { patch.status = "offboarded"; patch.end_date = ev.effective_date; }
     else if (ev.kind === "reactivation") { patch.status = "active"; patch.end_date = null; }
+    // On hold: still an ongoing client, just paused (e.g. billing dispute) -- unlike
+    // offboarding, doesn't touch end_date since this isn't a real end of engagement.
+    else if (ev.kind === "hold") { patch.status = "on_hold"; }
+    else if (ev.kind === "resume") { patch.status = "active"; }
     const { error: updErr } = await supabase.from("pginvoice_clients").update(patch).eq("client", ev.client);
     if (updErr) throw updErr;
     const { error: markErr } = await supabase.from("pginvoice_client_events").update({ applied: true }).eq("id", ev.id);

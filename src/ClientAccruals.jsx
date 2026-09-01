@@ -8,7 +8,7 @@ import { fetchClients } from "./clientsSync.js";
 import { PG_DATA_EVENT } from "./idbStore.js";
 import { PG_CLIENTS_KEY } from "./storageKeys.js";
 
-const STATUS_LABEL = { active: "Active", offboarded: "Offboarded", archived: "Archived (unverified)" };
+const STATUS_LABEL = { active: "Active", offboarded: "Offboarded", archived: "Archived (unverified)", on_hold: "On Hold" };
 
 function monthRange(start, end) {
   const out = [];
@@ -197,6 +197,7 @@ export default function ClientAccruals() {
           <span className="pg-field__label">Status</span>
           <select className="pg-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="active">Active</option>
+            <option value="on_hold">On Hold</option>
             <option value="offboarded">Offboarded</option>
             <option value="archived">Archived (unverified)</option>
             <option value="all">All</option>
