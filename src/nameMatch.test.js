@@ -170,9 +170,9 @@ describe("multiFolderAccrualMatchesFor", () => {
     expect(multiFolderMatchesFor("Warrina Homes", folders)).toEqual(folders);
   });
 
-  it("keeps Apex Comms Website out of Apex Energy's accrual but not Apex Comms Sales Presenter", () => {
+  it("keeps both Apex Comms Website and Apex Comms Sales Presenter out of Apex Energy's accrual, as sub-projects", () => {
     const folders = ["Apex Energy", "Apex Comms Website (QP)", "Apex Comms Sales Presenter (QP)"];
-    expect(multiFolderAccrualMatchesFor("Apex Energy", folders)).toEqual(["Apex Energy", "Apex Comms Sales Presenter (QP)"]);
+    expect(multiFolderAccrualMatchesFor("Apex Energy", folders)).toEqual(["Apex Energy"]);
     expect(multiFolderMatchesFor("Apex Energy", folders)).toEqual(folders);
   });
 });

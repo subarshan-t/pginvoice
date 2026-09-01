@@ -159,12 +159,11 @@ export function dominantClientType(rows) {
 // including them, since that function backs the "how much did we actually work for this
 // client in total" views, not the "are they over/under their package hours" one.
 const MULTI_FOLDER_CLIENTS = [
-  // "Apex Comms Website (QP)" is a quoted one-off project, not part of the Apex Energy
-  // retainer -- excluded from the accrual the same way Majestic Plumbing's web project
-  // is, so it shows as a sub-project rather than a cost centre. "Apex Comms Sales
-  // Presenter (QP)" stays a plain cost centre (no accrual either way -- Apex Energy
-  // isn't currently on a package -- but nothing marks it "billed separately").
-  { key: "apex energy", prefixes: ["apex energy", "apex comms "], exact: ["apex energy"], excludeFromAccrual: ["apex comms website"] },
+  // Both "Apex Comms Website (QP)" and "Apex Comms Sales Presenter (QP)" are quoted
+  // one-off projects, not part of the Apex Energy retainer -- excluded from the accrual
+  // the same way Majestic Plumbing's web project is, so both show as sub-projects
+  // rather than cost centres.
+  { key: "apex energy", prefixes: ["apex energy", "apex comms "], exact: ["apex energy"], excludeFromAccrual: ["apex comms website", "apex comms sales presenter"] },
   { key: "aus3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
   { key: "aus 3c", prefixes: ["aus3c "], exact: ["australian cyber collaboration centre"] },
   // BAMSS Childcare Security Services is its own registered client (with its own type
