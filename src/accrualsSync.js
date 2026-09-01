@@ -164,6 +164,21 @@ export async function recomputeAccruals(clients) {
   const updatedRows = [];
   const nextClients = clients.map((c) => ({ ...c, months: { ...c.months } }));
 
+  // This only ever updated clients that already had at least one row in
+  // pginvoice_accruals -- a package/strategy client added straight through the Clients
+  // module (never uploaded via the accrued workbook) had no starting row to update, so it
+  // silently never got one at all: correctly typed "Package" everywhere else, but
+  // permanently "No package on file" in Client Invoicing. Seed an empty entry for every
+  // active-or-on-hold package/strategy profile missing from the table so the loop below
+  // computes its first row same as any other.
+  const existingClientNames = new Set(nextClients.map((c) => c.client));
+  for (const p of profiles) {
+    if (existingClientNames.has(p.client)) continue;
+    if (p.status !== "active" && p.status !== "on_hold") continue;
+    if (p.type !== "package" && p.type !== "strategy") continue;
+    nextClients.push({ client: p.client, manager: null, agreedHpm: p.agreedHours ?? null, months: {} });
+  }
+
   for (const c of nextClients) {
     const profile = profileByClient.get(c.client);
     if (!profile) continue; // no client profile on file — nothing to compute against

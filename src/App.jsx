@@ -659,6 +659,18 @@ export default function PGReconciliation({ onNavigateClients }) {
         } else if (nameMap[c.name]) {
           accruedClient = accrued.clients.find((a) => a.name === nameMap[c.name]) || null;
           if (accruedClient) matchInfo = { name: accruedClient.name, confidence: 1, method: "manual" };
+        } else if (pgProfileByFolder.get(c.name)) {
+          // The Clients module's own registered clickup_folder -> profile mapping is
+          // authoritative (same reasoning as recomputeAccruals in accrualsSync.js) --
+          // prefer it over re-deriving a match from c.name's raw ClickUp folder string.
+          // Without this, a client whose real folder doesn't fuzzy-match its own accrued-
+          // table name (e.g. "Coonwarra" vs. folder "Coonawarra Grape and Wine Inc", or
+          // "PRG Strategic Advisors" vs. folder "PRG Financial Services Outsourced
+          // Marketing") shows up correctly typed as Package but with no package figure at
+          // all -- worked hours real, pkg permanently null, "No package on file".
+          const profileName = pgProfileByFolder.get(c.name).client;
+          accruedClient = accrued.clients.find((a) => a.name === profileName) || null;
+          if (accruedClient) matchInfo = { name: accruedClient.name, confidence: 1, method: "client-folder" };
         } else {
           const m = findMatch(c.name, accruedNames);
           if (m) { accruedClient = accrued.clients.find((a) => a.name === m.name) || null; matchInfo = m; }
