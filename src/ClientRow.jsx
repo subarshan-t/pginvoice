@@ -169,17 +169,17 @@ export function ClientRow({ index, client: c, active, onOpen, nested, parentName
         </span>
         <span className="pg-tag pg-tag--pill" style={{ color: CLIENT_TYPE_TONES[c.type] }}>{TYPE_LABELS_SHORT[c.type]}</span>
         <span className="pg-row__num" style={carryTone ? { color: carryTone } : undefined} title={carryTitle}>
-          <span className="pg-row__num-label">{carryLabel}</span>{c.priorBalance != null ? `${fmt(carry)} h` : "—"}
+          <span className="pg-row__num-label">{carryLabel}</span>{c.priorBalance != null ? `${fmt(carry)} h` : isPackage ? "—" : ""}
         </span>
         <span className="pg-row__num">
-          <span className="pg-row__num-label">Package</span>{c.pkg != null ? `${fmt(c.pkg)} h` : "—"}
+          <span className="pg-row__num-label">Package</span>{c.pkg != null ? `${fmt(c.pkg)} h` : isPackage ? "—" : ""}
         </span>
         <span className="pg-row__num">
           <span className="pg-row__num-label">Worked</span>{fmt(worked)} h
         </span>
         <span className="pg-row__num" style={remainingTone ? { color: remainingTone } : undefined}>
           <span className="pg-row__num-label">Remaining</span>
-          {c.remaining != null ? `${c.remaining < 0 ? "−" : ""}${fmt(Math.abs(c.remaining))} h` : "—"}
+          {c.remaining != null ? `${c.remaining < 0 ? "−" : ""}${fmt(Math.abs(c.remaining))} h` : isPackage ? "—" : ""}
         </span>
         <span className="pg-row__status">
           {statusPill && (
