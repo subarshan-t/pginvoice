@@ -23,7 +23,7 @@ import {
   parseTimeTextToMinutes, msToMinutes, parseHeaderToMonth, monthLabel, monthKey, prevMonthKeyStr,
   parseAccruedWorkbook, findHeader, SKIP_FOLDERS, parseStartTextMonth, dateKeyStr, parseClickupCsv,
 } from "./parsers.js";
-import { buildPrintHtml, printClientPdf } from "./printTemplate.js";
+import { buildPrintHtml, printClientPdf, printLineItemPdf } from "./printTemplate.js";
 import { CLICKUP_DB_KEY, ACCRUED_DB_KEY, CAP_CLIENTS_KEY, CAP_PEOPLE_KEY, PG_CLIENTS_KEY } from "./storageKeys.js";
 // A <label> wrapping a <select> only focuses it on click in most browsers -- opening
 // the dropdown itself needs a second click directly on the control. Used as the
@@ -600,11 +600,19 @@ export default function PGReconciliation({ onNavigateClients }) {
       // The primary folder's own hours, captured before any sibling gets merged in --
       // labelled with the client's real name only when it's genuinely the registered
       // umbrella folder; otherwise it's just another sibling folder and gets its own name.
-      const lineItems = [{ name: hasDirectFolder ? accName : primary, hours: primaryEntry.totalMin / 60 }];
+      // `tasksByUser` is a snapshot of THIS folder's own tasks (pre-merge) -- kept so the
+      // drawer's task list can show a rolled-up client's tasks grouped by which real
+      // ClickUp folder they came from, instead of one flat merged list with no way to
+      // tell a BAMSS Childcare task from a Brisbane Alarm Monitoring one.
+      // Cloned (not a reference) -- primaryEntry.tasksByUser itself gets mutated below as
+      // siblings merge into it, and a sibling's own map would otherwise get merged into a
+      // shared object too if any two folders happened to share a reference.
+      const cloneTasksByUser = (m) => new Map([...m].map(([u, t]) => [u, new Map(t)]));
+      const lineItems = [{ name: hasDirectFolder ? accName : primary, hours: primaryEntry.totalMin / 60, tasksByUser: cloneTasksByUser(primaryEntry.tasksByUser) }];
       for (const f of matchedInMap) {
         if (f === primary) continue;
         const entry = map.get(f);
-        lineItems.push({ name: f, hours: entry.totalMin / 60 });
+        lineItems.push({ name: f, hours: entry.totalMin / 60, tasksByUser: cloneTasksByUser(entry.tasksByUser) });
         primaryEntry.totalMin += entry.totalMin;
         for (const [task, min] of entry.tasksAll) primaryEntry.tasksAll.set(task, (primaryEntry.tasksAll.get(task) || 0) + min);
         for (const [u, min] of entry.userMinutes) primaryEntry.userMinutes.set(u, (primaryEntry.userMinutes.get(u) || 0) + min);
@@ -683,7 +691,13 @@ export default function PGReconciliation({ onNavigateClients }) {
       const priorMonthWorkedMin = c.costCentre
         ? c.costCentre.accrualFolderNames.reduce((a, f) => a + (monthWorked?.get(f) || 0), 0)
         : (monthWorked?.get(c.name) || 0);
-      const pkg = accruedClient?.package ?? null;
+      // Prefer this exact month's agreed hours over the client-level `package` scalar --
+      // a package whose hours changed (or that moved off package for a stretch) needs the
+      // figure for the month actually being viewed. Falls back to the scalar for a client
+      // that only has that (e.g. a manually uploaded workbook, which has no per-month
+      // agreed-hours column at all).
+      const monthAgreed = accruedClient?.agreedByMonth?.[monthKey];
+      const pkg = monthAgreed !== undefined ? monthAgreed : (accruedClient?.package ?? null);
       let priorBalance = accruedClient && priorKey ? (accruedClient.balances[priorKey] ?? null) : null;
       // The accrued sheet doesn't have a column for the prior month (e.g. it hasn't
       // been re-uploaded with last month's closing balance yet) — estimate it the same
@@ -1195,6 +1209,10 @@ export default function PGReconciliation({ onNavigateClients }) {
     const monthText = invoiceMonth || new Date().toLocaleString(undefined, { month: "long", year: "numeric" });
     printClientPdf(c, monthText, priorMonthPretty);
   };
+  const downloadLineItemPdf = (c, lineItem) => {
+    const monthText = invoiceMonth || new Date().toLocaleString(undefined, { month: "long", year: "numeric" });
+    printLineItemPdf(c, lineItem, monthText, consultantFilter);
+  };
 
   // ------------------------------- render -----------------------------------
   const ready = clickup && accrued;
@@ -1461,7 +1479,7 @@ export default function PGReconciliation({ onNavigateClients }) {
               }
               return (
                 <div className="pg-tile" key={c.name}>
-                  <ClientRow index={i + 1} client={c} tileRow hasMoreBelow={siblings.length > 0} active={drawerClientName === c.name} onOpen={() => setDrawerClientName(c.name)} onCopy={copySummary} onPdf={downloadPdf} />
+                  <ClientRow index={i + 1} client={c} tileRow hasMoreBelow={siblings.length > 0} active={drawerClientName === c.name} onOpen={() => setDrawerClientName(c.name)} onCopy={copySummary} onPdf={downloadPdf} onPdfLineItem={downloadLineItemPdf} />
                   {siblings.map((s, idx) => {
                     const sc = withConsultantFilter(s, consultantFilter);
                     return (

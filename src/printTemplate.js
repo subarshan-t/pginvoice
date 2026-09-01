@@ -7,7 +7,7 @@ const PRINT = { ink: "#000000", inkSoft: "#000000", brand: "#3F008E", line: "#E7
 
 export function buildPrintHtml(c, monthText, priorMonthText) {
   const type = c.type;
-  const isPkg = isPackageLikeType(type);
+  const isPkg = isPackageLikeType(type) && !c.isLineItemExport;
   const taskRows = [...c.tasksFiltered.entries()].sort((a, b) => b[1] - a[1])
     .map(([task, min]) => `<tr class="datarow"><td>${esc(task)}</td><td class="right">${fmt(min / 60)}</td></tr>`).join("");
   const workedRounded = Math.round(c.workedFiltered * 100) / 100;
@@ -29,7 +29,7 @@ export function buildPrintHtml(c, monthText, priorMonthText) {
     <tr class="noborder"><td colspan="2" class="note-cell">Total accrued time = time tracked this month + prior balance (signed). Negative prior = client credit carried in; positive prior = over-served last month.</td></tr>` : `
     <tr class="noborder"><td colspan="2" class="section-heading">Summary</td></tr>
     <tr class="datarow"><td class="label">Time tracked this month</td><td class="right">${fmt(workedRounded)} h</td></tr>
-    <tr class="noborder"><td colspan="2" class="note-cell">${type === "hourly" ? "Hourly-rate client: invoice at the agreed hourly rate for these hours." : "Queensland (previously) client: no accrued balance on record."}</td></tr>`;
+    <tr class="noborder"><td colspan="2" class="note-cell">${c.isLineItemExport ? `This folder's own hours only -- part of ${esc(c.rolledUpParentName)}'s rolled-up package; see that client's own report for the combined package/reconciliation figures.` : type === "hourly" ? "Hourly-rate client: invoice at the agreed hourly rate for these hours." : "Queensland (previously) client: no accrued balance on record."}</td></tr>`;
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -109,6 +109,28 @@ export function buildPrintHtml(c, monthText, priorMonthText) {
     });
   </script>
 </body></html>`;
+}
+
+// A single folder's own slice of a rolled-up (cost-centre) client, e.g. exporting just
+// BAMSS Childcare's hours out of Brisbane Alarm Monitoring's combined report -- built
+// from the line item's own (pre-merge) tasksByUser snapshot (see App.jsx's cost-centre
+// merge) rather than the parent's already-merged totals, so this genuinely reports only
+// that one folder's work, not the whole rolled-up package.
+export function printLineItemPdf(parent, lineItem, monthText, consultantFilter) {
+  let tasks;
+  if (consultantFilter) {
+    tasks = lineItem.tasksByUser.get(consultantFilter) || new Map();
+  } else {
+    tasks = new Map();
+    for (const [, tm] of lineItem.tasksByUser) for (const [task, min] of tm) tasks.set(task, (tasks.get(task) || 0) + min);
+  }
+  const workedFiltered = [...tasks.values()].reduce((a, min) => a + min, 0) / 60;
+  const synthetic = {
+    displayName: `${parent.displayName} — ${lineItem.name}`,
+    type: "project", tasksFiltered: tasks, workedFiltered,
+    isLineItemExport: true, rolledUpParentName: parent.displayName,
+  };
+  printClientPdf(synthetic, monthText, null);
 }
 
 export function printClientPdf(c, monthText, priorMonthText) {

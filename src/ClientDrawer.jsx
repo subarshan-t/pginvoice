@@ -65,6 +65,15 @@ export function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthP
   const taskEntries = [...tasksShown.entries()].sort((a, b) => b[1] - a[1]);
   const shownTasks = tasksOpen ? taskEntries : taskEntries.slice(0, 3);
 
+  // A rolled-up client's tasks (see App.jsx's cost-centre merge) come from several real
+  // ClickUp folders folded into one row -- without this, a BAMSS Childcare task and a
+  // Brisbane Alarm Monitoring task read identically here, with no way to tell which
+  // folder either actually came from. Built from each line item's own (pre-merge) task
+  // list, so this stays correct even when two folders happen to share a task name.
+  const taskFolder = c.costCentre
+    ? new Map(c.costCentre.lineItems.flatMap((item) => [...item.tasksByUser.values()].flatMap((tm) => [...tm.keys()]).map((task) => [task, item.name])))
+    : null;
+
   const statusLabel = !isPackage ? null : c.pkg == null ? "No package on file"
     : c.status === "over" ? "Over-serviced" : c.status === "under" ? "Under-serviced" : "On track";
   const statusTone = !isPackage ? undefined : c.status === "over" ? "var(--status-over)" : c.status === "under" ? "var(--status-warn)" : c.status === "ok" ? "var(--status-ok)" : "var(--fg-tertiary)";
@@ -258,6 +267,7 @@ export function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthP
               <thead>
                 <tr>
                   <th>Task</th>
+                  {taskFolder && <th style={{ width: 160 }}>Folder</th>}
                   <th className="right num" style={{ width: 90 }}>Hours</th>
                 </tr>
               </thead>
@@ -274,15 +284,19 @@ export function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthP
                         ) : task}
                         {hasUser && <div style={{ fontSize: 11, color: "var(--fg-tertiary)", marginTop: 2 }}><TaskUsersCell userMinutesMap={taskUsersShown?.get(task)} taskUrl={taskUrl} /></div>}
                       </td>
+                      {taskFolder && (
+                        <td style={{ fontSize: 12, color: "var(--fg-tertiary)" }}>{taskFolder.get(task) || "—"}</td>
+                      )}
                       <td className="right num">{fmt(min / 60)}</td>
                     </tr>
                   );
                 })}
                 {taskEntries.length === 0 && (
-                  <tr><td colSpan={2} className="empty">No tasks in this filter.</td></tr>
+                  <tr><td colSpan={taskFolder ? 3 : 2} className="empty">No tasks in this filter.</td></tr>
                 )}
                 <tr className="total">
                   <td>Total</td>
+                  {taskFolder && <td />}
                   <td className="right num">{fmt(workedShown)}</td>
                 </tr>
               </tbody>
