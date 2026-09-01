@@ -71,6 +71,13 @@ export async function fetchAccrualsFromSupabase() {
 export async function fetchAccruedForReconciliation() {
   const rows = await fetchAccrualsFromSupabase();
   if (!rows) return null;
+  return { ...buildReconciliationClients(rows), warnings: [], fileName: ACCRUALS_LIVE_SYNC_LABEL };
+}
+
+// Pure reshape, split out from fetchAccruedForReconciliation so it's testable without a
+// live Supabase call -- takes rowsToClients()'s per-client output, returns exactly the
+// { clients, balanceCols } shape Client Invoicing's reconciliation engine reads.
+export function buildReconciliationClients(rows) {
   const monthSet = new Set();
   const clients = rows.map((c) => {
     const balances = {};
@@ -100,10 +107,10 @@ export async function fetchAccruedForReconciliation() {
     const [y, m] = mk.split("-").map(Number); // m is 1-12
     return { year: y, month: m - 1, label: monthLabel(y, m - 1) }; // month here is 0-11, matching monthLabel's Date(year, month, 1)
   });
-  return { clients, balanceCols, warnings: [], fileName: ACCRUALS_LIVE_SYNC_LABEL };
+  return { clients, balanceCols };
 }
 
-function rowsToClients(rows) {
+export function rowsToClients(rows) {
   const byClient = new Map();
   for (const r of rows) {
     if (!byClient.has(r.client)) {
