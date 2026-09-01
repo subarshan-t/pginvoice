@@ -1266,3 +1266,47 @@ button { font: inherit; }
 /* DayPicker's own focus ring is a plain browser outline -- swap it for the same
    accent ring every other focusable control in this app uses (.pg-input:focus). */
 .pg-daterange__calendar .rdp-day_button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* Clients module — master-detail list. Each row is a plain button so the whole
+   row is clickable/keyboard-focusable, laid out in the same column grid as the
+   header so client/arrangement/owner/project line up. */
+.pg-client-list { padding: 4px; overflow-x: auto; }
+.pg-client-list__head,
+.pg-client-list__row {
+  display: grid;
+  grid-template-columns: 1.6fr 1.3fr 1.2fr 1.3fr 20px;
+  align-items: center;
+  gap: 16px;
+  min-width: 640px;
+}
+.pg-client-list__head {
+  padding: 10px 16px;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--fg-tertiary);
+}
+.pg-client-list__row {
+  width: 100%; padding: 12px 16px; background: none; border: 0; border-top: 1px solid var(--border-subtle);
+  cursor: pointer; text-align: left; color: inherit; font: inherit; border-radius: var(--app-radius-sm);
+}
+.pg-client-list__row:first-of-type { border-top: 0; }
+.pg-client-list__row:hover { background: var(--bg-elevated); }
+.pg-client-list__row--active { background: var(--accent-soft); }
+.pg-client-list__client { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pg-client-list__client-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pg-client-list__name { font-family: var(--font-display); font-size: 14px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-client-list__statustag { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-tertiary); }
+.pg-client-list__arrangement { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pg-client-list__arrangement-text { font-size: 12px; color: var(--fg-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-client-list__owner { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--fg-primary); }
+.pg-client-list__owner span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-client-list__project { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.pg-client-list__project-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pg-client-list__project-name { font-size: 13px; color: var(--fg-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-client-list__project-sub { font-size: 11px; color: var(--fg-tertiary); }
+
+.pg-drawer-tabs { display: flex; gap: 18px; margin-top: 18px; border-bottom: 1px solid var(--border-subtle); }
+.pg-drawer-tabs__tab {
+  padding-bottom: 10px; font-size: 13px; color: var(--fg-tertiary);
+  border-bottom: 2px solid transparent;
+}
+.pg-drawer-tabs__tab--active { color: var(--fg-primary); border-bottom-color: var(--accent); }
