@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link2, MoreVertical, ChevronDown, Copy, Printer, Users } from "lucide-react";
+import { Link2, MoreVertical, ChevronDown, Copy, Printer, Users, FileDown } from "lucide-react";
 import { fmt, isPackageLikeType } from "./format.js";
 import { CLIENT_TYPE_TONES, TYPE_LABELS_SHORT } from "./nameMatch.js";
 import { ClientAvatar } from "./avatar.jsx";
@@ -17,7 +17,7 @@ import { ExportItem } from "./ExportItem.jsx";
 // the accrual (billed separately, e.g. a quoted one-off project) never appears here —
 // it stays its own ordinary row, nested underneath via the existing sub-project
 // mechanism (see the `nested` prop below), tagged "Sub project" rather than folded in.
-function CostCentreBreakdown({ client: c, divider }) {
+function CostCentreBreakdown({ client: c, divider, onPdfLineItem }) {
   const { lineItems } = c.costCentre;
   return (
     <div className={"pg-costcentre-mini" + (divider ? " pg-costcentre-mini--divider" : "")}>
@@ -33,7 +33,19 @@ function CostCentreBreakdown({ client: c, divider }) {
           <span />
           <span />
           <span />
-          <span className="pg-costcentre-mini__hours">{fmt(item.hours)} h</span>
+          <span className="pg-costcentre-mini__hours">
+            {fmt(item.hours)} h
+            {onPdfLineItem && (
+              <button
+                type="button" className="pg-icon-btn-sm" style={{ marginLeft: 6 }}
+                title={`Export a PDF for just ${item.name}'s hours`}
+                aria-label={`Export PDF for ${item.name}`}
+                onClick={(e) => { e.stopPropagation(); onPdfLineItem(c, item); }}
+              >
+                <FileDown size={12} />
+              </button>
+            )}
+          </span>
         </div>
       ))}
     </div>
@@ -56,7 +68,7 @@ function CostCentreBreakdown({ client: c, divider }) {
 // so it's labelled against its parent's number instead (parent "26" -> sub-project
 // "26s", a second one "26s2", ...). `avatarOf` carries the parent's {name, logo} so the
 // sub-project's avatar reads as the same client's picture, not a distinct one of its own.
-export function ClientRow({ index, client: c, active, onOpen, nested, parentName, onCopy, onPdf, tileRow, hasMoreBelow, subIndex, avatarOf }) {
+export function ClientRow({ index, client: c, active, onOpen, nested, parentName, onCopy, onPdf, onPdfLineItem, tileRow, hasMoreBelow, subIndex, avatarOf }) {
   const [inlineOpen, setInlineOpen] = useState(false);
   // Cost-centre breakdown starts collapsed, same as every other row's expand affordance
   // (the reconciliation breakdown below, the drawer) -- the list should read as a plain
@@ -212,7 +224,7 @@ export function ClientRow({ index, client: c, active, onOpen, nested, parentName
         </span>
       </div>
 
-      {c.costCentre && costCentreOpen && <CostCentreBreakdown client={c} divider={miniDivider} />}
+      {c.costCentre && costCentreOpen && <CostCentreBreakdown client={c} divider={miniDivider} onPdfLineItem={onPdfLineItem} />}
 
       {inlineOpen && (
         <div className="pg-row-inline">

@@ -74,11 +74,19 @@ export async function fetchAccruedForReconciliation() {
   const monthSet = new Set();
   const clients = rows.map((c) => {
     const balances = {};
+    // Per-month agreed hours -- `package` below is a client-level fallback only (kept for
+    // callers, like the exported-workbook shape, that genuinely want one scalar); a client
+    // whose package hours changed mid-year needs the figure for the month actually being
+    // viewed, not whichever row happened to be scanned last when the client-level value
+    // was set (see the c.agreedHpm comment in rowsToClients -- that was the exact bug that
+    // left a client's now-hourly folder still showing its old package figure forever).
+    const agreedByMonth = {};
     for (const [mk, cell] of Object.entries(c.months)) {
       monthSet.add(mk);
       if (cell.accrualValue !== null) balances[mk] = cell.accrualValue;
+      if (cell.agreedHpm !== null) agreedByMonth[mk] = parseAgreedHours(cell.agreedHpm);
     }
-    return { name: c.client, package: parseAgreedHours(c.agreedHpm), balances };
+    return { name: c.client, package: parseAgreedHours(c.agreedHpm), agreedByMonth, balances };
   });
   const balanceCols = [...monthSet].sort().map((mk) => {
     const [y, m] = mk.split("-").map(Number); // m is 1-12
@@ -104,6 +112,10 @@ function rowsToClients(rows) {
       workedHours: r.worked_hours === null || r.worked_hours === undefined ? null : Number(r.worked_hours),
       isOverride: !!r.is_override,
       hoursFlagged: !!r.hours_flagged,
+      // This row's own agreed hours -- a package's hours can change mid-year (a type
+      // event, or simply moving off package for a while), so the right figure for any
+      // given month is THIS row's, never the client-level agreedHpm below.
+      agreedHpm: r.agreed_hpm === null || r.agreed_hpm === undefined ? null : r.agreed_hpm,
     };
   }
   return [...byClient.values()].sort((a, b) => a.client.localeCompare(b.client));
