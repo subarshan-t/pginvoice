@@ -318,8 +318,8 @@ export function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthP
                     </button>
                   )}
                   {onPdfLineItem && (
-                    <button className="pg-btn-ghost" style={{ marginTop: 10 }} onClick={() => onPdfLineItem(group.item)}>
-                      <Printer size={12} /> Export PDF — {group.name}
+                    <button className="pg-btn-ghost" style={{ marginTop: 10 }} onClick={() => onPdfLineItem(group.item)} title={`Export PDF for ${group.name}`}>
+                      <Printer size={12} /> Export PDF
                     </button>
                   )}
                 </div>
