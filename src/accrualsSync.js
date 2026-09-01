@@ -266,7 +266,15 @@ export async function recomputeAccruals(clients) {
         c.months[mk] = cell;
         if (changed) {
           updatedRows.push({
-            client: c.client, account_manager: c.manager || null, agreed_hpm: c.agreedHpm || null,
+            // The client's *current-month* agreed hours (from typeForMonth, same value
+            // agreedNum above was computed from) -- not c.agreedHpm, a stale snapshot set
+            // once from whichever row happened to be scanned first in rowsToClients() and
+            // never updated after. Writing that instead of agreedNum meant a package's
+            // displayed hours figure could get stuck at an old value forever after a type
+            // event changed it (Amorim Cork stuck at 0 after a Jul 2025 event raised it to
+            // 16; Warrina Homes stuck at 24 after an Aug 2026 event dropped it to 13) even
+            // though the accrual math itself (which does use agreedNum) was already correct.
+            client: c.client, account_manager: c.manager || null, agreed_hpm: String(agreedNum),
             month_key: mk, accrual_value: accrualValue, accrual_note: null, pct_over_under: pct,
             comment: cell.comment, worked_hours: workedHours, is_override: false, hours_flagged: hoursFlagged,
           });
