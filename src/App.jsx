@@ -1479,7 +1479,7 @@ export default function PGReconciliation({ onNavigateClients }) {
               }
               return (
                 <div className="pg-tile" key={c.name}>
-                  <ClientRow index={i + 1} client={c} tileRow hasMoreBelow={siblings.length > 0} active={drawerClientName === c.name} onOpen={() => setDrawerClientName(c.name)} onCopy={copySummary} onPdf={downloadPdf} onPdfLineItem={downloadLineItemPdf} />
+                  <ClientRow index={i + 1} client={c} tileRow hasMoreBelow={siblings.length > 0} active={drawerClientName === c.name} onOpen={() => setDrawerClientName(c.name)} onCopy={copySummary} onPdf={downloadPdf} />
                   {siblings.map((s, idx) => {
                     const sc = withConsultantFilter(s, consultantFilter);
                     return (
@@ -1533,6 +1533,7 @@ export default function PGReconciliation({ onNavigateClients }) {
           onSetMatch={(v) => setManualMatch(drawerClient.name, v)}
           onCopy={() => copySummary(drawerClient)}
           onPdf={() => downloadPdf(drawerClient)}
+          onPdfLineItem={(lineItem) => downloadLineItemPdf(drawerClient, lineItem)}
           onViewProfile={onNavigateClients}
           copied={copied === drawerClient.name}
         />

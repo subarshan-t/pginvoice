@@ -33,17 +33,18 @@ function TaskUsersCell({ userMinutesMap, taskUrl }) {
 // Full client detail — right-side drawer, opened by clicking a row. Reuses exactly
 // the same computed fields ClientRow reads from (client.*), just laid out for
 // a deeper single-client view: reconciliation bar, consultant contributions, tasks.
-export function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress, hasUser, consultantFilter, accruedNames, usedAccruedNames, syncMeta, capPeople, onClose, onSetMatch, onCopy, onPdf, onViewProfile, copied }) {
+export function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthProgress, hasUser, consultantFilter, accruedNames, usedAccruedNames, syncMeta, capPeople, onClose, onSetMatch, onCopy, onPdf, onPdfLineItem, onViewProfile, copied }) {
   const isPackage = isPackageLikeType(c.type);
   const isQld = c.type === "queensland";
   const [drillConsultant, setDrillConsultant] = useState(null);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState(() => new Set());
   const [consultantsOpen, setConsultantsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Reset local drill/expand state whenever a different client is opened, so the
   // drawer never opens already scrolled into a previous client's drill-down.
-  useEffect(() => { setDrillConsultant(null); setTasksOpen(false); setConsultantsOpen(false); }, [c.name]);
+  useEffect(() => { setDrillConsultant(null); setTasksOpen(false); setOpenGroups(new Set()); setConsultantsOpen(false); }, [c.name]);
 
   useEscape(onClose);
 
@@ -66,13 +67,29 @@ export function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthP
   const shownTasks = tasksOpen ? taskEntries : taskEntries.slice(0, 3);
 
   // A rolled-up client's tasks (see App.jsx's cost-centre merge) come from several real
-  // ClickUp folders folded into one row -- without this, a BAMSS Childcare task and a
-  // Brisbane Alarm Monitoring task read identically here, with no way to tell which
-  // folder either actually came from. Built from each line item's own (pre-merge) task
-  // list, so this stays correct even when two folders happen to share a task name.
-  const taskFolder = c.costCentre
-    ? new Map(c.costCentre.lineItems.flatMap((item) => [...item.tasksByUser.values()].flatMap((tm) => [...tm.keys()]).map((task) => [task, item.name])))
+  // ClickUp folders folded into one row -- shown here as separate groups, each with its
+  // own subtotal and export, instead of one flat merged list with no way to tell a BAMSS
+  // Childcare task from a Brisbane Alarm Monitoring one. Built from each line item's own
+  // (pre-merge) tasksByUser snapshot, filtered the same way the top-level task list is
+  // (drilled into one consultant, or the page's consultant filter).
+  const folderGroups = c.costCentre
+    ? c.costCentre.lineItems.map((item) => {
+      let tasks;
+      const who = drillConsultant || consultantFilter;
+      if (who) tasks = item.tasksByUser.get(who) || new Map();
+      else {
+        tasks = new Map();
+        for (const [, tm] of item.tasksByUser) for (const [task, min] of tm) tasks.set(task, (tasks.get(task) || 0) + min);
+      }
+      const entries = [...tasks.entries()].sort((a, b) => b[1] - a[1]);
+      return { name: item.name, item, entries, total: entries.reduce((a, [, min]) => a + min, 0) };
+    })
     : null;
+  const toggleGroup = (name) => setOpenGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    return next;
+  });
 
   const statusLabel = !isPackage ? null : c.pkg == null ? "No package on file"
     : c.status === "over" ? "Over-serviced" : c.status === "under" ? "Under-serviced" : "On track";
@@ -258,56 +275,104 @@ export function ClientDrawer({ client: c, invoiceMonth, priorMonthPretty, monthP
           </div>
         )}
 
-        <div className="pg-drawer__section">
-          <div className="pg-drawer__section-title">
-            Tasks {drillConsultant ? `worked by ${drillConsultant}` : consultantFilter ? `worked by ${consultantFilter}` : "worked this month"}
-          </div>
-          <div className="pg-drawer__bubble">
-            <table className="pg-table">
-              <thead>
-                <tr>
-                  <th>Task</th>
-                  {taskFolder && <th style={{ width: 160 }}>Folder</th>}
-                  <th className="right num" style={{ width: 90 }}>Hours</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shownTasks.map(([task, min]) => {
-                  const taskUrl = clickupTaskUrl(c.taskIds?.get(task));
-                  return (
-                    <tr key={task}>
-                      <td>
-                        {taskUrl ? (
-                          <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" className="pg-clickup-link">
-                            {task}
-                          </a>
-                        ) : task}
-                        {hasUser && <div style={{ fontSize: 11, color: "var(--fg-tertiary)", marginTop: 2 }}><TaskUsersCell userMinutesMap={taskUsersShown?.get(task)} taskUrl={taskUrl} /></div>}
-                      </td>
-                      {taskFolder && (
-                        <td style={{ fontSize: 12, color: "var(--fg-tertiary)" }}>{taskFolder.get(task) || "—"}</td>
+        {folderGroups ? (
+          // Rolled-up client -- one group per real ClickUp folder that feeds this
+          // package, each with its own subtotal and its own "export PDF" (scoped to
+          // just that folder's hours), rather than one flat merged task list. The
+          // client's own combined PDF (drawer footer, below) still covers everything.
+          folderGroups.map((group) => {
+            const open = openGroups.has(group.name);
+            const shown = open ? group.entries : group.entries.slice(0, 3);
+            return (
+              <div className="pg-drawer__section" key={group.name}>
+                <div className="pg-drawer__section-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <span>{group.name}</span>
+                  <span style={{ fontWeight: 400, color: "var(--fg-tertiary)" }}>{fmt(group.total / 60)} h</span>
+                </div>
+                <div className="pg-drawer__bubble">
+                  <table className="pg-table">
+                    <thead><tr><th>Task</th><th className="right num" style={{ width: 90 }}>Hours</th></tr></thead>
+                    <tbody>
+                      {shown.map(([task, min]) => {
+                        const taskUrl = clickupTaskUrl(c.taskIds?.get(task));
+                        return (
+                          <tr key={task}>
+                            <td>
+                              {taskUrl ? (
+                                <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" className="pg-clickup-link">{task}</a>
+                              ) : task}
+                            </td>
+                            <td className="right num">{fmt(min / 60)}</td>
+                          </tr>
+                        );
+                      })}
+                      {group.entries.length === 0 && (
+                        <tr><td colSpan={2} className="empty">No tasks in this filter.</td></tr>
                       )}
-                      <td className="right num">{fmt(min / 60)}</td>
-                    </tr>
-                  );
-                })}
-                {taskEntries.length === 0 && (
-                  <tr><td colSpan={taskFolder ? 3 : 2} className="empty">No tasks in this filter.</td></tr>
-                )}
-                <tr className="total">
-                  <td>Total</td>
-                  {taskFolder && <td />}
-                  <td className="right num">{fmt(workedShown)}</td>
-                </tr>
-              </tbody>
-            </table>
-            {taskEntries.length > 3 && (
-              <button className="pg-manual-note" style={{ background: "none", border: 0, cursor: "pointer", padding: 0, marginTop: 8 }} onClick={() => setTasksOpen((o) => !o)}>
-                <span style={{ color: "var(--accent)" }}>{tasksOpen ? "Show fewer" : `View all ${taskEntries.length} tasks`}</span>
-              </button>
-            )}
+                      <tr className="total"><td>Total</td><td className="right num">{fmt(group.total / 60)}</td></tr>
+                    </tbody>
+                  </table>
+                  {group.entries.length > 3 && (
+                    <button className="pg-manual-note" style={{ background: "none", border: 0, cursor: "pointer", padding: 0, marginTop: 8 }} onClick={() => toggleGroup(group.name)}>
+                      <span style={{ color: "var(--accent)" }}>{open ? "Show fewer" : `View all ${group.entries.length} tasks`}</span>
+                    </button>
+                  )}
+                  {onPdfLineItem && (
+                    <button className="pg-btn-ghost" style={{ marginTop: 10 }} onClick={() => onPdfLineItem(group.item)}>
+                      <Printer size={12} /> Export PDF — {group.name}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="pg-drawer__section">
+            <div className="pg-drawer__section-title">
+              Tasks {drillConsultant ? `worked by ${drillConsultant}` : consultantFilter ? `worked by ${consultantFilter}` : "worked this month"}
+            </div>
+            <div className="pg-drawer__bubble">
+              <table className="pg-table">
+                <thead>
+                  <tr>
+                    <th>Task</th>
+                    <th className="right num" style={{ width: 90 }}>Hours</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shownTasks.map(([task, min]) => {
+                    const taskUrl = clickupTaskUrl(c.taskIds?.get(task));
+                    return (
+                      <tr key={task}>
+                        <td>
+                          {taskUrl ? (
+                            <a href={taskUrl} target="_blank" rel="noopener noreferrer" title="Open this task in ClickUp" className="pg-clickup-link">
+                              {task}
+                            </a>
+                          ) : task}
+                          {hasUser && <div style={{ fontSize: 11, color: "var(--fg-tertiary)", marginTop: 2 }}><TaskUsersCell userMinutesMap={taskUsersShown?.get(task)} taskUrl={taskUrl} /></div>}
+                        </td>
+                        <td className="right num">{fmt(min / 60)}</td>
+                      </tr>
+                    );
+                  })}
+                  {taskEntries.length === 0 && (
+                    <tr><td colSpan={2} className="empty">No tasks in this filter.</td></tr>
+                  )}
+                  <tr className="total">
+                    <td>Total</td>
+                    <td className="right num">{fmt(workedShown)}</td>
+                  </tr>
+                </tbody>
+              </table>
+              {taskEntries.length > 3 && (
+                <button className="pg-manual-note" style={{ background: "none", border: 0, cursor: "pointer", padding: 0, marginTop: 8 }} onClick={() => setTasksOpen((o) => !o)}>
+                  <span style={{ color: "var(--accent)" }}>{tasksOpen ? "Show fewer" : `View all ${taskEntries.length} tasks`}</span>
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="pg-drawer__footer">
           {onViewProfile && (
