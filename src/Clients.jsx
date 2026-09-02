@@ -584,18 +584,35 @@ function ClientProfileDrawer({
       </div>
 
       {isDynamic === false && costCentres.length + subProjects.length > 0 ? (
-        <div className="pg-drawer__section">
-          <div className="pg-drawer__section-title">Cost centres & sub-projects</div>
-          <div style={{ fontSize: 11, lineHeight: 1.6 }}>
-            {costCentres.length > 0 && (
-              <div style={{ color: "var(--accent)" }}>+ {costCentres.length} cost centre{costCentres.length === 1 ? "" : "s"}: {costCentres.join(", ")}</div>
-            )}
-            {subProjects.length > 0 && (
-              <div style={{ color: "var(--fg-tertiary)" }}>+ {subProjects.length} sub-project{subProjects.length === 1 ? "" : "s"}: {subProjects.join(", ")}</div>
-            )}
-            <div style={{ color: "var(--fg-tertiary)", fontStyle: "italic", marginTop: 4 }}>Built into the app — ask to have this made editable</div>
-          </div>
-        </div>
+        // A hardcoded MULTI_FOLDER_CLIENTS rule (nameMatch.js), not this module's own
+        // editable pginvoice_cost_centres rows -- read-only, but still split into the
+        // same two labeled sections as the editable case below (not lumped into one
+        // "cost centres & sub-projects" block), so this reads as the same two distinct
+        // things everywhere a client's folders show up, editable or not.
+        <>
+          {costCentres.length > 0 && (
+            <div className="pg-drawer__section">
+              <div className="pg-drawer__section-title">Cost Centres ({costCentres.length})</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {costCentres.map((f) => (
+                  <div key={f} style={{ fontSize: 13, color: "var(--fg-primary)", padding: "4px 0" }}>{f}</div>
+                ))}
+              </div>
+              <div style={{ color: "var(--fg-tertiary)", fontStyle: "italic", fontSize: 11, marginTop: 4 }}>Built into the app — ask to have this made editable</div>
+            </div>
+          )}
+          {subProjects.length > 0 && (
+            <div className="pg-drawer__section">
+              <div className="pg-drawer__section-title">Sub Project ({subProjects.length})</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {subProjects.map((f) => (
+                  <div key={f} style={{ fontSize: 13, color: "var(--fg-primary)", padding: "4px 0" }}>{f}</div>
+                ))}
+              </div>
+              <div style={{ color: "var(--fg-tertiary)", fontStyle: "italic", fontSize: 11, marginTop: 4 }}>Built into the app — ask to have this made editable</div>
+            </div>
+          )}
+        </>
       ) : (
         <>
           <CostCentreSection
