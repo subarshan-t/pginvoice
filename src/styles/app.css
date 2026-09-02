@@ -232,12 +232,15 @@ button { font: inherit; }
   transition: width var(--dur) var(--ease), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .pg-sidebar__brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
-/* Full lockup (icon + "Purple Giraffe" wordmark baked into the image) --
-   shown in real color now that it's carrying the wordmark itself rather
-   than sitting next to a separate text label, and sized to height so the
-   text stays legible instead of shrinking to icon-only proportions. */
-.pg-sidebar__brand-logo { height: 30px; width: auto; flex: none; }
-.pg-sidebar--collapsed .pg-sidebar__brand-logo { height: 26px; }
+/* Full lockup (icon + "Purple Giraffe" wordmark baked into the image), swapped
+   between the normal (dark-on-light) and reverse (light-on-dark) source files
+   in Shell.jsx by the current theme rather than fighting a single asset with
+   filters -- sized to WIDTH so it actually spreads across the panel instead of
+   sitting as a small icon-height mark with a wall of empty space beside it;
+   collapsed state swaps to the icon-only crop (same artwork, no wordmark) sized
+   to fit the icon rail instead of shrinking the full lockup illegibly small. */
+.pg-sidebar__brand-logo { width: 132px; height: auto; flex: none; }
+.pg-sidebar--collapsed .pg-sidebar__brand-logo { width: 30px; }
 .pg-sidebar__brand span {
   font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--fg-secondary);

@@ -220,7 +220,13 @@ export default function Shell() {
       {mobileNavOpen && <div className="pg-sidebar-backdrop" onClick={() => setMobileNavOpen(false)} />}
       <aside className={"pg-sidebar" + (collapsed ? " pg-sidebar--collapsed" : "") + (mobileNavOpen ? " pg-sidebar--mobile-open" : "")}>
         <div className="pg-sidebar__brand">
-          <img src="/assets/giraffe-mark.png" alt="Purple Giraffe" className="pg-sidebar__brand-logo" />
+          <img
+            src={collapsed
+              ? (theme === "dark" ? "/assets/pg-icon-reverse.png" : "/assets/pg-icon-normal.png")
+              : (theme === "dark" ? "/assets/pg-wordmark-reverse.png" : "/assets/pg-wordmark-normal.png")}
+            alt="Purple Giraffe"
+            className="pg-sidebar__brand-logo"
+          />
           <button
             className="pg-sidebar__icon-btn pg-sidebar__desktop-only"
             style={{ marginLeft: "auto" }}
