@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Search, ArrowRight, Pencil, Check, AlertTriangle, Upload, X, ChevronRight, ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { Search, ArrowRight, Pencil, Check, AlertTriangle, Upload, X, ChevronRight, ChevronDown, ArrowLeft, Plus, Trash2 } from "lucide-react";
 import {
   fetchClients, fetchClientEvents, createClientEvent, deleteClientEvent, applyDueClientEvents,
   updateClickupFolder, updateClientWebsite, updateClientLogo, fetchCostCentres, addCostCentreFolder, removeCostCentreFolder,
@@ -641,18 +641,20 @@ function ClientProfileDrawer({
 // split into two sections (rather than one combined list with a kind tag on each
 // row) so Cost Centres and Sub Project read as the two distinct things they are,
 // matching the drawer's field order.
-const COST_CENTRE_COLLAPSE_AT = 4;
+const COST_CENTRE_COLLAPSE_AT = 5;
 
-// One cost-centre or sub-project list. Plain view shows just the first 4 names,
-// collapsed behind a "+N more" toggle once there are more than that -- editing
-// (add/remove) only happens once "Edit" is clicked, which also expands the full
-// list so nothing being removed is hidden behind the collapse.
+// One cost-centre or sub-project list. Plain view shows just the first 5 names;
+// past that, an inline "N items ⌄" text toggle (not a button styled as one) expands
+// the rest -- clicking it again while expanded collapses back down to 5, always
+// showing the true total either way rather than just "+N more" for the hidden tail.
+// Editing (add/remove) only happens once "Edit" is clicked, which also expands the
+// full list so nothing being removed is hidden behind the collapse.
 function CostCentreSection({ title, kind, items, assigned, folderList, managing, draftFolder, savingCostCentre, onStart, onCancel, onDraftFolderChange, onAdd, onRemove }) {
   const [expanded, setExpanded] = useState(false);
   const datalistId = `cc-folders-${kind}`;
-  const showAll = expanded || managing || items.length <= COST_CENTRE_COLLAPSE_AT;
+  const overflows = items.length > COST_CENTRE_COLLAPSE_AT;
+  const showAll = expanded || managing || !overflows;
   const shown = showAll ? items : items.slice(0, COST_CENTRE_COLLAPSE_AT);
-  const hiddenCount = items.length - shown.length;
 
   return (
     <div className="pg-drawer__section">
@@ -676,14 +678,15 @@ function CostCentreSection({ title, kind, items, assigned, folderList, managing,
         {items.length === 0 && (
           <div style={{ fontSize: 12, color: "var(--fg-tertiary)" }}>None yet.</div>
         )}
-        {hiddenCount > 0 && (
-          <button type="button" className="pg-row-inline__more" style={{ fontSize: 11, marginTop: 2 }} onClick={() => setExpanded(true)}>
-            +{hiddenCount} more
-          </button>
-        )}
-        {expanded && !managing && items.length > COST_CENTRE_COLLAPSE_AT && (
-          <button type="button" className="pg-row-inline__more" style={{ fontSize: 11, marginTop: 2 }} onClick={() => setExpanded(false)}>
-            Show fewer
+        {overflows && !managing && (
+          <button
+            type="button"
+            className="pg-row__name-sub pg-row__name-sub--toggle"
+            style={{ marginTop: 2 }}
+            onClick={() => setExpanded((e) => !e)}
+          >
+            {expanded ? "Show fewer" : `${items.length} items`}
+            <ChevronDown size={12} style={{ transform: expanded ? "rotate(180deg)" : undefined }} />
           </button>
         )}
         {managing && (
