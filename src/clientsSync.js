@@ -224,6 +224,51 @@ export async function deleteClientEvent(id, { applied, client, kind } = {}) {
   if (client) logClientHistory(client, `event_${kind}_removed`, `Removed scheduled ${EVENT_KIND_LABEL[kind] || kind}`, { kind });
 }
 
+// Picks the chronologically-latest event (by effective_date, tying on id) from a list --
+// used by recomputeClientCurrentState below so "what's true today" is always derived by
+// walking the FULL applied-event history in effective_date order, never by whichever event
+// happens to have been applied most recently. Applying events one at a time and blindly
+// overwriting the client row with just-applied event's fields (the old behaviour) meant a
+// backdated correction event -- added later, but dated earlier than an event that was
+// already applied -- would win on write order and silently clobber a chronologically newer,
+// already-applied event's fields. This is the exact bug behind the SGME/Comunet/Amorim Cork
+// drift: a correction event with an earlier effective_date kept reverting the client row
+// back to its old (wrong) state on the next sync, undoing a later, more-recent transition.
+function latestByEffectiveDate(events) {
+  return events.reduce((best, e) => {
+    if (!best) return e;
+    if (e.effective_date > best.effective_date) return e;
+    if (e.effective_date === best.effective_date && e.id > best.id) return e;
+    return best;
+  }, null);
+}
+
+// Derives the client's current type/agreed_hours/consultant/status/end_date from its
+// immutable base snapshot plus its FULL history of applied events -- each field is decided
+// independently by that field's own chronologically-latest applied event, so insertion
+// order (which event got added to the DB last) can never override effective-date order
+// (which event actually happened most recently). This is what applyDueClientEvents below
+// writes, instead of a raw per-event patch.
+function recomputeClientCurrentState(baseRow, appliedEvents) {
+  const own = appliedEvents.filter((e) => e.client === baseRow.client);
+  const patch = { type: baseRow.base_type, agreed_hours: baseRow.base_agreed_hours, consultant: baseRow.consultant, status: "active", end_date: null };
+
+  const lt = latestByEffectiveDate(own.filter((e) => e.kind === "type"));
+  if (lt) { patch.type = lt.new_type; patch.agreed_hours = lt.new_agreed_hours; }
+
+  const lc = latestByEffectiveDate(own.filter((e) => e.kind === "consultant"));
+  if (lc) patch.consultant = lc.new_consultant;
+
+  const ls = latestByEffectiveDate(own.filter((e) => ["offboarding", "reactivation", "hold", "resume"].includes(e.kind)));
+  if (ls) {
+    if (ls.kind === "offboarding") { patch.status = "offboarded"; patch.end_date = ls.effective_date; }
+    else if (ls.kind === "reactivation") { patch.status = "active"; patch.end_date = null; }
+    else if (ls.kind === "hold") { patch.status = "on_hold"; }
+    else if (ls.kind === "resume") { patch.status = "active"; }
+  }
+  return patch;
+}
+
 // Applies any event whose effective date has arrived (<= today) and isn't applied
 // yet, mutating the client's current profile row. Safe to call on every module
 // load — already-applied events are a no-op via the `applied` guard.
@@ -234,30 +279,28 @@ export async function applyDueClientEvents() {
     .select("*")
     .eq("applied", false)
     .lte("effective_date", todayKey)
-    // Secondary sort by id (insertion order) breaks ties deterministically when two
-    // events on the same client share an effective_date -- e.g. an offboarding and a
-    // later-created reactivation both dated today. Without this, Postgres's return
-    // order for equal effective_date values isn't guaranteed, so which patch "wins"
-    // (applied last) could vary run to run.
     .order("effective_date", { ascending: true })
     .order("id", { ascending: true });
   if (error) throw error;
   if (!due || !due.length) return 0;
 
-  for (const ev of due) {
-    const patch = {};
-    if (ev.kind === "type") { patch.type = ev.new_type; patch.agreed_hours = ev.new_agreed_hours; }
-    else if (ev.kind === "consultant") { patch.consultant = ev.new_consultant; }
-    else if (ev.kind === "offboarding") { patch.status = "offboarded"; patch.end_date = ev.effective_date; }
-    else if (ev.kind === "reactivation") { patch.status = "active"; patch.end_date = null; }
-    // On hold: still an ongoing client, just paused (e.g. billing dispute) -- unlike
-    // offboarding, doesn't touch end_date since this isn't a real end of engagement.
-    else if (ev.kind === "hold") { patch.status = "on_hold"; }
-    else if (ev.kind === "resume") { patch.status = "active"; }
-    const { error: updErr } = await supabase.from("pginvoice_clients").update(patch).eq("client", ev.client);
+  const clientNames = [...new Set(due.map((e) => e.client))];
+  const { error: markErr } = await supabase.from("pginvoice_client_events").update({ applied: true }).in("id", due.map((e) => e.id));
+  if (markErr) throw markErr;
+
+  // Now that the due events are marked applied, re-derive each affected client's current
+  // state from its COMPLETE applied-event history (not just the events that were due this
+  // run) -- a previously-applied event with a later effective_date than one applied just now
+  // must still win, and only a full replay in effective_date order guarantees that.
+  const { data: baseRows, error: baseErr } = await supabase.from("pginvoice_clients").select("client, base_type, base_agreed_hours, consultant").in("client", clientNames);
+  if (baseErr) throw baseErr;
+  const { data: allApplied, error: appliedErr } = await supabase.from("pginvoice_client_events").select("*").eq("applied", true).in("client", clientNames);
+  if (appliedErr) throw appliedErr;
+
+  for (const baseRow of baseRows || []) {
+    const patch = recomputeClientCurrentState(baseRow, allApplied || []);
+    const { error: updErr } = await supabase.from("pginvoice_clients").update(patch).eq("client", baseRow.client);
     if (updErr) throw updErr;
-    const { error: markErr } = await supabase.from("pginvoice_client_events").update({ applied: true }).eq("id", ev.id);
-    if (markErr) throw markErr;
   }
   notifyClientsChanged();
   return due.length;
@@ -307,6 +350,28 @@ export async function deleteClientNote(id, client) {
   if (error) throw error;
   notifyClientsChanged();
   logClientHistory(client, "note_delete", `Deleted a note`, {});
+}
+
+// Same idea as typeTimelineFor/typeForMonth but for status (active/on_hold/offboarded) --
+// replays applied offboarding/reactivation/hold/resume events by effective_date so
+// recomputeAccruals can tell "was this client on hold during month X" apart from "is this
+// client on hold right now." Without this, a hold placed today would freeze the CURRENT
+// month's accrual but a recompute of past months would still see today's flat `status`
+// column and wrongly freeze/unfreeze months it shouldn't.
+export function statusForMonth(client, events, monthKey) {
+  const monthStart = `${monthKey}-01`;
+  const statusEvents = events
+    .filter((e) => e.client === client.client && e.applied && ["offboarding", "reactivation", "hold", "resume"].includes(e.kind))
+    .sort((a, b) => a.effective_date.localeCompare(b.effective_date) || a.id - b.id);
+  let status = "active";
+  for (const e of statusEvents) {
+    if (e.effective_date > monthStart) break;
+    if (e.kind === "offboarding") status = "offboarded";
+    else if (e.kind === "reactivation") status = "active";
+    else if (e.kind === "hold") status = "on_hold";
+    else if (e.kind === "resume") status = "active";
+  }
+  return status;
 }
 
 export function typeForMonth(client, events, monthKey) {

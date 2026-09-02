@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient.js";
 import { fetchClickupFromSupabase } from "./clickupSync.js";
 import { findMatch, multiFolderAccrualMatchesFor, isInternalFolder } from "./nameMatch.js";
-import { fetchClients, fetchClientEvents, typeForMonth } from "./clientsSync.js";
+import { fetchClients, fetchClientEvents, typeForMonth, statusForMonth } from "./clientsSync.js";
 import { monthLabel } from "./parsers.js";
 
 const PAGE_SIZE = 1000;
@@ -251,6 +251,25 @@ export async function recomputeAccruals(clients) {
     while (mk <= cur && guard++ < 240) {
       const seg = typeForMonth(profile, events, mk);
       const existing = c.months[mk];
+      const monthStatus = statusForMonth(profile, events, mk);
+      // On hold pauses the accrual clock without erasing the balance -- unlike a genuine
+      // off-package gap (below), the running balance carries forward unchanged so it picks
+      // back up exactly where it left off once the client resumes. A human override is still
+      // left alone regardless of status.
+      if (monthStatus === "on_hold" && !existing?.isOverride) {
+        const cell = { accrualValue: prior, accrualNote: "On hold — accrual paused", pct: null, comment: existing?.comment ?? null, workedHours: existing?.workedHours ?? null, isOverride: false, hoursFlagged: false };
+        const changed = !existing || existing.accrualValue !== cell.accrualValue || existing.accrualNote !== cell.accrualNote;
+        c.months[mk] = cell;
+        if (changed) {
+          updatedRows.push({
+            client: c.client, account_manager: c.manager || null, agreed_hpm: seg.agreedHours != null ? String(seg.agreedHours) : null,
+            month_key: mk, accrual_value: cell.accrualValue, accrual_note: cell.accrualNote, pct_over_under: null,
+            comment: cell.comment, worked_hours: cell.workedHours, is_override: false, hours_flagged: false,
+          });
+        }
+        mk = shiftMonthKey(mk, 1);
+        continue;
+      }
       // Strategy is an ongoing engagement with agreed recurring hours -- the same fixed-
       // hours accrual shape as a Package -- so it accrues the same way; every other type
       // (Quoted, Project, MAP, Hourly, Ad hoc, Queensland) has no monthly accrual.
@@ -322,7 +341,16 @@ export function exportAccrualsWorkbook(clients, monthKeys, fileLabel) {
   for (const mk of monthKeys) header.push(`Worked hrs (${monthLabelOf(mk)})`, monthLabelOf(mk) + " Accrued", "% over/under hours", `Comments (${monthLabelOf(mk)})`);
   const aoa = [["PG Weekly Hours Summary (Accumulative Total)"], [], header];
   for (const c of clients) {
-    const row = [c.client, c.agreedHpm ?? ""];
+    // Prefer the most recent in-range month's own agreed_hpm over the client-level
+    // scalar, which is a stale snapshot from whenever it was first written and can be
+    // wrong for a client whose package hours changed mid-range (same class of bug as
+    // the ARAS/Amorim Cork/Warrina Homes stale-scalar issues fixed elsewhere).
+    let agreedForRange = c.agreedHpm ?? "";
+    for (let i = monthKeys.length - 1; i >= 0; i--) {
+      const cell = c.months[monthKeys[i]];
+      if (cell && cell.agreedHpm !== null && cell.agreedHpm !== undefined) { agreedForRange = cell.agreedHpm; break; }
+    }
+    const row = [c.client, agreedForRange];
     for (const mk of monthKeys) {
       const cell = c.months[mk] || {};
       row.push(cell.workedHours ?? "", cell.accrualValue ?? cell.accrualNote ?? "", cell.pct ?? "", cell.comment ?? "");
