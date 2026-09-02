@@ -567,6 +567,21 @@ export default function PGReconciliation({ onNavigateClients }) {
     for (const accName of costCentreCandidates) {
       const accrualFolders = multiFolderAccrualMatchesFor(accName, folderNames);
       const matchedInMap = accrualFolders ? accrualFolders.filter((f) => map.has(f)) : [];
+      // A hardcoded MULTI_FOLDER_CLIENTS rule's match set always includes the client's own
+      // primary folder alongside real siblings; a DYNAMIC client's (pginvoice_cost_centres)
+      // does not unless someone remembers to add the primary folder as its own row too --
+      // easy to miss, and when missed with at least one real (non-sub-project) sibling
+      // present, the primary folder drops out of the roll-up entirely and a sibling gets
+      // wrongly promoted to "primary" instead, splitting the client into two conflicting
+      // rows (reproduced with Majestic Plumbing + CLT: its own folder's 26.88h vanished
+      // from the roll-up, with "MP - Commercial Leak Tech"'s 3.50h standing in as if it
+      // were the whole client). Folding the registered clickupFolder in here, whether or
+      // not it's an explicit dynamic row, makes this impossible regardless of what the
+      // cost-centre table actually contains.
+      const ownFolder = pgClientByName.get(accName)?.clickupFolder;
+      if (ownFolder && map.has(ownFolder) && matchedInMap.length > 0 && !matchedInMap.includes(ownFolder)) {
+        matchedInMap.push(ownFolder);
+      }
       // Folders this same rule matches but deliberately excludes from the accrual (billed
       // separately -- Majestic Plumbing's web project, BAMSS Childcare, Apex Comms Website,
       // Warrina Homes' Employee Guide project) are tagged with their true parent's identity
