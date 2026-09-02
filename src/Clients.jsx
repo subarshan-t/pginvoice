@@ -587,30 +587,16 @@ function ClientProfileDrawer({
         // A hardcoded MULTI_FOLDER_CLIENTS rule (nameMatch.js), not this module's own
         // editable pginvoice_cost_centres rows -- read-only, but still split into the
         // same two labeled sections as the editable case below (not lumped into one
-        // "cost centres & sub-projects" block), so this reads as the same two distinct
-        // things everywhere a client's folders show up, editable or not.
+        // "cost centres & sub-projects" block), and still using the SAME collapsible
+        // list component -- a hardcoded rule can easily have far more than 5 folders
+        // (Magain: 27), and a plain unbounded .map() here means only the dynamic path
+        // ever got the collapse/expand toggle, not this one.
         <>
           {costCentres.length > 0 && (
-            <div className="pg-drawer__section">
-              <div className="pg-drawer__section-title">Cost Centres ({costCentres.length})</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                {costCentres.map((f) => (
-                  <div key={f} style={{ fontSize: 13, color: "var(--fg-primary)", padding: "4px 0" }}>{f}</div>
-                ))}
-              </div>
-              <div style={{ color: "var(--fg-tertiary)", fontStyle: "italic", fontSize: 11, marginTop: 4 }}>Built into the app — ask to have this made editable</div>
-            </div>
+            <CostCentreSection title="Cost Centres" items={costCentres} readOnlyNote="Built into the app — ask to have this made editable" />
           )}
           {subProjects.length > 0 && (
-            <div className="pg-drawer__section">
-              <div className="pg-drawer__section-title">Sub Project ({subProjects.length})</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                {subProjects.map((f) => (
-                  <div key={f} style={{ fontSize: 13, color: "var(--fg-primary)", padding: "4px 0" }}>{f}</div>
-                ))}
-              </div>
-              <div style={{ color: "var(--fg-tertiary)", fontStyle: "italic", fontSize: 11, marginTop: 4 }}>Built into the app — ask to have this made editable</div>
-            </div>
+            <CostCentreSection title="Sub Project" items={subProjects} readOnlyNote="Built into the app — ask to have this made editable" />
           )}
         </>
       ) : (
@@ -649,20 +635,26 @@ const COST_CENTRE_COLLAPSE_AT = 5;
 // showing the true total either way rather than just "+N more" for the hidden tail.
 // Editing (add/remove) only happens once "Edit" is clicked, which also expands the
 // full list so nothing being removed is hidden behind the collapse.
-function CostCentreSection({ title, kind, items, assigned, folderList, managing, draftFolder, savingCostCentre, onStart, onCancel, onDraftFolderChange, onAdd, onRemove }) {
+// `readOnlyNote` set (hardcoded MULTI_FOLDER_CLIENTS rule) -> no Edit button, no
+// add/remove, just the collapsible list plus that note. Left unset (the normal,
+// pginvoice_cost_centres-backed case) -> full add/remove editing, gated behind Edit.
+function CostCentreSection({ title, kind, items, assigned, folderList, managing, draftFolder, savingCostCentre, onStart, onCancel, onDraftFolderChange, onAdd, onRemove, readOnlyNote }) {
   const [expanded, setExpanded] = useState(false);
   const datalistId = `cc-folders-${kind}`;
   const overflows = items.length > COST_CENTRE_COLLAPSE_AT;
   const showAll = expanded || managing || !overflows;
   const shown = showAll ? items : items.slice(0, COST_CENTRE_COLLAPSE_AT);
+  const readOnly = readOnlyNote !== undefined;
 
   return (
     <div className="pg-drawer__section">
       <div className="pg-drawer__section-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span>{title} {items.length > 0 ? `(${items.length})` : ""}</span>
-        <button className="pg-btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }} onClick={() => (managing ? onCancel() : onStart())}>
-          {managing ? "Done" : "Edit"}
-        </button>
+        {!readOnly && (
+          <button className="pg-btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }} onClick={() => (managing ? onCancel() : onStart())}>
+            {managing ? "Done" : "Edit"}
+          </button>
+        )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {shown.map((f) => (
@@ -704,6 +696,9 @@ function CostCentreSection({ title, kind, items, assigned, folderList, managing,
             </datalist>
             <button className="pg-btn-ghost" disabled={!draftFolder.trim() || savingCostCentre} onClick={onAdd}><Check size={12} /></button>
           </div>
+        )}
+        {readOnly && (
+          <div style={{ color: "var(--fg-tertiary)", fontStyle: "italic", fontSize: 11, marginTop: 4 }}>{readOnlyNote}</div>
         )}
       </div>
     </div>
