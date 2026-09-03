@@ -645,6 +645,7 @@ function CostCentreSection({ title, kind, items, assigned, folderList, managing,
   const showAll = expanded || managing || !overflows;
   const shown = showAll ? items : items.slice(0, COST_CENTRE_COLLAPSE_AT);
   const readOnly = readOnlyNote !== undefined;
+  const listId = `cc-list-${kind}-${title}`.replace(/\s+/g, "-");
 
   return (
     <div className="pg-drawer__section">
@@ -656,7 +657,7 @@ function CostCentreSection({ title, kind, items, assigned, folderList, managing,
           </button>
         )}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <div id={listId} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {shown.map((f) => (
           <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
             <span style={{ flex: 1, fontSize: 13, color: "var(--fg-primary)" }}>{f}</span>
@@ -676,6 +677,8 @@ function CostCentreSection({ title, kind, items, assigned, folderList, managing,
             className="pg-row__name-sub pg-row__name-sub--toggle"
             style={{ marginTop: 2 }}
             onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
+            aria-controls={listId}
           >
             {expanded ? "Show fewer" : `${items.length} items`}
             <ChevronDown size={12} style={{ transform: expanded ? "rotate(180deg)" : undefined }} />

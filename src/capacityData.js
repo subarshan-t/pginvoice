@@ -14,10 +14,31 @@ import { findMatch, multiFolderMatchesFor, isInternalFolder } from "./nameMatch.
 /* ============================================================
    MONTHS / CONSTANTS
 ============================================================ */
-export const MONTHS = ["2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"];
 const _now = new Date();
 export const CURRENT_MONTH = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}`;
-export const MONTH_LABELS = { "2025-12": "Dec 25", "2026-01": "Jan 26", "2026-02": "Feb 26", "2026-03": "Mar 26", "2026-04": "Apr 26", "2026-05": "May 26", "2026-06": "Jun 26", "2026-07": "Jul 26", "2026-08": "Aug 26", "2026-09": "Sep 26", "2026-10": "Oct 26", "2026-11": "Nov 26", "2026-12": "Dec 26" };
+
+function monthKeyAt(year, monthIndex) { return `${year}-${String(monthIndex + 1).padStart(2, "0")}`; }
+function monthLabelAt(year, monthIndex) { return new Date(year, monthIndex, 1).toLocaleString(undefined, { month: "short", year: "2-digit" }); }
+
+// Seed data starts Dec 2025 -- generated out to 3 months past whatever "now" actually is
+// (not a fixed literal ending at 2026-12) so CURRENT_MONTH is always a member of MONTHS and
+// the month picker/"today" highlighting don't silently stop finding the current month once
+// the real date rolls past whatever end-date used to be hardcoded here.
+const MONTHS_START = { year: 2025, month: 11 }; // December 2025, 0-indexed month
+export const MONTHS = (() => {
+  const months = [];
+  let y = MONTHS_START.year, m = MONTHS_START.month;
+  const endYear = _now.getFullYear(), endMonth = _now.getMonth() + 3;
+  while (y < endYear || (y === endYear && m <= endMonth)) {
+    months.push(monthKeyAt(y, m));
+    m++; if (m > 11) { m = 0; y++; }
+  }
+  return months;
+})();
+export const MONTH_LABELS = Object.fromEntries(MONTHS.map((mk) => {
+  const [y, m] = mk.split("-").map(Number);
+  return [mk, monthLabelAt(y, m - 1)];
+}));
 
 // Real, named public holidays for SA/WA/QLD, weekdays only (weekend-falling holidays
 // with no substitute don't affect working-day capacity, so they're excluded here — e.g.

@@ -582,6 +582,19 @@ export default function PGReconciliation({ onNavigateClients }) {
       if (ownFolder && map.has(ownFolder) && matchedInMap.length > 0 && !matchedInMap.includes(ownFolder)) {
         matchedInMap.push(ownFolder);
       }
+      // A registered client whose own folder has ALREADY been claimed and deleted from `map`
+      // by an earlier candidate in this same loop (two different client names both matching
+      // the same real folder -- e.g. a hardcoded MULTI_FOLDER_CLIENTS rule and a dynamic
+      // pginvoice_cost_centres row both covering the same client, exactly what happened with
+      // Brisbane Alarm Monitoring/BAMSS Childcare) silently loses that folder to whichever
+      // candidate happened to process first, with no signal anywhere that it occurred. Loop
+      // order is deterministic (alphabetical, from pgClientNames/accruedNames), so this is a
+      // logged-but-not-crashing warning rather than a fix -- fixing it properly means picking
+      // a real precedence rule between two DIFFERENT client names claiming the same folder,
+      // which is a data-modelling decision, not something safe to guess at silently here.
+      if (ownFolder && !map.has(ownFolder) && folderNames.includes(ownFolder)) {
+        console.warn(`[buildClientsForMonth] "${accName}"'s own folder "${ownFolder}" was already claimed by another client's cost-centre match this month -- check for a hardcoded MULTI_FOLDER_CLIENTS rule and a dynamic pginvoice_cost_centres row both covering the same folder.`);
+      }
       // Folders this same rule matches but deliberately excludes from the accrual (billed
       // separately -- Majestic Plumbing's web project, BAMSS Childcare, Apex Comms Website,
       // Warrina Homes' Employee Guide project) are tagged with their true parent's identity

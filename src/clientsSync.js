@@ -218,8 +218,13 @@ export async function createClientEvent(client, kind, effectiveDate, fields, not
 // too so any other future caller can't accidentally do it either.
 export async function deleteClientEvent(id, { applied, client, kind } = {}) {
   if (applied) throw new Error("Can't delete an already-applied event -- it already changed the client's history.");
-  const { error } = await supabase.from("pginvoice_client_events").delete().eq("id", id).eq("applied", false);
+  // The .eq("applied", false) guard can still no-op (0 rows) if the event was applied by a
+  // sync that ran after this stale client-side `applied` flag was read but before this delete
+  // reached the DB -- select() + count so the caller can tell "actually deleted" apart from
+  // "silently did nothing," instead of showing a false "deleted" success either way.
+  const { data, error } = await supabase.from("pginvoice_client_events").delete().eq("id", id).eq("applied", false).select("id");
   if (error) throw error;
+  if (!data || !data.length) throw new Error("That event was already applied by the time this reached the server -- refresh and try again.");
   notifyClientsChanged();
   if (client) logClientHistory(client, `event_${kind}_removed`, `Removed scheduled ${EVENT_KIND_LABEL[kind] || kind}`, { kind });
 }
